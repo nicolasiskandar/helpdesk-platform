@@ -24,3 +24,4 @@ Thumbs.db
 *.swp
 *.sln.DotSettings.user
 docs/
+TestResults/

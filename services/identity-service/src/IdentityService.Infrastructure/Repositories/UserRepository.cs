@@ -38,8 +38,9 @@ public class UserRepository : IUserRepository
         await _context.Users.AddAsync(user);
     }
 
-    public async Task UpdateAsync(User user)
+    public Task UpdateAsync(User user)
     {
         _context.Users.Update(user);
+        return Task.CompletedTask;
     }
 }

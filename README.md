@@ -322,7 +322,33 @@ Unit tests use **xUnit**, **Moq**, and **FluentAssertions**.
 dotnet test tests/IdentityService.Tests/
 ```
 
-### Test coverage
+### View code coverage
+
+```bash
+dotnet test tests/IdentityService.Tests/ --collect:"XPlat Code Coverage" --results-directory ./TestResults
+
+dotnet tool install --global dotnet-reportgenerator-globaltool
+~/.dotnet/tools/reportgenerator \
+  -reports:./TestResults/*/coverage.cobertura.xml \
+  -targetdir:./TestResults/Report \
+  -reporttypes:TextSummary
+
+cat ./TestResults/Report/Summary.txt
+```
+
+### Coverage
+
+| Class | Coverage |
+|-------|----------|
+| Domain entities | 100% |
+| AuthService | 98.4% |
+| PasswordHasherService | 100% |
+| JwtTokenService | 90.5% |
+| All validators | 100% |
+| All DTOs | 100% |
+| EF Core / Repositories | 0% (integration test territory) |
+
+### Test breakdown
 
 | File | Tests | What's tested |
 |------|-------|---------------|

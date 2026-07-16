@@ -34,10 +34,11 @@ public class RefreshTokenRepository : IRefreshTokenRepository
         await _context.RefreshTokens.AddAsync(refreshToken);
     }
 
-    public async Task RevokeAsync(RefreshToken refreshToken)
+    public Task RevokeAsync(RefreshToken refreshToken)
     {
         refreshToken.RevokedAt = DateTime.UtcNow;
         _context.RefreshTokens.Update(refreshToken);
+        return Task.CompletedTask;
     }
 
     public async Task RevokeAllUserTokensAsync(Guid userId)
