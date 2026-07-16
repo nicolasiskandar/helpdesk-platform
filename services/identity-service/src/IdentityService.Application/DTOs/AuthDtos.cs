@@ -1,13 +1,15 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace IdentityService.Application.DTOs;
 
 public record RegisterRequest(
-    string Email,
+    [EmailAddress] string Email,
     string Password,
     string FullName
 );
 
 public record LoginRequest(
-    string Email,
+    [EmailAddress] string Email,
     string Password
 );
 

@@ -15,20 +15,19 @@ boundaries, data ownership rules, and design principles.
 - Docker and Docker Compose v2+
 - OpenSSL (to generate JWT signing keys)
 
-### 1. Generate RSA key pair
+### 1. Setup
 
 ```bash
-cd infra
-mkdir -p certs
-openssl genpkey -algorithm RSA -out certs/private.pem -pkeyopt rsa_keygen_bits:2048
-openssl rsa -in certs/private.pem -pubout -out certs/public.pem
+./scripts.sh setup
 ```
+
+This generates RSA keys in `infra/certs/` and creates `.env` from the example.
 
 ### 2. Configure environment
 
 ```bash
-cp .env.example .env
 # Edit .env and set a strong MSSQL_SA_PASSWORD
+vim .env
 ```
 
 ### 3. Start the stack
@@ -51,6 +50,10 @@ The Identity Service is available at `http://localhost:5000`.
 curl http://localhost:5000/health
 # {"status":"healthy","service":"identity-service"}
 ```
+
+### 5. Open Swagger UI
+
+Navigate to `http://localhost:5000/swagger` in your browser to explore and test the API interactively.
 
 ## API Endpoints
 
@@ -282,33 +285,15 @@ database never sees plaintext refresh tokens.
 
 ```
 helpdesk-platform/
+├── compose.yaml
+├── .env
 ├── docs/ARCHITECTURE.md
 ├── infra/
-│   ├── docker-compose.yml
-│   ├── .env.example
-│   └── certs/               (RSA key pair — gitignored)
+├── scripts.sh
 ├── services/
-│   ├── gateway/             (empty — to be built)
-│   ├── identity-service/
-│   │   ├── IdentityService.sln
-│   │   ├── Dockerfile
-│   │   └── src/
-│   │       ├── IdentityService.Domain/
-│   │       ├── IdentityService.Application/
-│   │       ├── IdentityService.Infrastructure/
-│   │       └── IdentityService.Api/
-│   ├── ticket-service/      (empty — to be built)
-│   ├── notification-service/ (empty — to be built)
-│   ├── ai-service/          (empty — to be built)
-│   └── search-service/      (empty — to be built)
+│   └── ...
 ├── tests/
 │   └── IdentityService.Tests/
-│       ├── Services/
-│       │   ├── AuthServiceTests.cs
-│       │   ├── PasswordHasherTests.cs
-│       │   └── JwtTokenServiceTests.cs
-│       └── Validators/
-│           └── AuthValidatorTests.cs
 └── README.md
 ```
 
@@ -316,24 +301,14 @@ helpdesk-platform/
 
 Unit tests use **xUnit**, **Moq**, and **FluentAssertions**.
 
-### Run tests
+### Commands
 
 ```bash
-dotnet test tests/IdentityService.Tests/
-```
-
-### View code coverage
-
-```bash
-dotnet test tests/IdentityService.Tests/ --collect:"XPlat Code Coverage" --results-directory ./TestResults
-
-dotnet tool install --global dotnet-reportgenerator-globaltool
-~/.dotnet/tools/reportgenerator \
-  -reports:./TestResults/*/coverage.cobertura.xml \
-  -targetdir:./TestResults/Report \
-  -reporttypes:TextSummary
-
-cat ./TestResults/Report/Summary.txt
+./scripts.sh setup       # Generate RSA keys and create .env
+./scripts.sh test        # Run all unit tests
+./scripts.sh coverage    # Run tests and show code coverage
+./scripts.sh clean       # Remove test results and build artifacts
+./scripts.sh help        # Show all available commands
 ```
 
 ### Coverage

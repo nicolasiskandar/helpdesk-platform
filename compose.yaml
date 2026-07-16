@@ -31,7 +31,7 @@ services:
   # ---------------------------------------------------------------------------
   identity-service:
     build:
-      context: ../services/identity-service
+      context: ./services/identity-service
       dockerfile: Dockerfile
     container_name: helpdesk-identity-service
     environment:
@@ -49,7 +49,7 @@ services:
       sqlserver:
         condition: service_healthy
     volumes:
-      - ../infra/certs:/app/certs:ro
+      - ./infra/certs:/app/certs:ro
     networks:
       - helpdesk-network
 

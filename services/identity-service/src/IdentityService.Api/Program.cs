@@ -1,20 +1,104 @@
+using System.ComponentModel.DataAnnotations;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using IdentityService.Api.Middleware;
+using IdentityService.Application.DTOs;
 using IdentityService.Application.Validators;
 using IdentityService.Infrastructure;
 using IdentityService.Infrastructure.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Any;
+using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "Identity Service API",
+        Version = "v1",
+        Description = "IT Help Desk authentication and user management API."
+    });
+
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Enter your JWT access token."
+    });
+
+    options.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
+
+    var xmlFilename = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, xmlFilename));
+
+    options.MapType<RegisterRequest>(() => new OpenApiSchema
+    {
+        Type = "object",
+        Properties = new Dictionary<string, OpenApiSchema>
+        {
+            ["email"] = new() { Type = "string", Format = "email", Example = new OpenApiString("admin@example.com") },
+            ["password"] = new() { Type = "string", Format = "password", Example = new OpenApiString("Admin123!@#") },
+            ["fullName"] = new() { Type = "string", Example = new OpenApiString("John Doe") }
+        },
+        Required = new HashSet<string> { "email", "password", "fullName" }
+    });
+
+    options.MapType<LoginRequest>(() => new OpenApiSchema
+    {
+        Type = "object",
+        Properties = new Dictionary<string, OpenApiSchema>
+        {
+            ["email"] = new() { Type = "string", Format = "email", Example = new OpenApiString("admin@example.com") },
+            ["password"] = new() { Type = "string", Format = "password", Example = new OpenApiString("Admin123!@#") }
+        },
+        Required = new HashSet<string> { "email", "password" }
+    });
+
+    options.MapType<RefreshRequest>(() => new OpenApiSchema
+    {
+        Type = "object",
+        Properties = new Dictionary<string, OpenApiSchema>
+        {
+            ["refreshToken"] = new() { Type = "string", Example = new OpenApiString("your-refresh-token") }
+        },
+        Required = new HashSet<string> { "refreshToken" }
+    });
+
+    options.MapType<LogoutRequest>(() => new OpenApiSchema
+    {
+        Type = "object",
+        Properties = new Dictionary<string, OpenApiSchema>
+        {
+            ["refreshToken"] = new() { Type = "string", Example = new OpenApiString("your-refresh-token") }
+        },
+        Required = new HashSet<string> { "refreshToken" }
+    });
+});
 
 builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddFluentValidationClientsideAdapters();
