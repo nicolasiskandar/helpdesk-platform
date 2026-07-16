@@ -42,7 +42,14 @@ This will:
 - Run EF Core migrations automatically (Development mode)
 - Seed the Roles table (Admin, IT Support Agent, Employee, Manager)
 
-The Identity Service is available at `http://localhost:5000`.
+The stack is available at:
+
+| Service | URL |
+|---------|-----|
+| Frontend | http://localhost:3000 |
+| Identity API | http://localhost:5000 |
+| Swagger UI | http://localhost:5000/swagger |
+| SQL Server | localhost:1433 |
 
 ### 4. Verify health
 
@@ -304,11 +311,15 @@ Unit tests use **xUnit**, **Moq**, and **FluentAssertions**.
 ### Commands
 
 ```bash
-./scripts.sh setup       # Generate RSA keys and create .env
-./scripts.sh test        # Run all unit tests
-./scripts.sh coverage    # Run tests and show code coverage
-./scripts.sh clean       # Remove test results and build artifacts
-./scripts.sh help        # Show all available commands
+./scripts.sh setup            # Generate RSA keys and create .env
+./scripts.sh up               # Start all services (SQL, Identity, Frontend)
+./scripts.sh down             # Stop all services
+./scripts.sh logs             # Tail logs from all services
+./scripts.sh frontend-dev     # Run frontend locally (no Docker)
+./scripts.sh test             # Run all unit tests
+./scripts.sh coverage         # Run tests and show code coverage
+./scripts.sh clean            # Remove test results and build artifacts
+./scripts.sh help             # Show all available commands
 ```
 
 ### Coverage

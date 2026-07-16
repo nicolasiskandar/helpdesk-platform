@@ -6,11 +6,16 @@ usage() {
 Usage: ./scripts.sh <command>
 
 Commands:
-  setup       Generate RSA keys and create .env file
-  test        Run all unit tests
-  coverage    Run tests and show code coverage
-  clean       Remove test results and build artifacts
-  help        Show this help
+  setup            Generate RSA keys and create .env file
+  up               Start all services (SQL Server, Identity, Frontend)
+  down             Stop all services
+  logs             Tail logs from all services
+  frontend-dev     Run frontend in dev mode (local, no Docker)
+  frontend-build   Build frontend for production
+  test             Run all unit tests
+  coverage         Run tests and show code coverage
+  clean            Remove test results and build artifacts
+  help             Show this help
 EOF
 }
 
@@ -26,6 +31,39 @@ cmd_setup() {
   else
     echo ".env already exists — skipping."
   fi
+}
+
+cmd_up() {
+  docker compose up --build -d
+  echo ""
+  echo "Services starting:"
+  echo "  Frontend:       http://localhost:3000"
+  echo "  Identity API:   http://localhost:5000"
+  echo "  Swagger UI:     http://localhost:5000/swagger"
+  echo "  SQL Server:     localhost:1433"
+}
+
+cmd_down() {
+  docker compose down
+}
+
+cmd_logs() {
+  docker compose logs -f
+}
+
+cmd_frontend_dev() {
+  cd frontend
+  if [ ! -d node_modules ]; then
+    echo "Installing dependencies..."
+    pnpm install
+  fi
+  pnpm dev
+}
+
+cmd_frontend_build() {
+  cd frontend
+  pnpm install
+  pnpm build
 }
 
 cmd_test() {
@@ -51,9 +89,14 @@ cmd_clean() {
 }
 
 case "${1:-help}" in
-  setup)    cmd_setup ;;
-  test)     cmd_test ;;
-  coverage) cmd_coverage ;;
-  clean)    cmd_clean ;;
-  help|*)   usage ;;
+  setup)          cmd_setup ;;
+  up)             cmd_up ;;
+  down)           cmd_down ;;
+  logs)           cmd_logs ;;
+  frontend-dev)   cmd_frontend_dev ;;
+  frontend-build) cmd_frontend_build ;;
+  test)           cmd_test ;;
+  coverage)       cmd_coverage ;;
+  clean)          cmd_clean ;;
+  help|*)         usage ;;
 esac

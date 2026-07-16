@@ -1,0 +1,678 @@
+import type {
+  User,
+  Ticket,
+  NotificationItem,
+  KbArticle,
+  Role,
+  TicketCategory,
+  TicketPriority,
+  TicketStatus,
+} from "./types"
+
+export const CATEGORIES: TicketCategory[] = [
+  "Hardware",
+  "Software",
+  "Network",
+  "Email",
+  "Access Request",
+  "Other",
+]
+
+export const PRIORITIES: TicketPriority[] = ["Low", "Medium", "High", "Critical"]
+
+export const STATUSES: TicketStatus[] = [
+  "Open",
+  "In Progress",
+  "Pending",
+  "Resolved",
+  "Closed",
+]
+
+export const ROLE_LABELS: Record<Role, string> = {
+  admin: "Administrator",
+  agent: "IT Support Agent",
+  employee: "Employee",
+  manager: "Manager",
+}
+
+export const users: User[] = [
+  {
+    id: "u-1",
+    name: "Ava Chen",
+    email: "ava.chen@northwind.com",
+    role: "admin",
+    department: "IT Operations",
+    title: "IT Director",
+    status: "active",
+    joinedAt: "2021-03-14",
+  },
+  {
+    id: "u-2",
+    name: "Marcus Reed",
+    email: "marcus.reed@northwind.com",
+    role: "agent",
+    department: "IT Support",
+    title: "Senior Support Engineer",
+    status: "active",
+    joinedAt: "2022-06-02",
+  },
+  {
+    id: "u-3",
+    name: "Priya Nair",
+    email: "priya.nair@northwind.com",
+    role: "agent",
+    department: "IT Support",
+    title: "Support Engineer",
+    status: "active",
+    joinedAt: "2023-01-19",
+  },
+  {
+    id: "u-4",
+    name: "Diego Fernández",
+    email: "diego.fernandez@northwind.com",
+    role: "agent",
+    department: "Network Operations",
+    title: "Network Specialist",
+    status: "active",
+    joinedAt: "2022-11-08",
+  },
+  {
+    id: "u-5",
+    name: "Sarah Thompson",
+    email: "sarah.thompson@northwind.com",
+    role: "employee",
+    department: "Marketing",
+    title: "Marketing Manager",
+    status: "active",
+    joinedAt: "2020-09-23",
+  },
+  {
+    id: "u-6",
+    name: "James Okoro",
+    email: "james.okoro@northwind.com",
+    role: "employee",
+    department: "Finance",
+    title: "Financial Analyst",
+    status: "active",
+    joinedAt: "2023-04-11",
+  },
+  {
+    id: "u-7",
+    name: "Lena Novak",
+    email: "lena.novak@northwind.com",
+    role: "manager",
+    department: "IT Support",
+    title: "Support Team Lead",
+    status: "active",
+    joinedAt: "2021-07-30",
+  },
+  {
+    id: "u-8",
+    name: "Tom Wallace",
+    email: "tom.wallace@northwind.com",
+    role: "employee",
+    department: "Sales",
+    title: "Account Executive",
+    status: "active",
+    joinedAt: "2022-02-16",
+  },
+  {
+    id: "u-9",
+    name: "Hana Sato",
+    email: "hana.sato@northwind.com",
+    role: "employee",
+    department: "Human Resources",
+    title: "HR Business Partner",
+    status: "inactive",
+    joinedAt: "2019-12-01",
+  },
+]
+
+export const agents = users.filter((u) => u.role === "agent")
+
+function daysAgo(days: number, hours = 0): string {
+  const d = new Date()
+  d.setDate(d.getDate() - days)
+  d.setHours(d.getHours() - hours)
+  return d.toISOString()
+}
+
+export const tickets: Ticket[] = [
+  {
+    id: "t-1",
+    reference: "HLX-4821",
+    subject: "Outlook keeps crashing when opening attachments",
+    description:
+      "Every time I try to open a PDF attachment in Outlook, the application freezes and then crashes. This started this morning after the update. I have tried restarting twice.",
+    category: "Software",
+    priority: "High",
+    status: "In Progress",
+    requesterId: "u-5",
+    assigneeId: "u-2",
+    createdAt: daysAgo(0, 3),
+    updatedAt: daysAgo(0, 1),
+    resolvedAt: null,
+    slaHours: 8,
+    comments: [
+      {
+        id: "c-1",
+        authorId: "u-2",
+        body: "Hi Sarah, thanks for reporting. Can you tell me which Outlook version you are on? Help > Office Account.",
+        createdAt: daysAgo(0, 2),
+        internal: false,
+      },
+      {
+        id: "c-2",
+        authorId: "u-2",
+        body: "Likely the cached mode add-in conflict from the 2408 build. Will try repairing the profile.",
+        createdAt: daysAgo(0, 1),
+        internal: true,
+      },
+    ],
+    activity: [
+      {
+        id: "a-1",
+        actorId: "u-5",
+        action: "created the ticket",
+        createdAt: daysAgo(0, 3),
+      },
+      {
+        id: "a-2",
+        actorId: "u-7",
+        action: "assigned to Marcus Reed",
+        createdAt: daysAgo(0, 2),
+      },
+      {
+        id: "a-3",
+        actorId: "u-2",
+        action: "changed status",
+        detail: "Open → In Progress",
+        createdAt: daysAgo(0, 2),
+      },
+    ],
+    attachments: [
+      { id: "at-1", name: "crash-log.txt", size: "48 KB", type: "text/plain" },
+      { id: "at-2", name: "error-screenshot.png", size: "312 KB", type: "image/png" },
+    ],
+  },
+  {
+    id: "t-2",
+    reference: "HLX-4820",
+    subject: "Main application server is offline — production down",
+    description:
+      "The primary application server (APP-PROD-01) is not responding. Multiple teams cannot access the CRM. This is affecting all sales operations right now.",
+    category: "Network",
+    priority: "Critical",
+    status: "Open",
+    requesterId: "u-8",
+    assigneeId: "u-4",
+    createdAt: daysAgo(0, 1),
+    updatedAt: daysAgo(0, 0),
+    resolvedAt: null,
+    slaHours: 2,
+    comments: [],
+    activity: [
+      {
+        id: "a-4",
+        actorId: "u-8",
+        action: "created the ticket",
+        createdAt: daysAgo(0, 1),
+      },
+      {
+        id: "a-5",
+        actorId: "u-1",
+        action: "escalated to Critical",
+        createdAt: daysAgo(0, 1),
+      },
+      {
+        id: "a-6",
+        actorId: "u-1",
+        action: "assigned to Diego Fernández",
+        createdAt: daysAgo(0, 1),
+      },
+    ],
+    attachments: [],
+  },
+  {
+    id: "t-3",
+    reference: "HLX-4815",
+    subject: "Request access to Finance shared drive",
+    description:
+      "I recently joined the finance reporting project and need read/write access to the \\\\fileserver\\finance-reports folder. My manager Lena has approved.",
+    category: "Access Request",
+    priority: "Medium",
+    status: "Pending",
+    requesterId: "u-6",
+    assigneeId: "u-3",
+    createdAt: daysAgo(1, 4),
+    updatedAt: daysAgo(0, 5),
+    resolvedAt: null,
+    slaHours: 24,
+    comments: [
+      {
+        id: "c-3",
+        authorId: "u-3",
+        body: "Waiting on final sign-off from the data owner before provisioning. Will update once received.",
+        createdAt: daysAgo(0, 5),
+        internal: false,
+      },
+    ],
+    activity: [
+      {
+        id: "a-7",
+        actorId: "u-6",
+        action: "created the ticket",
+        createdAt: daysAgo(1, 4),
+      },
+      {
+        id: "a-8",
+        actorId: "u-3",
+        action: "changed status",
+        detail: "Open → Pending",
+        createdAt: daysAgo(0, 5),
+      },
+    ],
+    attachments: [],
+  },
+  {
+    id: "t-4",
+    reference: "HLX-4809",
+    subject: "New laptop setup for onboarding hire",
+    description:
+      "We have a new team member starting Monday. Need a standard-issue laptop imaged with the marketing software suite and configured with their account.",
+    category: "Hardware",
+    priority: "Medium",
+    status: "Resolved",
+    requesterId: "u-5",
+    assigneeId: "u-2",
+    createdAt: daysAgo(4, 0),
+    updatedAt: daysAgo(2, 0),
+    resolvedAt: daysAgo(2, 0),
+    slaHours: 48,
+    comments: [
+      {
+        id: "c-4",
+        authorId: "u-2",
+        body: "Laptop imaged, all software installed, and account configured. Ready for pickup at the IT desk.",
+        createdAt: daysAgo(2, 0),
+        internal: false,
+      },
+    ],
+    activity: [
+      {
+        id: "a-9",
+        actorId: "u-5",
+        action: "created the ticket",
+        createdAt: daysAgo(4, 0),
+      },
+      {
+        id: "a-10",
+        actorId: "u-2",
+        action: "changed status",
+        detail: "In Progress → Resolved",
+        createdAt: daysAgo(2, 0),
+      },
+    ],
+    attachments: [],
+  },
+  {
+    id: "t-5",
+    reference: "HLX-4802",
+    subject: "VPN disconnects every few minutes on home network",
+    description:
+      "While working remotely, the VPN client keeps dropping the connection roughly every 5 minutes. I have to reconnect constantly which interrupts calls.",
+    category: "Network",
+    priority: "High",
+    status: "In Progress",
+    requesterId: "u-6",
+    assigneeId: "u-4",
+    createdAt: daysAgo(2, 2),
+    updatedAt: daysAgo(0, 8),
+    resolvedAt: null,
+    slaHours: 8,
+    comments: [
+      {
+        id: "c-5",
+        authorId: "u-4",
+        body: "Please try switching the VPN protocol to TCP in the client settings and let me know if it stabilizes.",
+        createdAt: daysAgo(0, 8),
+        internal: false,
+      },
+    ],
+    activity: [
+      {
+        id: "a-11",
+        actorId: "u-6",
+        action: "created the ticket",
+        createdAt: daysAgo(2, 2),
+      },
+    ],
+    attachments: [],
+  },
+  {
+    id: "t-6",
+    reference: "HLX-4798",
+    subject: "Cannot print to the 3rd floor printer",
+    description:
+      "The shared printer on the 3rd floor (HP-3F-02) is not showing up in my devices list anymore. Others on my team have the same issue.",
+    category: "Hardware",
+    priority: "Low",
+    status: "Open",
+    requesterId: "u-8",
+    assigneeId: null,
+    createdAt: daysAgo(1, 6),
+    updatedAt: daysAgo(1, 6),
+    resolvedAt: null,
+    slaHours: 24,
+    comments: [],
+    activity: [
+      {
+        id: "a-12",
+        actorId: "u-8",
+        action: "created the ticket",
+        createdAt: daysAgo(1, 6),
+      },
+    ],
+    attachments: [],
+  },
+  {
+    id: "t-7",
+    reference: "HLX-4790",
+    subject: "Password reset for accounting portal",
+    description:
+      "I'm locked out of the accounting portal after too many attempts. Need a password reset to submit month-end reports.",
+    category: "Access Request",
+    priority: "High",
+    status: "Closed",
+    requesterId: "u-6",
+    assigneeId: "u-3",
+    createdAt: daysAgo(6, 0),
+    updatedAt: daysAgo(5, 0),
+    resolvedAt: daysAgo(5, 0),
+    slaHours: 8,
+    comments: [
+      {
+        id: "c-6",
+        authorId: "u-3",
+        body: "Reset link sent to your email and account unlocked. Please update your password within 24 hours.",
+        createdAt: daysAgo(5, 0),
+        internal: false,
+      },
+    ],
+    activity: [
+      {
+        id: "a-13",
+        actorId: "u-6",
+        action: "created the ticket",
+        createdAt: daysAgo(6, 0),
+      },
+      {
+        id: "a-14",
+        actorId: "u-3",
+        action: "closed the ticket",
+        createdAt: daysAgo(5, 0),
+      },
+    ],
+    attachments: [],
+  },
+  {
+    id: "t-8",
+    reference: "HLX-4785",
+    subject: "Teams audio not working in meetings",
+    description:
+      "My microphone works in every app except Microsoft Teams. Colleagues cannot hear me during meetings. Already checked device permissions.",
+    category: "Software",
+    priority: "Medium",
+    status: "Resolved",
+    requesterId: "u-5",
+    assigneeId: "u-2",
+    createdAt: daysAgo(5, 0),
+    updatedAt: daysAgo(3, 0),
+    resolvedAt: daysAgo(3, 0),
+    slaHours: 24,
+    comments: [],
+    activity: [
+      {
+        id: "a-15",
+        actorId: "u-5",
+        action: "created the ticket",
+        createdAt: daysAgo(5, 0),
+      },
+    ],
+    attachments: [],
+  },
+  {
+    id: "t-9",
+    reference: "HLX-4779",
+    subject: "Spam emails bypassing the filter",
+    description:
+      "Over the last few days a large volume of phishing emails is reaching my inbox despite the spam filter. Some look like fake invoices.",
+    category: "Email",
+    priority: "High",
+    status: "In Progress",
+    requesterId: "u-8",
+    assigneeId: "u-3",
+    createdAt: daysAgo(1, 2),
+    updatedAt: daysAgo(0, 4),
+    resolvedAt: null,
+    slaHours: 8,
+    comments: [],
+    activity: [
+      {
+        id: "a-16",
+        actorId: "u-8",
+        action: "created the ticket",
+        createdAt: daysAgo(1, 2),
+      },
+    ],
+    attachments: [],
+  },
+  {
+    id: "t-10",
+    reference: "HLX-4770",
+    subject: "Monitor flickering on docking station",
+    description:
+      "External monitor flickers intermittently when connected through the docking station. Direct HDMI connection works fine.",
+    category: "Hardware",
+    priority: "Low",
+    status: "Pending",
+    requesterId: "u-6",
+    assigneeId: "u-4",
+    createdAt: daysAgo(3, 0),
+    updatedAt: daysAgo(1, 0),
+    resolvedAt: null,
+    slaHours: 48,
+    comments: [],
+    activity: [
+      {
+        id: "a-17",
+        actorId: "u-6",
+        action: "created the ticket",
+        createdAt: daysAgo(3, 0),
+      },
+    ],
+    attachments: [],
+  },
+  {
+    id: "t-11",
+    reference: "HLX-4765",
+    subject: "Software license request for Adobe Creative Cloud",
+    description:
+      "Requesting an Adobe Creative Cloud license for the design work on the upcoming campaign. Budget approved by marketing.",
+    category: "Software",
+    priority: "Medium",
+    status: "Resolved",
+    requesterId: "u-5",
+    assigneeId: "u-2",
+    createdAt: daysAgo(7, 0),
+    updatedAt: daysAgo(4, 0),
+    resolvedAt: daysAgo(4, 0),
+    slaHours: 48,
+    comments: [],
+    activity: [
+      {
+        id: "a-18",
+        actorId: "u-5",
+        action: "created the ticket",
+        createdAt: daysAgo(7, 0),
+      },
+    ],
+    attachments: [],
+  },
+  {
+    id: "t-12",
+    reference: "HLX-4758",
+    subject: "Wi-Fi dead zone in the east conference room",
+    description:
+      "There is no Wi-Fi signal in the east wing conference room, making video calls impossible during client meetings.",
+    category: "Network",
+    priority: "Medium",
+    status: "Closed",
+    requesterId: "u-8",
+    assigneeId: "u-4",
+    createdAt: daysAgo(9, 0),
+    updatedAt: daysAgo(6, 0),
+    resolvedAt: daysAgo(6, 0),
+    slaHours: 48,
+    comments: [],
+    activity: [
+      {
+        id: "a-19",
+        actorId: "u-8",
+        action: "created the ticket",
+        createdAt: daysAgo(9, 0),
+      },
+    ],
+    attachments: [],
+  },
+]
+
+export const notifications: NotificationItem[] = [
+  {
+    id: "n-1",
+    type: "sla",
+    title: "SLA breach imminent",
+    body: "HLX-4820 (Critical) is approaching its 2-hour resolution deadline.",
+    ticketRef: "HLX-4820",
+    createdAt: daysAgo(0, 0),
+    read: false,
+  },
+  {
+    id: "n-2",
+    type: "assignment",
+    title: "New ticket assigned",
+    body: "Marcus Reed assigned HLX-4821 to you.",
+    ticketRef: "HLX-4821",
+    createdAt: daysAgo(0, 1),
+    read: false,
+  },
+  {
+    id: "n-3",
+    type: "comment",
+    title: "New reply on your ticket",
+    body: "Priya Nair replied to HLX-4815.",
+    ticketRef: "HLX-4815",
+    createdAt: daysAgo(0, 5),
+    read: false,
+  },
+  {
+    id: "n-4",
+    type: "status",
+    title: "Ticket resolved",
+    body: "HLX-4809 was marked as Resolved.",
+    ticketRef: "HLX-4809",
+    createdAt: daysAgo(2, 0),
+    read: true,
+  },
+  {
+    id: "n-5",
+    type: "mention",
+    title: "You were mentioned",
+    body: "Lena Novak mentioned you in an internal note on HLX-4802.",
+    ticketRef: "HLX-4802",
+    createdAt: daysAgo(1, 0),
+    read: true,
+  },
+]
+
+export const kbArticles: KbArticle[] = [
+  {
+    id: "kb-1",
+    title: "How to connect to the company VPN",
+    category: "Network",
+    excerpt:
+      "Step-by-step guide to installing and connecting to the corporate VPN from Windows and macOS.",
+    body: "1. Download the VPN client from the software portal.\n2. Sign in with your company credentials.\n3. Select the nearest gateway and click Connect.\n4. If the connection drops repeatedly, switch the protocol to TCP under Settings.\n5. For MFA prompts, approve the request in your authenticator app.",
+    views: 1284,
+    updatedAt: daysAgo(3, 0),
+    status: "published",
+    author: "Marcus Reed",
+  },
+  {
+    id: "kb-2",
+    title: "Resetting your password",
+    category: "Access Request",
+    excerpt:
+      "Reset a forgotten password or unlock your account using the self-service portal.",
+    body: "1. Go to the self-service password portal.\n2. Enter your work email and complete verification.\n3. Choose a new password meeting the complexity policy.\n4. If your account is locked, wait 15 minutes or contact IT support.",
+    views: 2051,
+    updatedAt: daysAgo(6, 0),
+    status: "published",
+    author: "Priya Nair",
+  },
+  {
+    id: "kb-3",
+    title: "Fixing Outlook crashes and freezes",
+    category: "Software",
+    excerpt:
+      "Common troubleshooting steps when Outlook becomes unresponsive or crashes on launch.",
+    body: "1. Start Outlook in Safe Mode (hold Ctrl while launching).\n2. Disable recently added add-ins.\n3. Repair your Office installation from Apps & Features.\n4. Create a new Outlook profile if the issue persists.",
+    views: 876,
+    updatedAt: daysAgo(1, 0),
+    status: "published",
+    author: "Marcus Reed",
+  },
+  {
+    id: "kb-4",
+    title: "Requesting access to shared drives",
+    category: "Access Request",
+    excerpt:
+      "How to request and get approval for network shared folder access.",
+    body: "1. Open a new ticket under the Access Request category.\n2. Specify the exact folder path and level of access needed.\n3. Include your manager's approval.\n4. IT will provision access once the data owner signs off.",
+    views: 543,
+    updatedAt: daysAgo(8, 0),
+    status: "published",
+    author: "Priya Nair",
+  },
+  {
+    id: "kb-5",
+    title: "Setting up a new printer",
+    category: "Hardware",
+    excerpt: "Add a network printer to your workstation in a few steps.",
+    body: "1. Open Settings > Printers & Scanners.\n2. Click Add a printer.\n3. Select the printer by its location code (e.g. HP-3F-02).\n4. Install drivers if prompted.",
+    views: 421,
+    updatedAt: daysAgo(10, 0),
+    status: "published",
+    author: "Diego Fernández",
+  },
+  {
+    id: "kb-6",
+    title: "Identifying and reporting phishing emails",
+    category: "Email",
+    excerpt: "Learn to spot phishing attempts and report them to security.",
+    body: "1. Check the sender's actual email address.\n2. Hover over links before clicking.\n3. Be wary of urgent requests and unexpected attachments.\n4. Use the Report Phishing button in Outlook to notify security.",
+    views: 967,
+    updatedAt: daysAgo(2, 0),
+    status: "draft",
+    author: "Priya Nair",
+  },
+]
+
+export function getUser(id: string | null): User | undefined {
+  if (!id) return undefined
+  return users.find((u) => u.id === id)
+}
+
+export function getTicket(ref: string): Ticket | undefined {
+  return tickets.find((t) => t.reference === ref)
+}
