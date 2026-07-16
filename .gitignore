@@ -1,0 +1,26 @@
+# Environment
+.env
+*.env.local
+
+# RSA keys
+infra/certs/
+
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# Docker
+docker-compose.override.yml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.swp
+*.sln.DotSettings.user
+docs/

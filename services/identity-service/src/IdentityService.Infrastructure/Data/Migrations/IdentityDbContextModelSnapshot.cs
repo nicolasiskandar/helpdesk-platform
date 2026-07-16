@@ -1,0 +1,220 @@
+using System;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
+
+#nullable disable
+
+namespace IdentityService.Infrastructure.Data.Migrations
+{
+    /// <inheritdoc />
+    public partial class IdentityDbContextModelSnapshot : ModelSnapshot
+    {
+        /// <inheritdoc />
+        protected override void BuildModel(ModelBuilder modelBuilder)
+        {
+#pragma warning disable 612, 618
+            modelBuilder
+                .HasAnnotation("ProductVersion", "8.0.11")
+                .HasAnnotation("Relational:MaxIdentifierLength", 128);
+
+            SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
+
+            modelBuilder.Entity("IdentityService.Domain.Entities.Role", b =>
+            {
+                b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("int");
+
+                SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasMaxLength(100)
+                    .HasColumnType("nvarchar(100)");
+
+                b.HasKey("Id");
+
+                b.HasIndex("Name")
+                    .IsUnique();
+
+                b.ToTable("Roles", (string)null);
+
+                b.HasData(
+                    new
+                    {
+                        Id = 1,
+                        Name = "Admin"
+                    },
+                    new
+                    {
+                        Id = 2,
+                        Name = "IT Support Agent"
+                    },
+                    new
+                    {
+                        Id = 3,
+                        Name = "Employee"
+                    },
+                    new
+                    {
+                        Id = 4,
+                        Name = "Manager"
+                    });
+            });
+
+            modelBuilder.Entity("IdentityService.Domain.Entities.User", b =>
+            {
+                b.Property<Guid>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<DateTime>("CreatedAt")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("datetime2")
+                    .HasDefaultValueSql("GETUTCDATE()");
+
+                b.Property<string>("Email")
+                    .IsRequired()
+                    .HasMaxLength(320)
+                    .HasColumnType("nvarchar(320)");
+
+                b.Property<string>("FullName")
+                    .IsRequired()
+                    .HasMaxLength(200)
+                    .HasColumnType("nvarchar(200)");
+
+                b.Property<bool>("IsActive")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("bit")
+                    .HasDefaultValue(true);
+
+                b.Property<DateTime?>("LastLoginAt")
+                    .HasColumnType("datetime2");
+
+                b.Property<string>("PasswordHash")
+                    .IsRequired()
+                    .HasColumnType("nvarchar(max)");
+
+                b.Property<int>("RoleId")
+                    .HasColumnType("int");
+
+                b.HasKey("Id");
+
+                b.HasIndex("Email")
+                    .IsUnique();
+
+                b.HasIndex("RoleId");
+
+                b.ToTable("Users", (string)null);
+            });
+
+            modelBuilder.Entity("IdentityService.Domain.Entities.UserActivityLog", b =>
+            {
+                b.Property<Guid>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<string>("Action")
+                    .IsRequired()
+                    .HasMaxLength(100)
+                    .HasColumnType("nvarchar(100)");
+
+                b.Property<string>("IpAddress")
+                    .IsRequired()
+                    .HasMaxLength(45)
+                    .HasColumnType("nvarchar(45)");
+
+                b.Property<DateTime>("Timestamp")
+                    .HasColumnType("datetime2");
+
+                b.Property<Guid>("UserId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.HasKey("Id");
+
+                b.HasIndex("UserId");
+
+                b.ToTable("UserActivityLogs", (string)null);
+            });
+
+            modelBuilder.Entity("IdentityService.Domain.Entities.RefreshToken", b =>
+            {
+                b.Property<Guid>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<DateTime>("CreatedAt")
+                    .HasColumnType("datetime2");
+
+                b.Property<DateTime>("ExpiresAt")
+                    .HasColumnType("datetime2");
+
+                b.Property<DateTime?>("RevokedAt")
+                    .HasColumnType("datetime2");
+
+                b.Property<string>("Token")
+                    .IsRequired()
+                    .HasColumnType("nvarchar(450)");
+
+                b.Property<Guid>("UserId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.HasKey("Id");
+
+                b.HasIndex("Token")
+                    .IsUnique();
+
+                b.HasIndex("UserId");
+
+                b.ToTable("RefreshTokens", (string)null);
+            });
+
+            modelBuilder.Entity("IdentityService.Domain.Entities.User", b =>
+            {
+                b.HasOne("IdentityService.Domain.Entities.Role", "Role")
+                    .WithMany("Users")
+                    .HasForeignKey("RoleId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
+
+                b.Navigation("Role");
+            });
+
+            modelBuilder.Entity("IdentityService.Domain.Entities.UserActivityLog", b =>
+            {
+                b.HasOne("IdentityService.Domain.Entities.User", "User")
+                    .WithMany("ActivityLogs")
+                    .HasForeignKey("UserId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+
+                b.Navigation("User");
+            });
+
+            modelBuilder.Entity("IdentityService.Domain.Entities.RefreshToken", b =>
+            {
+                b.HasOne("IdentityService.Domain.Entities.User", "User")
+                    .WithMany("RefreshTokens")
+                    .HasForeignKey("UserId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+
+                b.Navigation("User");
+            });
+
+            modelBuilder.Entity("IdentityService.Domain.Entities.Role", b =>
+            {
+                b.Navigation("Users");
+            });
+
+            modelBuilder.Entity("IdentityService.Domain.Entities.User", b =>
+            {
+                b.Navigation("ActivityLogs");
+
+                b.Navigation("RefreshTokens");
+            });
+#pragma warning restore 612, 618
+        }
+    }
+}
