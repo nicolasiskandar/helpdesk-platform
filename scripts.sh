@@ -6,16 +6,18 @@ usage() {
 Usage: ./scripts.sh <command>
 
 Commands:
-  setup            Generate RSA keys and create .env file
-  up               Start all services (SQL Server, Identity, Frontend)
-  down             Stop all services
-  logs             Tail logs from all services
-  frontend-dev     Run frontend in dev mode (local, no Docker)
-  frontend-build   Build frontend for production
-  test             Run all unit tests
-  coverage         Run tests and show code coverage
-  clean            Remove test results and build artifacts
-  help             Show this help
+  setup                  Generate RSA keys and create .env file
+  up                     Start all services (SQL Server, Identity, Ticket, RabbitMQ, Frontend)
+  down                   Stop all services
+  logs                   Tail logs from all services
+  frontend-dev           Run frontend in dev mode (local, no Docker)
+  frontend-build         Build frontend for production
+  test                   Run all unit tests
+  test-identity          Run Identity Service tests only
+  test-ticket            Run Ticket Service tests only
+  coverage               Run tests and show code coverage
+  clean                  Remove test results and build artifacts
+  help                   Show this help
 EOF
 }
 
@@ -39,7 +41,10 @@ cmd_up() {
   echo "Services starting:"
   echo "  Frontend:       http://localhost:3000"
   echo "  Identity API:   http://localhost:5000"
-  echo "  Swagger UI:     http://localhost:5000/swagger"
+  echo "  Ticket API:     http://localhost:5001"
+  echo "  Swagger (ID):   http://localhost:5000/swagger"
+  echo "  Swagger (TKT):  http://localhost:5001/swagger"
+  echo "  RabbitMQ:       http://localhost:15672 (guest/guest)"
   echo "  SQL Server:     localhost:1433"
 }
 
@@ -68,12 +73,23 @@ cmd_frontend_build() {
 
 cmd_test() {
   dotnet test tests/IdentityService.Tests/
+  dotnet test tests/TicketService.Tests/
+}
+
+cmd_test_identity() {
+  dotnet test tests/IdentityService.Tests/
+}
+
+cmd_test_ticket() {
+  dotnet test tests/TicketService.Tests/
 }
 
 cmd_coverage() {
   dotnet tool install --global dotnet-reportgenerator-globaltool 2>/dev/null || true
   mkdir -p ./TestResults/Report
   dotnet test tests/IdentityService.Tests/ --collect:"XPlat Code Coverage" \
+    --results-directory ./TestResults > /dev/null 2>&1
+  dotnet test tests/TicketService.Tests/ --collect:"XPlat Code Coverage" \
     --results-directory ./TestResults > /dev/null 2>&1
   ~/.dotnet/tools/reportgenerator \
     -reports:'./TestResults/*/coverage.cobertura.xml' \
@@ -85,18 +101,21 @@ cmd_coverage() {
 cmd_clean() {
   rm -rf ./TestResults
   dotnet clean services/identity-service/src/IdentityService.Api/ > /dev/null 2>&1
+  dotnet clean services/ticket-service/src/TicketService.Api/ > /dev/null 2>&1
   echo "Cleaned."
 }
 
 case "${1:-help}" in
-  setup)          cmd_setup ;;
-  up)             cmd_up ;;
-  down)           cmd_down ;;
-  logs)           cmd_logs ;;
-  frontend-dev)   cmd_frontend_dev ;;
-  frontend-build) cmd_frontend_build ;;
-  test)           cmd_test ;;
-  coverage)       cmd_coverage ;;
-  clean)          cmd_clean ;;
-  help|*)         usage ;;
+  setup)            cmd_setup ;;
+  up)               cmd_up ;;
+  down)             cmd_down ;;
+  logs)             cmd_logs ;;
+  frontend-dev)     cmd_frontend_dev ;;
+  frontend-build)   cmd_frontend_build ;;
+  test)             cmd_test ;;
+  test-identity)    cmd_test_identity ;;
+  test-ticket)      cmd_test_ticket ;;
+  coverage)         cmd_coverage ;;
+  clean)            cmd_clean ;;
+  help|*)           usage ;;
 esac

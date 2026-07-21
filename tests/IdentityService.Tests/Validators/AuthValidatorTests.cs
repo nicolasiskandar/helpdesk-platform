@@ -62,6 +62,30 @@ public class AuthValidatorTests
         result.ShouldHaveValidationErrorFor(x => x.FullName);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData(null)]
+    public async Task RegisterRequest_EmptyPassword_Fails(string? password)
+    {
+        var validator = new RegisterRequestValidator();
+        var request = new RegisterRequest("test@example.com", password!, "John Doe");
+
+        var result = await validator.TestValidateAsync(request);
+
+        result.ShouldHaveValidationErrorFor(x => x.Password);
+    }
+
+    [Fact]
+    public async Task RegisterRequest_PasswordExactly7Chars_Fails()
+    {
+        var validator = new RegisterRequestValidator();
+        var request = new RegisterRequest("test@example.com", "Abc1!ef", "John Doe");
+
+        var result = await validator.TestValidateAsync(request);
+
+        result.ShouldHaveValidationErrorFor(x => x.Password);
+    }
+
     // ---------- LoginRequestValidator ----------
 
     [Fact]
@@ -78,6 +102,18 @@ public class AuthValidatorTests
     [Theory]
     [InlineData("", "password")]
     public async Task LoginRequest_EmptyEmail_Fails(string email, string password)
+    {
+        var validator = new LoginRequestValidator();
+        var request = new LoginRequest(email, password);
+
+        var result = await validator.TestValidateAsync(request);
+
+        result.ShouldHaveValidationErrorFor(x => x.Email);
+    }
+
+    [Theory]
+    [InlineData("not-an-email", "password")]
+    public async Task LoginRequest_InvalidEmail_Fails(string email, string password)
     {
         var validator = new LoginRequestValidator();
         var request = new LoginRequest(email, password);
@@ -125,6 +161,28 @@ public class AuthValidatorTests
         result.ShouldHaveValidationErrorFor(x => x.RefreshToken);
     }
 
+    [Fact]
+    public async Task RefreshRequest_NullToken_Fails()
+    {
+        var validator = new RefreshRequestValidator();
+        var request = new RefreshRequest(null!);
+
+        var result = await validator.TestValidateAsync(request);
+
+        result.ShouldHaveValidationErrorFor(x => x.RefreshToken);
+    }
+
+    [Fact]
+    public async Task RefreshRequest_ValidRequest_Passes()
+    {
+        var validator = new RefreshRequestValidator();
+        var request = new RefreshRequest("some-refresh-token");
+
+        var result = await validator.TestValidateAsync(request);
+
+        result.ShouldNotHaveAnyValidationErrors();
+    }
+
     // ---------- LogoutRequestValidator ----------
 
     [Fact]
@@ -136,5 +194,43 @@ public class AuthValidatorTests
         var result = await validator.TestValidateAsync(request);
 
         result.ShouldHaveValidationErrorFor(x => x.RefreshToken);
+    }
+
+    [Fact]
+    public async Task LogoutRequest_ValidRequest_Passes()
+    {
+        var validator = new LogoutRequestValidator();
+        var request = new LogoutRequest("some-refresh-token");
+
+        var result = await validator.TestValidateAsync(request);
+
+        result.ShouldNotHaveAnyValidationErrors();
+    }
+
+    // ---------- RegisterRequest additional cases ----------
+
+    [Fact]
+    public async Task RegisterRequest_FullNameExceedsMaxLength_Fails()
+    {
+        var validator = new RegisterRequestValidator();
+        var longName = new string('A', 201);
+        var request = new RegisterRequest("test@example.com", "StrongPass1!", longName);
+
+        var result = await validator.TestValidateAsync(request);
+
+        result.ShouldHaveValidationErrorFor(x => x.FullName);
+    }
+
+    [Theory]
+    [InlineData("a@test.com")]
+    [InlineData("user.name@domain.co.uk")]
+    public async Task RegisterRequest_ValidEmail_Passes(string email)
+    {
+        var validator = new RegisterRequestValidator();
+        var request = new RegisterRequest(email, "StrongPass1!", "John Doe");
+
+        var result = await validator.TestValidateAsync(request);
+
+        result.ShouldNotHaveValidationErrorFor(x => x.Email);
     }
 }

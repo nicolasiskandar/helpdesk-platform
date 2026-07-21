@@ -305,4 +305,127 @@ public class AuthServiceTests
         await act.Should().ThrowAsync<KeyNotFoundException>()
             .WithMessage("*not found*");
     }
+
+    // ---------- RegisterAsync additional cases ----------
+
+    [Fact]
+    public async Task RegisterAsync_DefaultRoleNotFound_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        _unitOfWorkMock.Setup(u => u.Users.EmailExistsAsync("test@example.com")).ReturnsAsync(false);
+        _unitOfWorkMock.Setup(u => u.Roles.GetByNameAsync("Employee")).ReturnsAsync((Role?)null);
+
+        var request = new RegisterRequest("test@example.com", "Pass123!", "Test User");
+
+        // Act
+        var act = () => _sut.RegisterAsync(request, "127.0.0.1");
+
+        // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*not found*");
+    }
+
+    // ---------- LoginAsync additional cases ----------
+
+    [Fact]
+    public async Task LoginAsync_NonexistentEmail_ThrowsUnauthorizedAccessException()
+    {
+        // Arrange
+        _unitOfWorkMock.Setup(u => u.Users.GetByEmailAsync("nonexistent@example.com")).ReturnsAsync((User?)null);
+
+        var request = new LoginRequest("nonexistent@example.com", "Pass123!");
+
+        // Act
+        var act = () => _sut.LoginAsync(request, "127.0.0.1");
+
+        // Assert
+        await act.Should().ThrowAsync<UnauthorizedAccessException>()
+            .WithMessage("*Invalid email or password*");
+    }
+
+    // ---------- RefreshAsync additional cases ----------
+
+    [Fact]
+    public async Task RefreshAsync_ExpiredToken_ThrowsUnauthorizedAccessException()
+    {
+        // Arrange
+        var storedToken = new RefreshToken
+        {
+            Id = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
+            Token = "hashed-token",
+            ExpiresAt = DateTime.UtcNow.AddDays(-1),
+            User = new User { IsActive = true, Role = new Role { Name = "Employee" } }
+        };
+
+        _unitOfWorkMock.Setup(u => u.RefreshTokens.GetByTokenAsync(It.IsAny<string>())).ReturnsAsync(storedToken);
+
+        var request = new RefreshRequest("expired-token");
+
+        // Act
+        var act = () => _sut.RefreshAsync(request, "127.0.0.1");
+
+        // Assert
+        await act.Should().ThrowAsync<UnauthorizedAccessException>()
+            .WithMessage("*expired or has been revoked*");
+    }
+
+    [Fact]
+    public async Task RefreshAsync_InvalidToken_ThrowsUnauthorizedAccessException()
+    {
+        // Arrange
+        _unitOfWorkMock.Setup(u => u.RefreshTokens.GetByTokenAsync(It.IsAny<string>())).ReturnsAsync((RefreshToken?)null);
+
+        var request = new RefreshRequest("invalid-token");
+
+        // Act
+        var act = () => _sut.RefreshAsync(request, "127.0.0.1");
+
+        // Assert
+        await act.Should().ThrowAsync<UnauthorizedAccessException>()
+            .WithMessage("*Invalid refresh token*");
+    }
+
+    [Fact]
+    public async Task RefreshAsync_DeactivatedUser_ThrowsUnauthorizedAccessException()
+    {
+        // Arrange
+        var storedToken = new RefreshToken
+        {
+            Id = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
+            Token = "hashed-token",
+            ExpiresAt = DateTime.UtcNow.AddDays(7),
+            User = new User { IsActive = false, Role = new Role { Name = "Employee" } }
+        };
+
+        _unitOfWorkMock.Setup(u => u.RefreshTokens.GetByTokenAsync(It.IsAny<string>())).ReturnsAsync(storedToken);
+
+        var request = new RefreshRequest("valid-token");
+
+        // Act
+        var act = () => _sut.RefreshAsync(request, "127.0.0.1");
+
+        // Assert
+        await act.Should().ThrowAsync<UnauthorizedAccessException>()
+            .WithMessage("*deactivated*");
+    }
+
+    // ---------- LogoutAsync additional cases ----------
+
+    [Fact]
+    public async Task LogoutAsync_InvalidToken_ThrowsUnauthorizedAccessException()
+    {
+        // Arrange
+        _unitOfWorkMock.Setup(u => u.RefreshTokens.GetByTokenAsync(It.IsAny<string>())).ReturnsAsync((RefreshToken?)null);
+
+        var request = new LogoutRequest("nonexistent-token");
+
+        // Act
+        var act = () => _sut.LogoutAsync(request, "127.0.0.1");
+
+        // Assert
+        await act.Should().ThrowAsync<UnauthorizedAccessException>()
+            .WithMessage("*Invalid refresh token*");
+    }
 }

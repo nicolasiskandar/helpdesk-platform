@@ -27,6 +27,28 @@ services:
           memory: 2g
 
   # ---------------------------------------------------------------------------
+  # RabbitMQ
+  # ---------------------------------------------------------------------------
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: helpdesk-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - helpdesk-network
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
   # Identity Service
   # ---------------------------------------------------------------------------
   identity-service:
@@ -54,6 +76,37 @@ services:
       - helpdesk-network
 
   # ---------------------------------------------------------------------------
+  # Ticket Service
+  # ---------------------------------------------------------------------------
+  ticket-service:
+    build:
+      context: ./services/ticket-service
+      dockerfile: Dockerfile
+    container_name: helpdesk-ticket-service
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Server=sqlserver;Database=TicketDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;"
+      Jwt__PublicKeyPath: /app/certs/public.pem
+      Jwt__Issuer: ${JWT_ISSUER}
+      Jwt__Audience: ${JWT_AUDIENCE}
+      RabbitMQ__HostName: rabbitmq
+      RabbitMQ__Port: "5672"
+      RabbitMQ__ExchangeName: ticket.events
+      Outbox__BatchSize: "20"
+      Outbox__PollIntervalSeconds: "5"
+    ports:
+      - "5001:8080"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+      - ./infra/certs:/app/certs:ro
+    networks:
+      - helpdesk-network
+
+  # ---------------------------------------------------------------------------
   # Frontend (Next.js)
   # ---------------------------------------------------------------------------
   frontend:
@@ -72,6 +125,7 @@ services:
 
 volumes:
   sqlserver-data:
+  rabbitmq-data:
 
 networks:
   helpdesk-network:
