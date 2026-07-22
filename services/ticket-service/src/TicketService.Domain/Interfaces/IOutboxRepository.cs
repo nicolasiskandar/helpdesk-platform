@@ -8,4 +8,5 @@ public interface IOutboxRepository
     Task<IReadOnlyList<OutboxMessage>> GetUnprocessedMessagesAsync(int batchSize);
     Task MarkAsProcessedAsync(Guid id);
     Task MarkAsFailedAsync(Guid id, string error);
+    Task MarkAsDLQAsync(Guid id, string error);
 }

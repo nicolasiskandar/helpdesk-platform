@@ -22,7 +22,7 @@ public class OutboxRepository : IOutboxRepository
     public async Task<IReadOnlyList<OutboxMessage>> GetUnprocessedMessagesAsync(int batchSize)
     {
         return await _context.OutboxMessages
-            .Where(m => m.ProcessedAt == null)
+            .Where(m => m.ProcessedAt == null && m.RetryCount < m.MaxRetries)
             .OrderBy(m => m.CreatedAt)
             .Take(batchSize)
             .ToListAsync();
@@ -43,7 +43,19 @@ public class OutboxRepository : IOutboxRepository
         var message = await _context.OutboxMessages.FindAsync(id);
         if (message != null)
         {
+            message.RetryCount++;
             message.Error = error;
+            _context.OutboxMessages.Update(message);
+        }
+    }
+
+    public async Task MarkAsDLQAsync(Guid id, string error)
+    {
+        var message = await _context.OutboxMessages.FindAsync(id);
+        if (message != null)
+        {
+            message.ProcessedAt = DateTime.UtcNow;
+            message.Error = $"[DLQ] {error}";
             _context.OutboxMessages.Update(message);
         }
     }

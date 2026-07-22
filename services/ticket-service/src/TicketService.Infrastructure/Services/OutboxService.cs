@@ -13,6 +13,7 @@ public class OutboxService : BackgroundService
     private readonly ILogger<OutboxService> _logger;
     private readonly int _batchSize;
     private readonly TimeSpan _pollInterval;
+    private readonly int _defaultMaxRetries;
 
     public OutboxService(IServiceProvider serviceProvider, ILogger<OutboxService> logger,
         IConfiguration configuration)
@@ -22,6 +23,7 @@ public class OutboxService : BackgroundService
         _batchSize = int.TryParse(configuration["Outbox:BatchSize"], out var b) ? b : 20;
         _pollInterval = TimeSpan.FromSeconds(
             int.TryParse(configuration["Outbox:PollIntervalSeconds"], out var i) ? i : 5);
+        _defaultMaxRetries = int.TryParse(configuration["Outbox:MaxRetries"], out var r) ? r : 5;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -41,13 +43,29 @@ public class OutboxService : BackgroundService
                 {
                     try
                     {
-                        await publisher.PublishAsync(message.EventType, message.Payload);
+                        await publisher.PublishAsync(message.EventType, message.Payload, message.Id.ToString());
                         await unitOfWork.Outbox.MarkAsProcessedAsync(message.Id);
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Failed to publish outbox message {Id}", message.Id);
+                        _logger.LogError(ex, "Failed to publish outbox message {Id} (attempt {RetryCount}/{MaxRetries})",
+                            message.Id, message.RetryCount + 1, message.MaxRetries);
+
                         await unitOfWork.Outbox.MarkAsFailedAsync(message.Id, ex.Message);
+
+                        if (message.RetryCount + 1 >= message.MaxRetries)
+                        {
+                            _logger.LogWarning("Message {Id} exhausted retries, sending to DLQ", message.Id);
+                            try
+                            {
+                                await publisher.PublishToDLQAsync(message.EventType, message.Payload, message.Id.ToString());
+                            }
+                            catch (Exception dlqEx)
+                            {
+                                _logger.LogError(dlqEx, "Failed to publish message {Id} to DLQ", message.Id);
+                            }
+                            await unitOfWork.Outbox.MarkAsDLQAsync(message.Id, ex.Message);
+                        }
                     }
                 }
 

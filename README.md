@@ -41,7 +41,7 @@ This will:
 - Build and start the Identity Service, Ticket Service, and API Gateway
 - Run EF Core migrations automatically (Development mode)
 - Seed the Roles table (Admin, IT Support Agent, Employee, Manager)
-- Start RabbitMQ and Jaeger for distributed tracing
+- Start RabbitMQ, Jaeger, OTel Collector, Prometheus, and Grafana
 
 The stack is available at:
 
@@ -54,6 +54,8 @@ The stack is available at:
 | Swagger (Identity) | http://localhost:5010/swagger | Identity API docs |
 | Swagger (Ticket) | http://localhost:5011/swagger | Ticket API docs |
 | Jaeger UI | http://localhost:16686 | Distributed tracing |
+| Prometheus | http://localhost:9090 | Metrics |
+| Grafana | http://localhost:3001 | Dashboards (admin/admin) |
 | RabbitMQ | http://localhost:15672 | Message broker (guest/guest) |
 | SQL Server | localhost:1433 | Database |
 
@@ -74,6 +76,8 @@ curl http://localhost:5011/health/ready
 
 - Open `http://localhost:5000/swagger` for the Gateway-proxied Identity API
 - Open `http://localhost:16686` for Jaeger traces
+- Open `http://localhost:9090` for Prometheus metrics
+- Open `http://localhost:3001` for Grafana dashboards (admin/admin)
 
 ## API Endpoints
 
@@ -217,13 +221,40 @@ curl http://localhost:5000/api/tickets/<id> \
 
 ## Observability
 
+### Architecture
+
+All backend services export traces and metrics via OTLP gRPC to an **OTel Collector**,
+which fans out to Jaeger (traces) and Prometheus (metrics):
+
+```
+Backend Services ──OTLP──▶ OTel Collector ──▶ Jaeger (traces)
+                                  │
+                                  └──▶ Prometheus (metrics) ◀── Grafana (dashboards)
+```
+
 ### Distributed Tracing (Jaeger)
 
-All three backend services export traces to Jaeger via OTLP (gRPC on port 4317). Traces
-include HTTP requests, EF Core queries, outbound HTTP calls, and RabbitMQ publishes with
-W3C `traceparent`/`tracestate` propagation.
+All three backend services export traces to the OTel Collector via OTLP (gRPC on port 4317).
+The collector forwards traces to Jaeger. Traces include HTTP requests, EF Core queries,
+outbound HTTP calls, and RabbitMQ publishes with W3C `traceparent`/`tracestate` propagation.
+The Gateway's `TraceContextTransform` injects trace context into proxied requests so
+downstream services continue the same trace.
 
 Open Jaeger UI at `http://localhost:16686` and select a service to view traces.
+
+### Metrics (Prometheus + Grafana)
+
+The OTel Collector exposes 25 metrics on port 8889 which Prometheus scrapes. Key metrics:
+
+- `helpdesk_http_server_request_duration_seconds` — request latency histogram
+- `helpdesk_http_server_active_requests` — concurrent in-flight requests
+- `helpdesk_http_client_request_duration_seconds` — outbound HTTP call latency
+- `helpdesk_dns_lookup_duration_seconds` — DNS resolution time
+- `helpdesk_kestrel_*` — Kestrel connection pool stats
+
+Open Prometheus at `http://localhost:9090` to query metrics.
+Open Grafana at `http://localhost:3001` for the pre-provisioned **Helpdesk Overview**
+dashboard (request rate, p95 latency, active requests, HTTP status codes).
 
 ### Health Checks
 
@@ -266,7 +297,7 @@ Log format:
 | `Categories` | Ticket categories (seeded) |
 | `Priorities` | Ticket priorities with levels (seeded) |
 | `Statuses` | Ticket statuses (seeded) |
-| `Outbox` | Transactional outbox for domain events |
+| `OutboxMessages` | Transactional outbox for domain events (with retry tracking + DLQ) |
 
 ## Project Structure
 
@@ -280,8 +311,18 @@ helpdesk-platform/
 │   ├── certs/                    # RSA keys (gitignored)
 │   ├── jaeger/
 │   │   └── jaeger.yml            # Jaeger v2 config (OTLP, in-memory storage)
-│   └── prometheus/
-│       └── prometheus.yml        # (reserved for future metrics)
+│   ├── otel-collector/
+│   │   └── otel-collector.yml    # OTLP receiver → Jaeger (traces) + Prometheus (metrics)
+│   ├── prometheus/
+│   │   └── prometheus.yml        # Scrapes OTel Collector metrics
+│   └── grafana/
+│       ├── dashboards/
+│       │   └── helpdesk-overview.json
+│       └── provisioning/
+│           ├── dashboards/
+│           │   └── dashboards.yml
+│           └── datasources/
+│               └── prometheus.yml
 ├── scripts.sh
 ├── services/
 │   ├── gateway/                  # YARP API Gateway
@@ -335,9 +376,10 @@ Unit tests use **xUnit**, **Moq**, and **FluentAssertions**.
 - **ORM**: EF Core 8, code-first migrations
 - **Auth**: JWT RS256 (asymmetric), PasswordHasher from ASP.NET Core Identity
 - **Validation**: FluentValidation
-- **Messaging**: RabbitMQ (topic exchange, transactional outbox pattern)
+- **Messaging**: RabbitMQ (topic exchange, transactional outbox pattern with DLQ + retry limits)
 - **Gateway**: YARP 2.1.0 (reverse proxy)
-- **Tracing**: OpenTelemetry → Jaeger (OTLP gRPC)
+- **Tracing**: OpenTelemetry → OTel Collector → Jaeger (OTLP gRPC)
+- **Metrics**: OpenTelemetry → OTel Collector → Prometheus → Grafana
 - **Logging**: Serilog (structured, with TraceId/SpanId enrichment)
 - **Testing**: xUnit, Moq, FluentAssertions
 - **Frontend**: Next.js 16, React 19, shadcn/ui, Tailwind CSS v4

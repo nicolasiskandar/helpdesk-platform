@@ -125,8 +125,11 @@ public class TicketDbContext : DbContext
             entity.Property(e => e.EventType).IsRequired().HasMaxLength(100);
             entity.Property(e => e.Payload).IsRequired();
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.Property(e => e.RetryCount).HasDefaultValue(0);
+            entity.Property(e => e.MaxRetries).HasDefaultValue(5);
 
             entity.HasIndex(e => e.ProcessedAt);
+            entity.HasIndex(e => new { e.ProcessedAt, e.RetryCount });
         });
 
         SeedLookupData(modelBuilder);
