@@ -45,6 +45,9 @@ cmd_up() {
   echo "  Ticket API:     http://localhost:5011 (direct)"
   echo "  Swagger (ID):   http://localhost:5010/swagger"
   echo "  Swagger (TKT):  http://localhost:5011/swagger"
+  echo "  Jaeger UI:      http://localhost:16686"
+  echo "  Prometheus:     http://localhost:9090"
+  echo "  Grafana:        http://localhost:3001 (admin/admin)"
   echo "  RabbitMQ:       http://localhost:15672 (guest/guest)"
   echo "  SQL Server:     localhost:1433"
 }

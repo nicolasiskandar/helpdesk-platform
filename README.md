@@ -38,31 +38,49 @@ docker compose up --build
 
 This will:
 - Pull SQL Server 2022 image
-- Build and start the Identity Service
+- Build and start the Identity Service, Ticket Service, and API Gateway
 - Run EF Core migrations automatically (Development mode)
 - Seed the Roles table (Admin, IT Support Agent, Employee, Manager)
+- Start RabbitMQ and Jaeger for distributed tracing
 
 The stack is available at:
 
-| Service | URL |
-|---------|-----|
-| Frontend | http://localhost:3000 |
-| Identity API | http://localhost:5000 |
-| Swagger UI | http://localhost:5000/swagger |
-| SQL Server | localhost:1433 |
+| Service | URL | Purpose |
+|---------|-----|---------|
+| Frontend | http://localhost:3000 | Next.js app |
+| API Gateway | http://localhost:5000 | Single entry point for all API calls |
+| Identity API | http://localhost:5010 | Direct access (bypass gateway) |
+| Ticket API | http://localhost:5011 | Direct access (bypass gateway) |
+| Swagger (Identity) | http://localhost:5010/swagger | Identity API docs |
+| Swagger (Ticket) | http://localhost:5011/swagger | Ticket API docs |
+| Jaeger UI | http://localhost:16686 | Distributed tracing |
+| RabbitMQ | http://localhost:15672 | Message broker (guest/guest) |
+| SQL Server | localhost:1433 | Database |
 
 ### 4. Verify health
 
 ```bash
+# Gateway
 curl http://localhost:5000/health
-# {"status":"healthy","service":"identity-service"}
+
+# Identity Service (includes SQL Server check)
+curl http://localhost:5010/health/ready
+
+# Ticket Service (includes SQL Server + RabbitMQ checks)
+curl http://localhost:5011/health/ready
 ```
 
-### 5. Open Swagger UI
+### 5. Explore
 
-Navigate to `http://localhost:5000/swagger` in your browser to explore and test the API interactively.
+- Open `http://localhost:5000/swagger` for the Gateway-proxied Identity API
+- Open `http://localhost:16686` for Jaeger traces
 
 ## API Endpoints
+
+All API calls go through the Gateway at `http://localhost:5000`. The gateway routes:
+
+- `/api/auth/*` → Identity Service
+- `/api/tickets/*` → Ticket Service
 
 ### POST /api/auth/register
 
@@ -152,22 +170,6 @@ curl -X POST http://localhost:5000/api/auth/refresh \
   }'
 ```
 
-Response (200):
-```json
-{
-  "accessToken": "eyJhbGciOiJSUzI1NiIs...",
-  "refreshToken": "newRefreshToken123...",
-  "expiresAt": "2026-07-15T18:32:13Z"
-}
-```
-
-Revoked token returns 401:
-```json
-{
-  "message": "Refresh token is expired or has been revoked."
-}
-```
-
 ### POST /api/auth/logout
 
 Revokes the provided refresh token.
@@ -190,96 +192,61 @@ Returns the public RSA key in JWKS format for JWT validation.
 curl http://localhost:5000/.well-known/jwks.json
 ```
 
-Response (200):
-```json
-{
-  "keys": [
-    {
-      "kty": "RSA",
-      "kid": "identity-rsa-key",
-      "use": "sig",
-      "alg": "RS256",
-      "n": "...",
-      "e": "AQAB"
-    }
-  ]
-}
-```
-
-## Validation Errors
-
-The API returns structured validation errors with FluentValidation:
+### Ticket Endpoints
 
 ```bash
-curl -X POST http://localhost:5000/api/auth/register \
+# Create a ticket
+curl -X POST http://localhost:5000/api/tickets \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
   -H "Content-Type: application/json" \
-  -d '{"email": "x", "password": "1", "fullName": ""}'
+  -d '{
+    "title": "Printer not working",
+    "description": "The 3rd floor printer is jammed",
+    "categoryName": "Hardware",
+    "priorityName": "Medium"
+  }'
+
+# List all tickets
+curl http://localhost:5000/api/tickets \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
+
+# Get ticket by ID
+curl http://localhost:5000/api/tickets/<id> \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
 ```
 
-Response (400):
-```json
-{
-  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
-  "title": "One or more validation errors occurred.",
-  "status": 400,
-  "errors": {
-    "Email": ["A valid email address is required."],
-    "FullName": ["Full name is required."],
-    "Password": [
-      "Password must be at least 8 characters long.",
-      "Password must contain at least one uppercase letter.",
-      "Password must contain at least one lowercase letter.",
-      "Password must contain at least one digit.",
-      "Password must contain at least one special character."
-    ]
-  },
-  "traceId": "00-c8571dda...-00"
-}
+## Observability
+
+### Distributed Tracing (Jaeger)
+
+All three backend services export traces to Jaeger via OTLP (gRPC on port 4317). Traces
+include HTTP requests, EF Core queries, outbound HTTP calls, and RabbitMQ publishes with
+W3C `traceparent`/`tracestate` propagation.
+
+Open Jaeger UI at `http://localhost:16686` and select a service to view traces.
+
+### Health Checks
+
+| Endpoint | Service | Checks |
+|----------|---------|--------|
+| `/health` | All services | Liveness (always 200) |
+| `/health/ready` | Identity Service | SQL Server connectivity |
+| `/health/ready` | Ticket Service | SQL Server + RabbitMQ connectivity |
+
+### Request Logging
+
+Every request gets a correlation ID (`X-Correlation-ID` header). If the caller doesn't
+provide one, the service generates it. The correlation ID is logged with every request
+along with method, path, status code, elapsed time, and trace ID.
+
+Log format:
 ```
-
-## JWT & Inter-Service Auth
-
-### How other services validate tokens
-
-Per the architecture (`docs/ARCHITECTURE.md` section 8), downstream services do **not** call
-back to Identity Service on every request. Instead:
-
-1. **The API Gateway** validates the JWT once on the way in using the public key.
-2. **Downstream services** receive the validated JWT and can optionally re-validate locally
-   using the same public key.
-
-The public RSA key is available at:
+[14:32:01 INF] HTTP GET /api/tickets responded 200 in 45ms [abc123] TraceId=00-abc123...
 ```
-GET /.well-known/jwks.json
-```
-
-This follows the JWKS standard. Other services can fetch this endpoint once at startup and
-cache the key, or embed the public PEM directly (preferred for zero network dependency).
-
-### Token lifetimes
-
-| Token | Lifetime | Storage |
-|-------|----------|---------|
-| Access token | 15 minutes | Client-side (memory) |
-| Refresh token | 7 days | Server-side (DB, hashed) |
-
-### Key format
-
-Identity Service signs with RS256 (asymmetric). The private key stays inside the Identity
-Service container. The public key is exposed for validation. Services that need to validate
-tokens should:
-
-1. Fetch `/.well-known/jwks.json` at startup
-2. Match the `kid` header in JWTs against the JWKS key set
-3. Cache the key and only refresh periodically (e.g. every 24 hours)
-
-### Refresh token security
-
-Refresh tokens are stored **SHA256-hashed** in the database. The raw token is only sent
-to the client once. On refresh/logout, the incoming token is hashed before lookup — the
-database never sees plaintext refresh tokens.
 
 ## Database Tables
+
+### Identity Service
 
 | Table | Description |
 |-------|-------------|
@@ -287,6 +254,19 @@ database never sees plaintext refresh tokens.
 | `Roles` | Seed data: Admin, IT Support Agent, Employee, Manager |
 | `RefreshTokens` | Single-use refresh tokens with rotation, hashed in DB |
 | `UserActivityLog` | Audit trail for login, token refresh, logout events |
+
+### Ticket Service
+
+| Table | Description |
+|-------|-------------|
+| `Tickets` | Ticket records with reference numbers (TKT-XXXXXX) |
+| `TicketComments` | Comments on tickets |
+| `TicketAssignments` | Agent assignment history |
+| `TicketStatusHistory` | Status change audit trail |
+| `Categories` | Ticket categories (seeded) |
+| `Priorities` | Ticket priorities with levels (seeded) |
+| `Statuses` | Ticket statuses (seeded) |
+| `Outbox` | Transactional outbox for domain events |
 
 ## Project Structure
 
@@ -296,11 +276,24 @@ helpdesk-platform/
 ├── .env
 ├── docs/ARCHITECTURE.md
 ├── infra/
+│   ├── .env.example
+│   ├── certs/                    # RSA keys (gitignored)
+│   ├── jaeger/
+│   │   └── jaeger.yml            # Jaeger v2 config (OTLP, in-memory storage)
+│   └── prometheus/
+│       └── prometheus.yml        # (reserved for future metrics)
 ├── scripts.sh
 ├── services/
-│   └── ...
+│   ├── gateway/                  # YARP API Gateway
+│   ├── identity-service/         # Auth, user management
+│   ├── ticket-service/           # Ticket CRUD, workflow
+│   ├── ai-service/               # (planned)
+│   ├── notification-service/     # (planned)
+│   └── search-service/           # (planned)
+├── frontend/                     # Next.js app
 ├── tests/
-│   └── IdentityService.Tests/
+│   ├── IdentityService.Tests/
+│   └── TicketService.Tests/
 └── README.md
 ```
 
@@ -312,37 +305,28 @@ Unit tests use **xUnit**, **Moq**, and **FluentAssertions**.
 
 ```bash
 ./scripts.sh setup            # Generate RSA keys and create .env
-./scripts.sh up               # Start all services (SQL, Identity, Frontend)
+./scripts.sh up               # Start all services
 ./scripts.sh down             # Stop all services
 ./scripts.sh logs             # Tail logs from all services
 ./scripts.sh frontend-dev     # Run frontend locally (no Docker)
-./scripts.sh test             # Run all unit tests
+./scripts.sh test             # Run all unit tests (91 tests)
 ./scripts.sh coverage         # Run tests and show code coverage
 ./scripts.sh clean            # Remove test results and build artifacts
 ./scripts.sh help             # Show all available commands
 ```
 
-### Coverage
-
-| Class | Coverage |
-|-------|----------|
-| Domain entities | 100% |
-| AuthService | 98.4% |
-| PasswordHasherService | 100% |
-| JwtTokenService | 90.5% |
-| All validators | 100% |
-| All DTOs | 100% |
-| EF Core / Repositories | 0% (integration test territory) |
-
 ### Test breakdown
 
 | File | Tests | What's tested |
 |------|-------|---------------|
-| `AuthServiceTests.cs` | 10 | Register, login, refresh, logout, get-user (mocked dependencies) |
-| `PasswordHasherTests.cs` | 4 | Hash, verify, salt uniqueness (real implementation) |
-| `JwtTokenServiceTests.cs` | 5 | Token generation, claims, validation (real RSA keys) |
-| `AuthValidatorTests.cs` | 15 | All FluentValidation rules for each DTO |
-| **Total** | **34** | |
+| `AuthServiceTests.cs` | 10 | Register, login, refresh, logout, get-user |
+| `PasswordHasherTests.cs` | 4 | Hash, verify, salt uniqueness |
+| `JwtTokenServiceTests.cs` | 5 | Token generation, claims, validation |
+| `AuthValidatorTests.cs` | 15 | All FluentValidation rules |
+| `TicketBusinessServiceTests.cs` | 14 | Ticket CRUD, assignment, workflow |
+| `ReferenceNumberGeneratorTests.cs` | 4 | Reference number format and uniqueness |
+| `TicketValidatorTests.cs` | 18 | All FluentValidation rules for tickets |
+| **Total** | **91** | |
 
 ## Tech Stack
 
@@ -351,13 +335,18 @@ Unit tests use **xUnit**, **Moq**, and **FluentAssertions**.
 - **ORM**: EF Core 8, code-first migrations
 - **Auth**: JWT RS256 (asymmetric), PasswordHasher from ASP.NET Core Identity
 - **Validation**: FluentValidation
+- **Messaging**: RabbitMQ (topic exchange, transactional outbox pattern)
+- **Gateway**: YARP 2.1.0 (reverse proxy)
+- **Tracing**: OpenTelemetry → Jaeger (OTLP gRPC)
+- **Logging**: Serilog (structured, with TraceId/SpanId enrichment)
 - **Testing**: xUnit, Moq, FluentAssertions
+- **Frontend**: Next.js 16, React 19, shadcn/ui, Tailwind CSS v4
 - **Container**: Multi-stage Dockerfile (SDK build, ASP.NET runtime)
 
 ## Stopping the stack
 
 ```bash
 docker compose down
-# Add -v to also remove the database volume:
+# Add -v to also remove database volumes:
 # docker compose down -v
 ```

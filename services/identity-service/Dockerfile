@@ -14,6 +14,8 @@ RUN dotnet publish src/IdentityService.Api/IdentityService.Api.csproj -c Release
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
 RUN adduser --disabled-password --gecos '' appuser
 USER appuser
 

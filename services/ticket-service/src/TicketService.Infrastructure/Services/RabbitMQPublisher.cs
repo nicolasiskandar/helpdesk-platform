@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using Microsoft.Extensions.Configuration;
 using RabbitMQ.Client;
@@ -38,6 +39,15 @@ public class RabbitMQPublisher : IEventPublisher, IDisposable
         properties.Persistent = true;
         properties.ContentType = "application/json";
         properties.Type = routingKey;
+
+        properties.Headers ??= new Dictionary<string, object>();
+        var activity = Activity.Current;
+        if (activity?.Id != null)
+        {
+            properties.Headers["traceparent"] = Encoding.UTF8.GetBytes(activity.Id);
+            if (!string.IsNullOrEmpty(activity.TraceStateString))
+                properties.Headers["tracestate"] = Encoding.UTF8.GetBytes(activity.TraceStateString);
+        }
 
         _channel.BasicPublish(
             exchange: _exchangeName,
