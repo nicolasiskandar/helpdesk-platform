@@ -3,11 +3,6 @@
 Microservices-based IT Help Desk platform. Employees submit tickets, IT agents resolve them,
 admins manage the system, and an AI assistant helps deflect and triage issues.
 
-## Architecture
-
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full system design, service
-boundaries, data ownership rules, and design principles.
-
 ## Quick Start
 
 ### Prerequisites
