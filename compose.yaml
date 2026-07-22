@@ -49,7 +49,25 @@ services:
       retries: 10
 
   # ---------------------------------------------------------------------------
-  # Identity Service
+  # API Gateway (YARP) — single entry point for the frontend
+  # ---------------------------------------------------------------------------
+  gateway:
+    build:
+      context: ./services/gateway
+      dockerfile: Dockerfile
+    container_name: helpdesk-gateway
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+    ports:
+      - "5000:8080"
+    depends_on:
+      - identity-service
+      - ticket-service
+    networks:
+      - helpdesk-network
+
+  # ---------------------------------------------------------------------------
+  # Identity Service (internal — gateway routes /api/auth/* here)
   # ---------------------------------------------------------------------------
   identity-service:
     build:
@@ -66,7 +84,7 @@ services:
       Jwt__AccessTokenExpiryMinutes: ${JWT_ACCESS_TOKEN_EXPIRY_MINUTES}
       Jwt__RefreshTokenExpiryDays: ${JWT_REFRESH_TOKEN_EXPIRY_DAYS}
     ports:
-      - "5000:8080"
+      - "5010:8080"
     depends_on:
       sqlserver:
         condition: service_healthy
@@ -76,7 +94,7 @@ services:
       - helpdesk-network
 
   # ---------------------------------------------------------------------------
-  # Ticket Service
+  # Ticket Service (internal — gateway routes /api/tickets/* here)
   # ---------------------------------------------------------------------------
   ticket-service:
     build:
@@ -95,7 +113,7 @@ services:
       Outbox__BatchSize: "20"
       Outbox__PollIntervalSeconds: "5"
     ports:
-      - "5001:8080"
+      - "5011:8080"
     depends_on:
       sqlserver:
         condition: service_healthy
@@ -119,7 +137,7 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - identity-service
+      - gateway
     networks:
       - helpdesk-network
 

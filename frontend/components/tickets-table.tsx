@@ -17,16 +17,11 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { StatusBadge, PriorityIndicator } from "@/components/ticket-badges"
-import { getUser } from "@/lib/data"
 import { formatRelative } from "@/lib/analytics"
 import type { Ticket } from "@/lib/types"
 
-function initials(name: string) {
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .slice(0, 2)
-    .join("")
+function initials(id: string) {
+  return id.slice(0, 2).toUpperCase()
 }
 
 export function TicketsTable({
@@ -64,56 +59,55 @@ export function TicketsTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {tickets.map((ticket) => {
-            const assignee = getUser(ticket.assigneeId)
-            return (
-              <TableRow key={ticket.id} className="group">
-                <TableCell className="font-mono text-xs text-muted-foreground">
-                  {ticket.reference}
+          {tickets.map((ticket) => (
+            <TableRow key={ticket.id} className="group">
+              <TableCell className="font-mono text-xs text-muted-foreground">
+                {ticket.reference}
+              </TableCell>
+              <TableCell>
+                <Link
+                  href={`/tickets/${ticket.id}`}
+                  className="font-medium underline-offset-4 hover:underline"
+                >
+                  <span className="line-clamp-1">{ticket.subject}</span>
+                </Link>
+              </TableCell>
+              {!compact && (
+                <TableCell className="text-sm text-muted-foreground">
+                  {ticket.category}
                 </TableCell>
+              )}
+              <TableCell>
+                <PriorityIndicator priority={ticket.priority} />
+              </TableCell>
+              <TableCell>
+                <StatusBadge status={ticket.status} />
+              </TableCell>
+              {!compact && (
                 <TableCell>
-                  <Link
-                    href={`/tickets/${ticket.reference}`}
-                    className="font-medium underline-offset-4 hover:underline"
-                  >
-                    <span className="line-clamp-1">{ticket.subject}</span>
-                  </Link>
-                </TableCell>
-                {!compact && (
-                  <TableCell className="text-sm text-muted-foreground">
-                    {ticket.category}
-                  </TableCell>
-                )}
-                <TableCell>
-                  <PriorityIndicator priority={ticket.priority} />
-                </TableCell>
-                <TableCell>
-                  <StatusBadge status={ticket.status} />
-                </TableCell>
-                {!compact && (
-                  <TableCell>
-                    {assignee ? (
-                      <div className="flex items-center gap-2">
-                        <Avatar className="size-6">
-                          <AvatarFallback className="bg-muted text-[10px]">
-                            {initials(assignee.name)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span className="text-sm">{assignee.name}</span>
-                      </div>
-                    ) : (
-                      <span className="text-sm text-muted-foreground">
-                        Unassigned
+                  {ticket.assigneeId ? (
+                    <div className="flex items-center gap-2">
+                      <Avatar className="size-6">
+                        <AvatarFallback className="bg-muted text-[10px]">
+                          {initials(ticket.assigneeId)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="text-sm">
+                        {ticket.assigneeId.slice(0, 8)}
                       </span>
-                    )}
-                  </TableCell>
-                )}
-                <TableCell className="text-right text-sm text-muted-foreground">
-                  {formatRelative(ticket.updatedAt)}
+                    </div>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">
+                      Unassigned
+                    </span>
+                  )}
                 </TableCell>
-              </TableRow>
-            )
-          })}
+              )}
+              <TableCell className="text-right text-sm text-muted-foreground">
+                {formatRelative(ticket.updatedAt)}
+              </TableCell>
+            </TableRow>
+          ))}
         </TableBody>
       </Table>
     </div>

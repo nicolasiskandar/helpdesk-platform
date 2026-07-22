@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import { useStore, statusBadgeClass } from "@/lib/store"
-import { users } from "@/lib/data"
 import type { TicketStatus, TicketPriority, TicketCategory } from "@/lib/types"
 import { TicketsTable } from "@/components/tickets-table"
 import { Button } from "@/components/ui/button"
@@ -20,6 +19,7 @@ import {
   InputGroupAddon,
 } from "@/components/ui/input-group"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { Skeleton } from "@/components/ui/skeleton"
 import { SearchIcon, PlusIcon, XIcon } from "lucide-react"
 import Link from "next/link"
 
@@ -35,41 +35,23 @@ const CATEGORIES: TicketCategory[] = [
   "Hardware",
   "Software",
   "Network",
-  "Access",
+  "Access Request",
   "Email",
-  "Security",
   "Other",
 ]
 
 export default function TicketsPage() {
-  const { tickets, role, currentUserId } = useStore()
+  const { tickets, role, ticketsLoading } = useStore()
   const [query, setQuery] = React.useState("")
   const [status, setStatus] = React.useState<string>("all")
   const [priority, setPriority] = React.useState<string>("all")
   const [category, setCategory] = React.useState<string>("all")
-  const [assignee, setAssignee] = React.useState<string>("all")
-
-  const agents = users.filter(
-    (u) => u.role === "agent" || u.role === "admin"
-  )
 
   const filtered = React.useMemo(() => {
     return tickets.filter((t) => {
-      // Employees only see their own tickets.
-      if (role === "employee" && t.requesterId !== currentUserId) return false
       if (status !== "all" && t.status !== status) return false
       if (priority !== "all" && t.priority !== priority) return false
       if (category !== "all" && t.category !== category) return false
-      if (assignee !== "all") {
-        if (assignee === "unassigned" && t.assigneeId) return false
-        if (assignee === "me" && t.assigneeId !== currentUserId) return false
-        if (
-          assignee !== "unassigned" &&
-          assignee !== "me" &&
-          t.assigneeId !== assignee
-        )
-          return false
-      }
       if (query) {
         const q = query.toLowerCase()
         const hit =
@@ -80,19 +62,17 @@ export default function TicketsPage() {
       }
       return true
     })
-  }, [tickets, role, currentUserId, status, priority, category, assignee, query])
+  }, [tickets, status, priority, category, query])
 
   const activeFilters =
     (status !== "all" ? 1 : 0) +
     (priority !== "all" ? 1 : 0) +
-    (category !== "all" ? 1 : 0) +
-    (assignee !== "all" ? 1 : 0)
+    (category !== "all" ? 1 : 0)
 
   function clearFilters() {
     setStatus("all")
     setPriority("all")
     setCategory("all")
-    setAssignee("all")
     setQuery("")
   }
 
@@ -109,11 +89,11 @@ export default function TicketsPage() {
               : "Search, filter, and manage the full ticket queue."}
           </p>
         </div>
-        <Button asChild>
-          <Link href="/tickets/new">
-            <PlusIcon data-icon="inline-start" />
-            New Ticket
-          </Link>
+        <Button
+          render={<Link href="/tickets/new" />}
+        >
+          <PlusIcon data-icon="inline-start" />
+          New Ticket
         </Button>
       </div>
 
@@ -179,24 +159,6 @@ export default function TicketsPage() {
               </SelectContent>
             </Select>
 
-            {role !== "employee" && (
-              <Select value={assignee} onValueChange={setAssignee}>
-                <SelectTrigger className="w-[160px]">
-                  <SelectValue placeholder="Assignee" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Assignees</SelectItem>
-                  <SelectItem value="me">Assigned to me</SelectItem>
-                  <SelectItem value="unassigned">Unassigned</SelectItem>
-                  {agents.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-
             {activeFilters > 0 && (
               <Button variant="ghost" onClick={clearFilters}>
                 <XIcon data-icon="inline-start" />
@@ -213,7 +175,15 @@ export default function TicketsPage() {
           </p>
         </div>
 
-        <TicketsTable tickets={filtered} showRequester={role !== "employee"} />
+        {ticketsLoading ? (
+          <div className="flex flex-col gap-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full" />
+            ))}
+          </div>
+        ) : (
+          <TicketsTable tickets={filtered} />
+        )}
       </Card>
     </div>
   )

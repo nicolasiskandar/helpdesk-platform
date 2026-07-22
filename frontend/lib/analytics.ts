@@ -1,5 +1,16 @@
 import type { Ticket } from "./types"
-import { CATEGORIES, PRIORITIES, agents } from "./data"
+import type { TicketCategory, TicketPriority } from "./types"
+
+const CATEGORIES: TicketCategory[] = [
+  "Hardware",
+  "Software",
+  "Network",
+  "Email",
+  "Access Request",
+  "Other",
+]
+
+const PRIORITIES: TicketPriority[] = ["Low", "Medium", "High", "Critical"]
 
 export function ticketStats(tickets: Ticket[]) {
   const open = tickets.filter((t) => t.status === "Open").length
@@ -43,22 +54,22 @@ export function byStatus(tickets: Ticket[]) {
 }
 
 export function agentPerformance(tickets: Ticket[]) {
-  return agents.map((agent) => {
-    const assigned = tickets.filter((t) => t.assigneeId === agent.id)
-    const resolved = assigned.filter(
-      (t) => t.status === "Resolved" || t.status === "Closed"
-    ).length
-    const active = assigned.filter(
-      (t) => t.status !== "Resolved" && t.status !== "Closed"
-    ).length
-    return {
-      id: agent.id,
-      name: agent.name,
-      assigned: assigned.length,
-      resolved,
-      active,
-    }
-  })
+  // Group by assigneeId and compute stats
+  const assignees = new Map<string, { assigned: number; resolved: number }>()
+  for (const t of tickets) {
+    if (!t.assigneeId) continue
+    const existing = assignees.get(t.assigneeId) || { assigned: 0, resolved: 0 }
+    existing.assigned++
+    if (t.status === "Resolved" || t.status === "Closed") existing.resolved++
+    assignees.set(t.assigneeId, existing)
+  }
+  return Array.from(assignees.entries()).map(([id, stats]) => ({
+    id,
+    name: id.slice(0, 8),
+    assigned: stats.assigned,
+    resolved: stats.resolved,
+    active: stats.assigned - stats.resolved,
+  }))
 }
 
 // Synthetic 6-month trend for reports.
@@ -79,8 +90,13 @@ export function resolutionTimeTrend() {
   return months.map((month, i) => ({ month, hours: hours[i] }))
 }
 
+function parseUtcDate(iso: string): Date {
+  const dateStr = /[Zz]|[+-]\d{2}:\d{2}$/.test(iso) ? iso : iso + "Z"
+  return new Date(dateStr)
+}
+
 export function formatRelative(iso: string): string {
-  const then = new Date(iso).getTime()
+  const then = parseUtcDate(iso).getTime()
   const now = Date.now()
   const diff = Math.max(0, now - then)
   const mins = Math.floor(diff / 60000)
@@ -94,7 +110,7 @@ export function formatRelative(iso: string): string {
 }
 
 export function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, {
+  return parseUtcDate(iso).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -102,7 +118,7 @@ export function formatDate(iso: string): string {
 }
 
 export function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
+  return parseUtcDate(iso).toLocaleString(undefined, {
     month: "short",
     day: "numeric",
     hour: "numeric",

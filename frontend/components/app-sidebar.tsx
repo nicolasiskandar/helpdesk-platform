@@ -114,7 +114,7 @@ export function AppSidebar() {
 
   function isActive(href: string) {
     if (href === "/tickets") {
-      return pathname === "/tickets" || /^\/tickets\/HLX-/.test(pathname)
+      return pathname === "/tickets" || /^\/tickets\//.test(pathname)
     }
     return pathname === href
   }

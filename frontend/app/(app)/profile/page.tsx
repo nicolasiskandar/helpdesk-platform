@@ -110,7 +110,7 @@ export default function ProfilePage() {
                 <p className="text-xs text-muted-foreground">Joined</p>
                 <p className="text-sm font-medium">
                   {user.createdAt
-                    ? new Date(user.createdAt).toLocaleDateString("en-US", {
+                    ? new Date(user.createdAt.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(user.createdAt) ? user.createdAt : user.createdAt + "Z").toLocaleDateString("en-US", {
                         year: "numeric",
                         month: "long",
                         day: "numeric",

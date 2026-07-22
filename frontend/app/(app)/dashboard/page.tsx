@@ -28,7 +28,8 @@ import { TicketsTable } from "@/components/tickets-table"
 import { CategoryChart } from "@/components/dashboard/category-chart"
 import { PriorityChart } from "@/components/dashboard/priority-chart"
 import { useStore } from "@/lib/store"
-import { ROLE_LABELS, getUser } from "@/lib/data"
+import { useAuth } from "@/lib/auth"
+import { ROLE_LABELS } from "@/lib/data"
 import {
   ticketStats,
   byCategory,
@@ -46,8 +47,11 @@ function initials(name: string) {
 }
 
 export default function DashboardPage() {
-  const { tickets, role, currentUserId } = useStore()
-  const me = getUser(currentUserId)
+  const { tickets, role, currentUserId, ticketsLoading } = useStore()
+  const { user: authUser } = useAuth()
+
+  const displayName = authUser?.fullName || "User"
+  const firstName = displayName.split(" ")[0]
 
   // Employees only see their own tickets.
   const scoped =
@@ -64,18 +68,11 @@ export default function DashboardPage() {
     .sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt))
     .slice(0, 6)
 
-  const activityFeed = [...tickets]
-    .flatMap((t) =>
-      t.activity.map((a) => ({ ...a, ref: t.reference, ticketId: t.id }))
-    )
-    .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))
-    .slice(0, 6)
-
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
         <h2 className="text-xl font-semibold tracking-tight text-balance">
-          Welcome back, {me?.name.split(" ")[0]}
+          Welcome back, {firstName}
         </h2>
         <p className="text-sm text-muted-foreground">
           {role === "employee"
@@ -90,8 +87,7 @@ export default function DashboardPage() {
           value={stats.open}
           icon={Inbox}
           accent="info"
-          trend={{ value: "8%", direction: "up", positive: false }}
-          hint="vs last week"
+          hint="Current open"
         />
         <StatCard
           label="In Progress"
@@ -112,55 +108,58 @@ export default function DashboardPage() {
           value={stats.resolved}
           icon={CheckCircle2}
           accent="success"
-          trend={{ value: "12%", direction: "up", positive: true }}
-          hint="vs last week"
+          hint="Completed"
         />
       </div>
 
       {role !== "employee" && (stats.critical > 0 || stats.unassigned > 0) ? (
         <div className="grid gap-4 sm:grid-cols-2">
-          <Card className="border-destructive/30 bg-destructive/5">
-            <CardContent className="flex items-center gap-3 p-4">
-              <div className="flex size-9 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
-                <AlertTriangle className="size-5" />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-medium">
-                  {stats.critical} critical ticket
-                  {stats.critical === 1 ? "" : "s"} need attention
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Prioritize to stay within SLA
-                </p>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                render={<Link href="/tickets?priority=Critical">Review</Link>}
-              />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="flex items-center gap-3 p-4">
-              <div className="flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                <UserPlus className="size-5" />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-medium">
-                  {stats.unassigned} unassigned ticket
-                  {stats.unassigned === 1 ? "" : "s"}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Assign to an available agent
-                </p>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                render={<Link href="/tickets?status=Open">Assign</Link>}
-              />
-            </CardContent>
-          </Card>
+          {stats.critical > 0 && (
+            <Card className="border-destructive/30 bg-destructive/5">
+              <CardContent className="flex items-center gap-3 p-4">
+                <div className="flex size-9 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
+                  <AlertTriangle className="size-5" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium">
+                    {stats.critical} critical ticket
+                    {stats.critical === 1 ? "" : "s"} need attention
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Prioritize to stay within SLA
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  render={<Link href="/tickets">Review</Link>}
+                />
+              </CardContent>
+            </Card>
+          )}
+          {stats.unassigned > 0 && (
+            <Card>
+              <CardContent className="flex items-center gap-3 p-4">
+                <div className="flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                  <UserPlus className="size-5" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium">
+                    {stats.unassigned} unassigned ticket
+                    {stats.unassigned === 1 ? "" : "s"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Assign to an available agent
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  render={<Link href="/tickets">Assign</Link>}
+                />
+              </CardContent>
+            </Card>
+          )}
         </div>
       ) : null}
 
@@ -190,62 +189,28 @@ export default function DashboardPage() {
             </CardAction>
           </CardHeader>
           <CardContent className="px-0">
-            <TicketsTable tickets={recent} compact />
+            {ticketsLoading ? (
+              <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                Loading tickets...
+              </div>
+            ) : (
+              <TicketsTable tickets={recent} compact />
+            )}
           </CardContent>
         </Card>
 
-        {role === "employee" ? (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Activity className="size-4 text-primary" />
-                Recent Activity
-              </CardTitle>
-              <CardDescription>Updates on your tickets</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              {activityFeed
-                .filter((a) =>
-                  scoped.some((t) => t.id === a.ticketId)
-                )
-                .slice(0, 5)
-                .map((a) => {
-                  const actor = getUser(a.actorId)
-                  return (
-                    <div key={a.id} className="flex gap-3 text-sm">
-                      <Avatar className="size-7">
-                        <AvatarFallback className="bg-muted text-[10px]">
-                          {actor ? initials(actor.name) : "?"}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1">
-                        <p className="leading-snug">
-                          <span className="font-medium">{actor?.name}</span>{" "}
-                          {a.action}
-                          {a.detail ? (
-                            <span className="text-muted-foreground">
-                              {" "}
-                              ({a.detail})
-                            </span>
-                          ) : null}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {a.ref} · {formatRelative(a.createdAt)}
-                        </p>
-                      </div>
-                    </div>
-                  )
-                })}
-            </CardContent>
-          </Card>
-        ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle>Agent Performance</CardTitle>
-              <CardDescription>Resolved vs active workload</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              {performance.map((agent) => {
+        <Card>
+          <CardHeader>
+            <CardTitle>Agent Performance</CardTitle>
+            <CardDescription>Resolved vs active workload</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            {performance.length === 0 ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">
+                No agent assignments yet.
+              </p>
+            ) : (
+              performance.map((agent) => {
                 const rate =
                   agent.assigned > 0
                     ? Math.round((agent.resolved / agent.assigned) * 100)
@@ -256,7 +221,7 @@ export default function DashboardPage() {
                       <div className="flex items-center gap-2">
                         <Avatar className="size-6">
                           <AvatarFallback className="bg-muted text-[10px]">
-                            {initials(agent.name)}
+                            {agent.name.slice(0, 2).toUpperCase()}
                           </AvatarFallback>
                         </Avatar>
                         <span className="font-medium">{agent.name}</span>
@@ -268,10 +233,10 @@ export default function DashboardPage() {
                     <Progress value={rate} className="h-1.5" />
                   </div>
                 )
-              })}
-            </CardContent>
-          </Card>
-        )}
+              })
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   )
