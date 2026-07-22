@@ -58,13 +58,22 @@ services:
     container_name: helpdesk-gateway
     environment:
       ASPNETCORE_ENVIRONMENT: Development
+      OTEL_SERVICE_NAME: helpdesk-gateway
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
     ports:
       - "5000:8080"
     depends_on:
       - identity-service
       - ticket-service
+      - otel-collector
     networks:
       - helpdesk-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   # ---------------------------------------------------------------------------
   # Identity Service (internal — gateway routes /api/auth/* here)
@@ -83,15 +92,25 @@ services:
       Jwt__Audience: ${JWT_AUDIENCE}
       Jwt__AccessTokenExpiryMinutes: ${JWT_ACCESS_TOKEN_EXPIRY_MINUTES}
       Jwt__RefreshTokenExpiryDays: ${JWT_REFRESH_TOKEN_EXPIRY_DAYS}
+      OTEL_SERVICE_NAME: helpdesk-identity-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
     ports:
       - "5010:8080"
     depends_on:
       sqlserver:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
     volumes:
       - ./infra/certs:/app/certs:ro
     networks:
       - helpdesk-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   # ---------------------------------------------------------------------------
   # Ticket Service (internal — gateway routes /api/tickets/* here)
@@ -112,6 +131,8 @@ services:
       RabbitMQ__ExchangeName: ticket.events
       Outbox__BatchSize: "20"
       Outbox__PollIntervalSeconds: "5"
+      OTEL_SERVICE_NAME: helpdesk-ticket-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
     ports:
       - "5011:8080"
     depends_on:
@@ -119,8 +140,80 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
     volumes:
       - ./infra/certs:/app/certs:ro
+    networks:
+      - helpdesk-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # Jaeger (distributed tracing)
+  # ---------------------------------------------------------------------------
+  jaeger:
+    image: jaegertracing/jaeger:latest
+    container_name: helpdesk-jaeger
+    command: ["--config", "/etc/jaeger/jaeger.yml"]
+    volumes:
+      - ./infra/jaeger/jaeger.yml:/etc/jaeger/jaeger.yml:ro
+    ports:
+      - "16686:16686"   # Jaeger UI
+    networks:
+      - helpdesk-network
+
+  # ---------------------------------------------------------------------------
+  # OpenTelemetry Collector (metrics pipeline)
+  # ---------------------------------------------------------------------------
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: helpdesk-otel-collector
+    command: ["--config=/etc/otel-collector/otel-collector.yml"]
+    volumes:
+      - ./infra/otel-collector/otel-collector.yml:/etc/otel-collector/otel-collector.yml:ro
+    ports:
+      - "8889:8889"     # Prometheus metrics export
+    networks:
+      - helpdesk-network
+
+  # ---------------------------------------------------------------------------
+  # Prometheus (metrics)
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: helpdesk-prometheus
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - helpdesk-network
+
+  # ---------------------------------------------------------------------------
+  # Grafana (dashboards)
+  # ---------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:11.2.2
+    container_name: helpdesk-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
     networks:
       - helpdesk-network
 
@@ -144,6 +237,8 @@ services:
 volumes:
   sqlserver-data:
   rabbitmq-data:
+  prometheus-data:
+  grafana-data:
 
 networks:
   helpdesk-network:
