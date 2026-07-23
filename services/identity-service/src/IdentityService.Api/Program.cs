@@ -113,8 +113,8 @@ try
             Type = "object",
             Properties = new Dictionary<string, OpenApiSchema>
             {
-                ["email"] = new() { Type = "string", Format = "email", Example = new OpenApiString("admin@example.com") },
-                ["password"] = new() { Type = "string", Format = "password", Example = new OpenApiString("Admin123!@#") },
+                ["email"] = new() { Type = "string", Format = "email", Example = new OpenApiString("example@example.com") },
+                ["password"] = new() { Type = "string", Format = "password", Example = new OpenApiString("example123#") },
                 ["fullName"] = new() { Type = "string", Example = new OpenApiString("John Doe") }
             },
             Required = new HashSet<string> { "email", "password", "fullName" }
@@ -125,8 +125,8 @@ try
             Type = "object",
             Properties = new Dictionary<string, OpenApiSchema>
             {
-                ["email"] = new() { Type = "string", Format = "email", Example = new OpenApiString("admin@example.com") },
-                ["password"] = new() { Type = "string", Format = "password", Example = new OpenApiString("Admin123!@#") }
+                ["email"] = new() { Type = "string", Format = "email", Example = new OpenApiString("example@example.com") },
+                ["password"] = new() { Type = "string", Format = "password", Example = new OpenApiString("example123#") }
             },
             Required = new HashSet<string> { "email", "password" }
         });

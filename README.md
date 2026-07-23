@@ -87,8 +87,8 @@ All API calls go through the Gateway at `http://localhost:5000`. The gateway rou
 curl -X POST http://localhost:5000/api/auth/register \
   -H "Content-Type: application/json" \
   -d '{
-    "email": "admin@example.com",
-    "password": "Admin123!@#",
+    "email": "example@example.com",
+    "password": "example123#",
     "fullName": "System Administrator"
   }'
 ```
@@ -115,8 +115,8 @@ Response (200):
 curl -X POST http://localhost:5000/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{
-    "email": "admin@example.com",
-    "password": "Admin123!@#"
+    "email": "example@example.com",
+    "password": "example123#"
   }'
 ```
 
@@ -147,7 +147,7 @@ Response (200):
 ```json
 {
   "id": "fa2d0daf-887b-466a-be2b-210cec9b4f3d",
-  "email": "admin@example.com",
+  "email": "example@example.com",
   "fullName": "System Administrator",
   "role": "Employee",
   "isActive": true,
