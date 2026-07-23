@@ -118,10 +118,19 @@ public class TicketBusinessService : ITicketService
         return new TicketListResponse(responses, totalCount, page, pageSize);
     }
 
-    public async Task<TicketResponse> UpdateTicketAsync(Guid id, UpdateTicketRequest request, Guid changedByUserId)
+    public async Task<TicketResponse> UpdateTicketAsync(Guid id, UpdateTicketRequest request, Guid changedByUserId, string requestedByRole)
     {
         var ticket = await _unitOfWork.Tickets.GetByIdAsync(id)
             ?? throw new KeyNotFoundException("Ticket not found.");
+
+        var openStatus = await _unitOfWork.Statuses.GetByNameAsync("Open")
+            ?? throw new InvalidOperationException("Open status not found.");
+
+        if (ticket.StatusId != openStatus.Id)
+            throw new InvalidOperationException("Only open tickets can be edited.");
+
+        if (requestedByRole != "Admin" && ticket.CreatedByUserId != changedByUserId)
+            throw new UnauthorizedAccessException("Only the ticket creator or an admin can edit this ticket.");
 
         var changes = new List<TicketAuditLogEntry>();
 
@@ -170,6 +179,40 @@ public class TicketBusinessService : ITicketService
 
         var updatedTicket = await _unitOfWork.Tickets.GetByIdAsync(id);
         return MapToResponse(updatedTicket!, updatedTicket!.Category, updatedTicket.Priority, updatedTicket.Status);
+    }
+
+    public async Task DeleteTicketAsync(Guid id, Guid requestedByUserId, string requestedByRole)
+    {
+        var ticket = await _unitOfWork.Tickets.GetByIdAsync(id)
+            ?? throw new KeyNotFoundException("Ticket not found.");
+
+        var openStatus = await _unitOfWork.Statuses.GetByNameAsync("Open")
+            ?? throw new InvalidOperationException("Open status not found.");
+
+        if (ticket.StatusId != openStatus.Id)
+            throw new InvalidOperationException("Only open tickets can be deleted.");
+
+        if (requestedByRole != "Admin" && ticket.CreatedByUserId != requestedByUserId)
+            throw new UnauthorizedAccessException("Only the ticket creator or an admin can delete this ticket.");
+
+        var comments = await _unitOfWork.TicketComments.GetByTicketIdAsync(id, true);
+        foreach (var comment in comments)
+            await _unitOfWork.TicketComments.DeleteAsync(comment);
+
+        var attachments = await _unitOfWork.TicketAttachments.GetByTicketIdAsync(id);
+        foreach (var attachment in attachments)
+            await _unitOfWork.TicketAttachments.DeleteAsync(attachment);
+
+        var auditLogs = await _unitOfWork.TicketAuditLogs.GetByTicketIdAsync(id, 1, 1000);
+        foreach (var auditLog in auditLogs)
+            await _unitOfWork.TicketAuditLogs.DeleteAsync(auditLog);
+
+        var assignments = await _unitOfWork.TicketAssignments.GetByTicketIdAsync(id);
+        foreach (var assignment in assignments)
+            await _unitOfWork.TicketAssignments.DeleteAsync(assignment);
+
+        await _unitOfWork.Tickets.DeleteAsync(ticket);
+        await _unitOfWork.SaveChangesAsync();
     }
 
     public async Task<TicketResponse> ChangeStatusAsync(Guid id, ChangeStatusRequest request, Guid changedByUserId, string changedByType = "User")

@@ -8,6 +8,8 @@ using FluentValidation.AspNetCore;
 using IdentityService.Api.Middleware;
 using IdentityService.Application.DTOs;
 using IdentityService.Application.Validators;
+using IdentityService.Domain.Entities;
+using IdentityService.Domain.Interfaces;
 using IdentityService.Infrastructure;
 using IdentityService.Infrastructure.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -208,6 +210,23 @@ try
         using var scope = app.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
         await dbContext.Database.MigrateAsync();
+
+        if (!await dbContext.Users.AnyAsync(u => u.Email == "admin@admin.com"))
+        {
+            var hasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
+            dbContext.Users.Add(new User
+            {
+                Id = Guid.NewGuid(),
+                Email = "admin@admin.com",
+                PasswordHash = hasher.HashPassword("Admin123!@#"),
+                FullName = "System Administrator",
+                RoleId = 1,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            });
+            await dbContext.SaveChangesAsync();
+            Log.Information("Seeded admin user: admin@admin.com");
+        }
     }
 
     app.UseMiddleware<RequestLoggingMiddleware>();

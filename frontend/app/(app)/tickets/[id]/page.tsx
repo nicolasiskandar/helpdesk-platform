@@ -10,6 +10,8 @@ import {
   UserPlusIcon,
   UserMinusIcon,
   ClockIcon,
+  PencilIcon,
+  TrashIcon,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -35,12 +37,20 @@ import {
   EmptyDescription,
 } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { StatusBadge, PriorityIndicator } from "@/components/ticket-badges"
 import { useStore } from "@/lib/store"
 import { formatRelative, formatDateTime } from "@/lib/analytics"
-import type { Ticket, Comment, TicketStatus } from "@/lib/types"
-import type { AuditLogEntryResponse, AttachmentResponse } from "@/lib/api"
-import { apiGetTicketByReference } from "@/lib/api"
+import type { Ticket, Comment, TicketStatus, TicketCategory, TicketPriority } from "@/lib/types"
+import type { AuditLogEntryResponse, AttachmentResponse, CategoryResponse, PriorityResponse } from "@/lib/api"
+import { apiGetTicketByReference, apiGetCategories, apiGetPriorities } from "@/lib/api"
 
 function initials(id: string) {
   return id.slice(0, 2).toUpperCase()
@@ -62,6 +72,21 @@ const STATUS_IDS: Record<TicketStatus, number> = {
   Closed: 5,
 }
 
+const CATEGORY_IDS: Record<TicketCategory, number> = {
+  Hardware: 1,
+  Software: 2,
+  Network: 3,
+  Access: 4,
+  Other: 5,
+}
+
+const PRIORITY_IDS: Record<TicketPriority, number> = {
+  Low: 1,
+  Medium: 2,
+  High: 3,
+  Critical: 4,
+}
+
 export default function TicketDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -73,6 +98,7 @@ export default function TicketDetailPage() {
     addComment,
     assignTicket,
     updateTicket,
+    deleteTicket,
     currentUserId,
     role,
   } = useStore()
@@ -86,6 +112,18 @@ export default function TicketDetailPage() {
   const [commentText, setCommentText] = React.useState("")
   const [isInternal, setIsInternal] = React.useState(false)
   const [submittingComment, setSubmittingComment] = React.useState(false)
+
+  const [editOpen, setEditOpen] = React.useState(false)
+  const [editTitle, setEditTitle] = React.useState("")
+  const [editDescription, setEditDescription] = React.useState("")
+  const [editCategory, setEditCategory] = React.useState<TicketCategory>("Other")
+  const [editPriority, setEditPriority] = React.useState<TicketPriority>("Medium")
+  const [savingEdit, setSavingEdit] = React.useState(false)
+  const [categories, setCategories] = React.useState<CategoryResponse[]>([])
+  const [priorities, setPriorities] = React.useState<PriorityResponse[]>([])
+
+  const [deleteOpen, setDeleteOpen] = React.useState(false)
+  const [deleting, setDeleting] = React.useState(false)
 
   React.useEffect(() => {
     let cancelled = false
@@ -119,6 +157,8 @@ export default function TicketDetailPage() {
       setLoading(false)
     }
     load()
+    apiGetCategories().then(setCategories).catch(() => {})
+    apiGetPriorities().then(setPriorities).catch(() => {})
     return () => { cancelled = true }
   }, [paramId, loadTicketDetail, loadComments, loadAuditLog, loadAttachments])
 
@@ -151,6 +191,54 @@ export default function TicketDetailPage() {
     }
   }
 
+  function openEditDialog() {
+    if (!ticket) return
+    setEditTitle(ticket.subject)
+    setEditDescription(ticket.description)
+    setEditCategory(ticket.category)
+    setEditPriority(ticket.priority)
+    setEditOpen(true)
+  }
+
+  async function handleSaveEdit() {
+    if (!ticket) return
+    setSavingEdit(true)
+    try {
+      await updateTicket(ticket.id, {
+        subject: editTitle,
+        description: editDescription,
+        category: editCategory,
+        priority: editPriority,
+      })
+      setTicket({
+        ...ticket,
+        subject: editTitle,
+        description: editDescription,
+        category: editCategory,
+        priority: editPriority,
+      })
+      setEditOpen(false)
+      toast.success("Ticket updated")
+    } catch {
+      toast.error("Failed to update ticket")
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  async function handleDelete() {
+    if (!ticket) return
+    setDeleting(true)
+    try {
+      await deleteTicket(ticket.id)
+      toast.success("Ticket deleted")
+      router.push("/tickets")
+    } catch {
+      toast.error("Failed to delete ticket")
+      setDeleting(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex flex-col gap-6">
@@ -179,6 +267,11 @@ export default function TicketDetailPage() {
   }
 
   const canChangeStatus = role === "admin" || role === "agent" || role === "manager"
+  const isOpen = ticket.status === "Open"
+  const isCreator = ticket.requesterId === currentUserId
+  const isAdmin = role === "admin"
+  const canEdit = isOpen && (isCreator || isAdmin)
+  const canDelete = isOpen && (isCreator || isAdmin)
 
   return (
     <div className="flex flex-col gap-6">
@@ -196,6 +289,18 @@ export default function TicketDetailPage() {
           <h1 className="text-xl font-semibold tracking-tight text-balance">
             {ticket.subject}
           </h1>
+        </div>
+        <div className="flex items-center gap-2">
+          {canEdit && (
+            <Button variant="outline" size="sm" onClick={openEditDialog}>
+              <PencilIcon data-icon="inline-start" /> Edit
+            </Button>
+          )}
+          {canDelete && (
+            <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
+              <TrashIcon data-icon="inline-start" /> Delete
+            </Button>
+          )}
         </div>
       </div>
 
@@ -453,6 +558,103 @@ export default function TicketDetailPage() {
           )}
         </div>
       </div>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Ticket</DialogTitle>
+            <DialogDescription>
+              Make changes to the ticket. Only open tickets can be edited.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 py-2">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="edit-title">Title</Label>
+              <Input
+                id="edit-title"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="edit-description">Description</Label>
+              <Textarea
+                id="edit-description"
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                rows={4}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-2">
+                <Label>Category</Label>
+                <Select value={editCategory} onValueChange={(v) => setEditCategory(v as TicketCategory)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((c) => (
+                      <SelectItem key={c.id} value={c.name}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Priority</Label>
+                <Select value={editPriority} onValueChange={(v) => setEditPriority(v as TicketPriority)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {priorities.map((p) => (
+                      <SelectItem key={p.id} value={p.name}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveEdit}
+              disabled={savingEdit || !editTitle.trim() || !editDescription.trim()}
+            >
+              {savingEdit ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Ticket</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete <span className="font-medium text-foreground">{ticket.reference}</span>?
+              This action cannot be undone. All comments, attachments, and activity will be permanently removed.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleting}
+            >
+              {deleting ? "Deleting..." : "Delete Ticket"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

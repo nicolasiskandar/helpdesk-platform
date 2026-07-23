@@ -24,8 +24,7 @@ const CATEGORIES: { value: TicketCategory; label: string }[] = [
   { value: "Hardware", label: "Hardware" },
   { value: "Software", label: "Software" },
   { value: "Network", label: "Network" },
-  { value: "Email", label: "Email" },
-  { value: "Access Request", label: "Access Request" },
+  { value: "Access", label: "Access" },
   { value: "Other", label: "Other" },
 ]
 

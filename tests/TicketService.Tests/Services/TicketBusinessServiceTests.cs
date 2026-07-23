@@ -422,7 +422,7 @@ public class TicketBusinessServiceTests
         var request = new UpdateTicketRequest("New Title", null, null, null);
 
         // Act
-        var act = () => _sut.UpdateTicketAsync(ticketId, request, Guid.NewGuid());
+        var act = () => _sut.UpdateTicketAsync(ticketId, request, Guid.NewGuid(), "Admin");
 
         // Assert
         await act.Should().ThrowAsync<KeyNotFoundException>()
@@ -453,12 +453,13 @@ public class TicketBusinessServiceTests
         };
 
         _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _statusRepoMock.Setup(r => r.GetByNameAsync("Open")).ReturnsAsync(new Status { Id = 1, Name = "Open" });
 
         // Update only Title, leave Description and others unchanged
         var request = new UpdateTicketRequest("Updated Title", null, null, null);
 
         // Act
-        var result = await _sut.UpdateTicketAsync(ticketId, request, userId);
+        var result = await _sut.UpdateTicketAsync(ticketId, request, userId, "Admin");
 
         // Assert
         result.Title.Should().Be("Updated Title");
@@ -491,12 +492,13 @@ public class TicketBusinessServiceTests
         };
 
         _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _statusRepoMock.Setup(r => r.GetByNameAsync("Open")).ReturnsAsync(new Status { Id = 1, Name = "Open" });
         _categoryRepoMock.Setup(r => r.GetByIdAsync(999)).ReturnsAsync((Category?)null);
 
         var request = new UpdateTicketRequest(null, null, 999, null);
 
         // Act
-        var act = () => _sut.UpdateTicketAsync(ticketId, request, Guid.NewGuid());
+        var act = () => _sut.UpdateTicketAsync(ticketId, request, Guid.NewGuid(), "Admin");
 
         // Assert
         await act.Should().ThrowAsync<InvalidOperationException>()
@@ -523,12 +525,13 @@ public class TicketBusinessServiceTests
         };
 
         _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _statusRepoMock.Setup(r => r.GetByNameAsync("Open")).ReturnsAsync(new Status { Id = 1, Name = "Open" });
         _priorityRepoMock.Setup(r => r.GetByIdAsync(999)).ReturnsAsync((Priority?)null);
 
         var request = new UpdateTicketRequest(null, null, null, 999);
 
         // Act
-        var act = () => _sut.UpdateTicketAsync(ticketId, request, Guid.NewGuid());
+        var act = () => _sut.UpdateTicketAsync(ticketId, request, Guid.NewGuid(), "Admin");
 
         // Assert
         await act.Should().ThrowAsync<InvalidOperationException>()
@@ -555,12 +558,13 @@ public class TicketBusinessServiceTests
         };
 
         _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _statusRepoMock.Setup(r => r.GetByNameAsync("Open")).ReturnsAsync(new Status { Id = 1, Name = "Open" });
 
         // Pass same values — no changes
         var request = new UpdateTicketRequest("Title", "Description", 1, 1);
 
         // Act
-        var result = await _sut.UpdateTicketAsync(ticketId, request, Guid.NewGuid());
+        var result = await _sut.UpdateTicketAsync(ticketId, request, Guid.NewGuid(), "Admin");
 
         // Assert
         result.Title.Should().Be("Title");

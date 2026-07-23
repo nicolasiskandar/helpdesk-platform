@@ -6,7 +6,8 @@ import { Bell, Search, LogOut, User as UserIcon, ChevronsUpDown } from "lucide-r
 
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { Separator } from "@/components/ui/separator"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -118,23 +119,24 @@ export function AppTopbar({ title }: { title: string }) {
 
         <DropdownMenu>
           <DropdownMenuTrigger
-            render={
-              <Button variant="ghost" className="h-9 gap-2 px-1.5">
-                <Avatar className="size-7">
-                  <AvatarFallback className="bg-primary/10 text-xs font-medium text-primary">
-                    {initials(displayName)}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="hidden flex-col items-start leading-tight md:flex">
-                  <span className="text-xs font-medium">{displayName}</span>
-                  <span className="text-[11px] text-muted-foreground">
-                    {ROLE_LABELS[role]}
-                  </span>
-                </div>
-                <ChevronsUpDown className="hidden size-3.5 text-muted-foreground md:block" />
-              </Button>
-            }
-          />
+            className={cn(
+              buttonVariants({ variant: "ghost" }),
+              "h-9 gap-2 px-1.5"
+            )}
+          >
+            <Avatar className="size-7">
+              <AvatarFallback className="bg-primary/10 text-xs font-medium text-primary">
+                {initials(displayName)}
+              </AvatarFallback>
+            </Avatar>
+            <div className="hidden flex-col items-start leading-tight md:flex">
+              <span className="text-xs font-medium">{displayName}</span>
+              <span className="text-[11px] text-muted-foreground">
+                {ROLE_LABELS[role]}
+              </span>
+            </div>
+            <ChevronsUpDown className="hidden size-3.5 text-muted-foreground md:block" />
+          </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel>
               <div className="flex flex-col">

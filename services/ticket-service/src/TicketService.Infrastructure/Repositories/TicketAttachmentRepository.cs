@@ -26,4 +26,10 @@ public class TicketAttachmentRepository : ITicketAttachmentRepository
     {
         await _context.TicketAttachments.AddAsync(attachment);
     }
+
+    public Task DeleteAsync(TicketAttachment attachment)
+    {
+        _context.TicketAttachments.Remove(attachment);
+        return Task.CompletedTask;
+    }
 }

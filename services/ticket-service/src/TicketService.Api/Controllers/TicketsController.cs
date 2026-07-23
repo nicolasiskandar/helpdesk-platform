@@ -88,7 +88,8 @@ public class TicketsController : ControllerBase
     public async Task<IActionResult> UpdateTicket(Guid id, [FromBody] UpdateTicketRequest request)
     {
         var userId = GetUserIdFromClaims();
-        var ticket = await _ticketService.UpdateTicketAsync(id, request, userId);
+        var role = GetUserRoleFromClaims();
+        var ticket = await _ticketService.UpdateTicketAsync(id, request, userId, role);
         return Ok(ticket);
     }
 
@@ -104,6 +105,21 @@ public class TicketsController : ControllerBase
         var userId = GetUserIdFromClaims();
         var ticket = await _ticketService.ChangeStatusAsync(id, request, userId);
         return Ok(ticket);
+    }
+
+    /// <summary>
+    /// Deletes a ticket. Only the ticket creator or an admin can delete an open ticket.
+    /// </summary>
+    [HttpDelete("{id:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteTicket(Guid id)
+    {
+        var userId = GetUserIdFromClaims();
+        var role = GetUserRoleFromClaims();
+        await _ticketService.DeleteTicketAsync(id, userId, role);
+        return NoContent();
     }
 
     /// <summary>
@@ -230,5 +246,10 @@ public class TicketsController : ControllerBase
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
             ?? throw new UnauthorizedAccessException("User ID not found in token.");
         return Guid.Parse(userIdClaim);
+    }
+
+    private string GetUserRoleFromClaims()
+    {
+        return User.FindFirst(ClaimTypes.Role)?.Value ?? "Employee";
     }
 }

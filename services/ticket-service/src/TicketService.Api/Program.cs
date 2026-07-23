@@ -163,7 +163,13 @@ try
 
         using var scope = app.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<TicketDbContext>();
-        await dbContext.Database.MigrateAsync();
+        dbContext.Database.EnsureCreated();
+
+        using var seqConn = dbContext.Database.GetDbConnection();
+        await seqConn.OpenAsync();
+        using var seqCmd = seqConn.CreateCommand();
+        seqCmd.CommandText = "IF NOT EXISTS (SELECT * FROM sys.sequences WHERE name = 'TicketReferenceSequence') CREATE SEQUENCE TicketReferenceSequence AS INT START WITH 1 INCREMENT BY 1";
+        await seqCmd.ExecuteNonQueryAsync();
     }
 
     app.UseMiddleware<RequestLoggingMiddleware>();

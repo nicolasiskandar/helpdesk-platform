@@ -38,4 +38,10 @@ public class TicketAssignmentRepository : ITicketAssignmentRepository
         _context.TicketAssignments.Update(assignment);
         return Task.CompletedTask;
     }
+
+    public Task DeleteAsync(TicketAssignment assignment)
+    {
+        _context.TicketAssignments.Remove(assignment);
+        return Task.CompletedTask;
+    }
 }

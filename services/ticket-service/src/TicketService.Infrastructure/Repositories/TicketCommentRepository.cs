@@ -30,4 +30,10 @@ public class TicketCommentRepository : ITicketCommentRepository
     {
         await _context.TicketComments.AddAsync(comment);
     }
+
+    public Task DeleteAsync(TicketComment comment)
+    {
+        _context.TicketComments.Remove(comment);
+        return Task.CompletedTask;
+    }
 }

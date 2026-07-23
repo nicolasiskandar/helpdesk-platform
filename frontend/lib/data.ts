@@ -13,8 +13,7 @@ export const CATEGORIES: TicketCategory[] = [
   "Hardware",
   "Software",
   "Network",
-  "Email",
-  "Access Request",
+  "Access",
   "Other",
 ]
 
@@ -239,7 +238,7 @@ export const tickets: Ticket[] = [
     subject: "Request access to Finance shared drive",
     description:
       "I recently joined the finance reporting project and need read/write access to the \\\\fileserver\\finance-reports folder. My manager Lena has approved.",
-    category: "Access Request",
+    category: "Access",
     priority: "Medium",
     status: "Pending",
     requesterId: "u-6",
@@ -381,7 +380,7 @@ export const tickets: Ticket[] = [
     subject: "Password reset for accounting portal",
     description:
       "I'm locked out of the accounting portal after too many attempts. Need a password reset to submit month-end reports.",
-    category: "Access Request",
+    category: "Access",
     priority: "High",
     status: "Closed",
     requesterId: "u-6",
@@ -447,7 +446,7 @@ export const tickets: Ticket[] = [
     subject: "Spam emails bypassing the filter",
     description:
       "Over the last few days a large volume of phishing emails is reaching my inbox despite the spam filter. Some look like fake invoices.",
-    category: "Email",
+    category: "Other",
     priority: "High",
     status: "In Progress",
     requesterId: "u-8",
@@ -611,7 +610,7 @@ export const kbArticles: KbArticle[] = [
   {
     id: "kb-2",
     title: "Resetting your password",
-    category: "Access Request",
+    category: "Access",
     excerpt:
       "Reset a forgotten password or unlock your account using the self-service portal.",
     body: "1. Go to the self-service password portal.\n2. Enter your work email and complete verification.\n3. Choose a new password meeting the complexity policy.\n4. If your account is locked, wait 15 minutes or contact IT support.",
@@ -635,10 +634,10 @@ export const kbArticles: KbArticle[] = [
   {
     id: "kb-4",
     title: "Requesting access to shared drives",
-    category: "Access Request",
+    category: "Access",
     excerpt:
       "How to request and get approval for network shared folder access.",
-    body: "1. Open a new ticket under the Access Request category.\n2. Specify the exact folder path and level of access needed.\n3. Include your manager's approval.\n4. IT will provision access once the data owner signs off.",
+    body: "1. Open a new ticket under the Access category.\n2. Specify the exact folder path and level of access needed.\n3. Include your manager's approval.\n4. IT will provision access once the data owner signs off.",
     views: 543,
     updatedAt: daysAgo(8, 0),
     status: "published",
@@ -658,7 +657,7 @@ export const kbArticles: KbArticle[] = [
   {
     id: "kb-6",
     title: "Identifying and reporting phishing emails",
-    category: "Email",
+    category: "Other",
     excerpt: "Learn to spot phishing attempts and report them to security.",
     body: "1. Check the sender's actual email address.\n2. Hover over links before clicking.\n3. Be wary of urgent requests and unexpected attachments.\n4. Use the Report Phishing button in Outlook to notify security.",
     views: 967,

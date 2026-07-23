@@ -33,4 +33,10 @@ public class TicketAuditLogRepository : ITicketAuditLogRepository
     {
         await _context.TicketAuditLogs.AddAsync(entry);
     }
+
+    public Task DeleteAsync(TicketAuditLogEntry entry)
+    {
+        _context.TicketAuditLogs.Remove(entry);
+        return Task.CompletedTask;
+    }
 }

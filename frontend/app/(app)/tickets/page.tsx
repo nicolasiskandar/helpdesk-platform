@@ -35,8 +35,7 @@ const CATEGORIES: TicketCategory[] = [
   "Hardware",
   "Software",
   "Network",
-  "Access Request",
-  "Email",
+  "Access",
   "Other",
 ]
 

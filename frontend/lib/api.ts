@@ -253,6 +253,15 @@ export async function apiUpdateTicket(
   return handleResponse<TicketResponse>(res)
 }
 
+export async function apiDeleteTicket(id: string): Promise<void> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/tickets/${id}`, {
+    method: "DELETE",
+    headers: authHeaders(token),
+  })
+  return handleResponse<void>(res)
+}
+
 export async function apiChangeStatus(
   id: string,
   statusId: number,

@@ -4,8 +4,7 @@ export type TicketCategory =
   | "Hardware"
   | "Software"
   | "Network"
-  | "Email"
-  | "Access Request"
+  | "Access"
   | "Other"
 
 export type TicketPriority = "Low" | "Medium" | "High" | "Critical"

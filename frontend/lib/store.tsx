@@ -11,6 +11,7 @@ import {
   apiChangeStatus,
   apiAssignAgent,
   apiUnassignAgent,
+  apiDeleteTicket,
   apiGetComments,
   apiAddComment,
   apiGetAttachments,
@@ -53,6 +54,7 @@ interface StoreValue {
   updateTicket: (id: string, patch: Partial<Ticket>, activity?: string, detail?: string) => Promise<void>
   addComment: (ticketId: string, body: string, internal: boolean) => Promise<void>
   assignTicket: (ticketId: string, assigneeId: string | null) => Promise<void>
+  deleteTicket: (id: string) => Promise<void>
   markNotificationRead: (id: string) => void
   markAllNotificationsRead: () => void
   loadTicketDetail: (id: string) => Promise<Ticket | null>
@@ -67,8 +69,7 @@ const CATEGORY_MAP: Record<string, TicketCategory> = {
   Hardware: "Hardware",
   Software: "Software",
   Network: "Network",
-  Email: "Email",
-  "Access Request": "Access Request",
+  Access: "Access",
   Other: "Other",
 }
 
@@ -178,9 +179,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         Hardware: 1,
         Software: 2,
         Network: 3,
-        Email: 4,
-        "Access Request": 5,
-        Other: 6,
+        Access: 4,
+        Other: 5,
       }
       const created = await apiCreateTicket({
         title: input.subject,
@@ -212,7 +212,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (patch.description) request.description = patch.description
       if (patch.category) {
         const CATEGORY_IDS: Record<TicketCategory, number> = {
-          Hardware: 1, Software: 2, Network: 3, Email: 4, "Access Request": 5, Other: 6,
+          Hardware: 1, Software: 2, Network: 3, Access: 4, Other: 5,
         }
         request.categoryId = CATEGORY_IDS[patch.category]
       }
@@ -247,6 +247,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         const updated = await apiGetTickets(1, 500)
         setTickets(updated.tickets.map(mapTicket))
       } catch { /* ignore */ }
+    },
+    []
+  )
+
+  const deleteTicket = React.useCallback(
+    async (id: string) => {
+      await apiDeleteTicket(id)
+      setTickets((prev) => prev.filter((t) => t.id !== id))
     },
     []
   )
@@ -348,6 +356,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     updateTicket,
     addComment,
     assignTicket,
+    deleteTicket,
     markNotificationRead,
     markAllNotificationsRead,
     loadTicketDetail,

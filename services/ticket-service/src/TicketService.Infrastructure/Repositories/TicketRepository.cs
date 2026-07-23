@@ -77,4 +77,10 @@ public class TicketRepository : ITicketRepository
         _context.Tickets.Update(ticket);
         return Task.CompletedTask;
     }
+
+    public Task DeleteAsync(Ticket ticket)
+    {
+        _context.Tickets.Remove(ticket);
+        return Task.CompletedTask;
+    }
 }

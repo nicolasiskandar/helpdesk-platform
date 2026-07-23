@@ -8,4 +8,5 @@ public interface ITicketAssignmentRepository
     Task<TicketAssignment?> GetActiveAssignmentAsync(Guid ticketId, Guid agentUserId);
     Task AddAsync(TicketAssignment assignment);
     Task UpdateAsync(TicketAssignment assignment);
+    Task DeleteAsync(TicketAssignment assignment);
 }
