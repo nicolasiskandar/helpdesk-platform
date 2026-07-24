@@ -36,9 +36,13 @@ public class TicketsController : ControllerBase
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(TicketListResponse), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetTickets([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+    public async Task<IActionResult> GetTickets(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] DateTime? createdFrom = null,
+        [FromQuery] DateTime? createdTo = null)
     {
-        var result = await _ticketService.GetTicketsAsync(page, pageSize);
+        var result = await _ticketService.GetTicketsAsync(page, pageSize, createdFrom, createdTo);
         return Ok(result);
     }
 
@@ -71,10 +75,14 @@ public class TicketsController : ControllerBase
     /// </summary>
     [HttpGet("my")]
     [ProducesResponseType(typeof(TicketListResponse), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetMyTickets([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+    public async Task<IActionResult> GetMyTickets(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] DateTime? createdFrom = null,
+        [FromQuery] DateTime? createdTo = null)
     {
         var userId = GetUserIdFromClaims();
-        var result = await _ticketService.GetMyTicketsAsync(userId, page, pageSize);
+        var result = await _ticketService.GetMyTicketsAsync(userId, page, pageSize, createdFrom, createdTo);
         return Ok(result);
     }
 

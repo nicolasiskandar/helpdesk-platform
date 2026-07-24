@@ -7,8 +7,8 @@ public interface ITicketService
     Task<TicketResponse> CreateTicketAsync(CreateTicketRequest request, Guid createdByUserId);
     Task<TicketResponse> GetTicketByIdAsync(Guid id);
     Task<TicketResponse> GetTicketByReferenceNumberAsync(string referenceNumber);
-    Task<TicketListResponse> GetTicketsAsync(int page, int pageSize);
-    Task<TicketListResponse> GetMyTicketsAsync(Guid userId, int page, int pageSize);
+    Task<TicketListResponse> GetTicketsAsync(int page, int pageSize, DateTime? createdFrom = null, DateTime? createdTo = null);
+    Task<TicketListResponse> GetMyTicketsAsync(Guid userId, int page, int pageSize, DateTime? createdFrom = null, DateTime? createdTo = null);
     Task<TicketResponse> UpdateTicketAsync(Guid id, UpdateTicketRequest request, Guid changedByUserId, string requestedByRole);
     Task<TicketResponse> ChangeStatusAsync(Guid id, ChangeStatusRequest request, Guid changedByUserId, string changedByType = "User");
     Task DeleteTicketAsync(Guid id, Guid requestedByUserId, string requestedByRole);

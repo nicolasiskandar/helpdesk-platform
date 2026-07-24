@@ -32,39 +32,71 @@ public class TicketRepository : ITicketRepository
             .FirstOrDefaultAsync(t => t.ReferenceNumber == referenceNumber);
     }
 
-    public async Task<IReadOnlyList<Ticket>> GetAllAsync(int page, int pageSize)
+    public async Task<IReadOnlyList<Ticket>> GetAllAsync(int page, int pageSize, DateTime? createdFrom = null, DateTime? createdTo = null)
     {
-        return await _context.Tickets
+        var query = _context.Tickets
             .Include(t => t.Category)
             .Include(t => t.Priority)
             .Include(t => t.Status)
+            .AsQueryable();
+
+        if (createdFrom.HasValue)
+            query = query.Where(t => t.CreatedAt >= createdFrom.Value);
+        if (createdTo.HasValue)
+            query = query.Where(t => t.CreatedAt <= createdTo.Value);
+
+        return await query
             .OrderByDescending(t => t.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();
     }
 
-    public async Task<IReadOnlyList<Ticket>> GetByCreatedByUserIdAsync(Guid userId, int page, int pageSize)
+    public async Task<IReadOnlyList<Ticket>> GetByCreatedByUserIdAsync(Guid userId, int page, int pageSize, DateTime? createdFrom = null, DateTime? createdTo = null)
     {
-        return await _context.Tickets
+        var query = _context.Tickets
             .Include(t => t.Category)
             .Include(t => t.Priority)
             .Include(t => t.Status)
             .Where(t => t.CreatedByUserId == userId)
+            .AsQueryable();
+
+        if (createdFrom.HasValue)
+            query = query.Where(t => t.CreatedAt >= createdFrom.Value);
+        if (createdTo.HasValue)
+            query = query.Where(t => t.CreatedAt <= createdTo.Value);
+
+        return await query
             .OrderByDescending(t => t.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();
     }
 
-    public async Task<int> GetCountAsync()
+    public async Task<int> GetCountAsync(DateTime? createdFrom = null, DateTime? createdTo = null)
     {
-        return await _context.Tickets.CountAsync();
+        var query = _context.Tickets.AsQueryable();
+
+        if (createdFrom.HasValue)
+            query = query.Where(t => t.CreatedAt >= createdFrom.Value);
+        if (createdTo.HasValue)
+            query = query.Where(t => t.CreatedAt <= createdTo.Value);
+
+        return await query.CountAsync();
     }
 
-    public async Task<int> GetCountByCreatedByUserIdAsync(Guid userId)
+    public async Task<int> GetCountByCreatedByUserIdAsync(Guid userId, DateTime? createdFrom = null, DateTime? createdTo = null)
     {
-        return await _context.Tickets.CountAsync(t => t.CreatedByUserId == userId);
+        var query = _context.Tickets
+            .Where(t => t.CreatedByUserId == userId)
+            .AsQueryable();
+
+        if (createdFrom.HasValue)
+            query = query.Where(t => t.CreatedAt >= createdFrom.Value);
+        if (createdTo.HasValue)
+            query = query.Where(t => t.CreatedAt <= createdTo.Value);
+
+        return await query.CountAsync();
     }
 
     public async Task AddAsync(Ticket ticket)

@@ -752,8 +752,8 @@ public class TicketBusinessServiceTests
             }
         };
 
-        _ticketRepoMock.Setup(r => r.GetAllAsync(1, 10)).ReturnsAsync(tickets);
-        _ticketRepoMock.Setup(r => r.GetCountAsync()).ReturnsAsync(1);
+        _ticketRepoMock.Setup(r => r.GetAllAsync(1, 10, null, null)).ReturnsAsync(tickets);
+        _ticketRepoMock.Setup(r => r.GetCountAsync(null, null)).ReturnsAsync(1);
 
         // Act
         var result = await _sut.GetTicketsAsync(1, 10);
@@ -783,8 +783,8 @@ public class TicketBusinessServiceTests
             }
         };
 
-        _ticketRepoMock.Setup(r => r.GetByCreatedByUserIdAsync(userId, 1, 10)).ReturnsAsync(tickets);
-        _ticketRepoMock.Setup(r => r.GetCountByCreatedByUserIdAsync(userId)).ReturnsAsync(1);
+        _ticketRepoMock.Setup(r => r.GetByCreatedByUserIdAsync(userId, 1, 10, null, null)).ReturnsAsync(tickets);
+        _ticketRepoMock.Setup(r => r.GetCountByCreatedByUserIdAsync(userId, null, null)).ReturnsAsync(1);
 
         // Act
         var result = await _sut.GetMyTicketsAsync(userId, 1, 10);

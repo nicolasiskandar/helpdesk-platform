@@ -100,19 +100,19 @@ public class TicketBusinessService : ITicketService
         return MapToResponse(ticket, ticket.Category, ticket.Priority, ticket.Status);
     }
 
-    public async Task<TicketListResponse> GetTicketsAsync(int page, int pageSize)
+    public async Task<TicketListResponse> GetTicketsAsync(int page, int pageSize, DateTime? createdFrom = null, DateTime? createdTo = null)
     {
-        var tickets = await _unitOfWork.Tickets.GetAllAsync(page, pageSize);
-        var totalCount = await _unitOfWork.Tickets.GetCountAsync();
+        var tickets = await _unitOfWork.Tickets.GetAllAsync(page, pageSize, createdFrom, createdTo);
+        var totalCount = await _unitOfWork.Tickets.GetCountAsync(createdFrom, createdTo);
 
         var responses = tickets.Select(t => MapToResponse(t, t.Category, t.Priority, t.Status)).ToList();
         return new TicketListResponse(responses, totalCount, page, pageSize);
     }
 
-    public async Task<TicketListResponse> GetMyTicketsAsync(Guid userId, int page, int pageSize)
+    public async Task<TicketListResponse> GetMyTicketsAsync(Guid userId, int page, int pageSize, DateTime? createdFrom = null, DateTime? createdTo = null)
     {
-        var tickets = await _unitOfWork.Tickets.GetByCreatedByUserIdAsync(userId, page, pageSize);
-        var totalCount = await _unitOfWork.Tickets.GetCountByCreatedByUserIdAsync(userId);
+        var tickets = await _unitOfWork.Tickets.GetByCreatedByUserIdAsync(userId, page, pageSize, createdFrom, createdTo);
+        var totalCount = await _unitOfWork.Tickets.GetCountByCreatedByUserIdAsync(userId, createdFrom, createdTo);
 
         var responses = tickets.Select(t => MapToResponse(t, t.Category, t.Priority, t.Status)).ToList();
         return new TicketListResponse(responses, totalCount, page, pageSize);

@@ -177,11 +177,16 @@ function getAccessToken(): string {
 
 export async function apiGetTickets(
   page = 1,
-  pageSize = 50
+  pageSize = 50,
+  createdFrom?: string,
+  createdTo?: string
 ): Promise<TicketListResponse> {
   const token = getAccessToken()
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
+  if (createdFrom) params.set("createdFrom", createdFrom)
+  if (createdTo) params.set("createdTo", createdTo)
   const res = await fetch(
-    `${API_BASE}/api/tickets?page=${page}&pageSize=${pageSize}`,
+    `${API_BASE}/api/tickets?${params}`,
     { headers: authHeaders(token) }
   )
   return handleResponse<TicketListResponse>(res)
@@ -189,11 +194,16 @@ export async function apiGetTickets(
 
 export async function apiGetMyTickets(
   page = 1,
-  pageSize = 50
+  pageSize = 50,
+  createdFrom?: string,
+  createdTo?: string
 ): Promise<TicketListResponse> {
   const token = getAccessToken()
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
+  if (createdFrom) params.set("createdFrom", createdFrom)
+  if (createdTo) params.set("createdTo", createdTo)
   const res = await fetch(
-    `${API_BASE}/api/tickets/my?page=${page}&pageSize=${pageSize}`,
+    `${API_BASE}/api/tickets/my?${params}`,
     { headers: authHeaders(token) }
   )
   return handleResponse<TicketListResponse>(res)
