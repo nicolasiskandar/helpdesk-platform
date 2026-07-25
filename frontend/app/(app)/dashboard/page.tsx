@@ -29,7 +29,6 @@ import { CategoryChart } from "@/components/dashboard/category-chart"
 import { PriorityChart } from "@/components/dashboard/priority-chart"
 import { useStore } from "@/lib/store"
 import { useAuth } from "@/lib/auth"
-import { ROLE_LABELS } from "@/lib/data"
 import {
   ticketStats,
   byCategory,
@@ -77,7 +76,7 @@ export default function DashboardPage() {
         <p className="text-sm text-muted-foreground">
           {role === "employee"
             ? "Here's the status of your support requests."
-            : `Operational overview for the service desk — viewing as ${ROLE_LABELS[role]}.`}
+            : "Operational overview for the service desk."}
         </p>
       </div>
 

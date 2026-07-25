@@ -33,6 +33,55 @@ public class UserRepository : IUserRepository
         return await _context.Users.AnyAsync(u => u.Email == email);
     }
 
+    public async Task<bool> HasAdminAsync()
+    {
+        return await _context.Users.AnyAsync(u => u.RoleId == 1);
+    }
+
+    public async Task<IReadOnlyList<User>> GetAllAsync(string? search, int? roleId, bool? isActive, int page, int pageSize)
+    {
+        var query = _context.Users
+            .Include(u => u.Role)
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.ToLower();
+            query = query.Where(u => u.FullName.ToLower().Contains(term) || u.Email.ToLower().Contains(term));
+        }
+
+        if (roleId.HasValue)
+            query = query.Where(u => u.RoleId == roleId.Value);
+
+        if (isActive.HasValue)
+            query = query.Where(u => u.IsActive == isActive.Value);
+
+        return await query
+            .OrderByDescending(u => u.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+    }
+
+    public async Task<int> GetCountAsync(string? search, int? roleId, bool? isActive)
+    {
+        var query = _context.Users.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.ToLower();
+            query = query.Where(u => u.FullName.ToLower().Contains(term) || u.Email.ToLower().Contains(term));
+        }
+
+        if (roleId.HasValue)
+            query = query.Where(u => u.RoleId == roleId.Value);
+
+        if (isActive.HasValue)
+            query = query.Where(u => u.IsActive == isActive.Value);
+
+        return await query.CountAsync();
+    }
+
     public async Task AddAsync(User user)
     {
         await _context.Users.AddAsync(user);
@@ -41,6 +90,12 @@ public class UserRepository : IUserRepository
     public Task UpdateAsync(User user)
     {
         _context.Users.Update(user);
+        return Task.CompletedTask;
+    }
+
+    public Task DeleteAsync(User user)
+    {
+        _context.Users.Remove(user);
         return Task.CompletedTask;
     }
 }

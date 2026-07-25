@@ -1,12 +1,15 @@
 "use client"
 
-import { useRouter } from "next/navigation"
+import * as React from "react"
+import { toast } from "sonner"
 import {
   User as UserIcon,
   Mail,
   Shield,
   Calendar,
   LogOut,
+  Save,
+  Lock,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -17,10 +20,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Separator } from "@/components/ui/separator"
 import { useAuth } from "@/lib/auth"
 import { ROLE_LABELS } from "@/lib/data"
+import { apiUpdateProfile, apiChangePassword } from "@/lib/api"
 
 function initials(name: string) {
   return name
@@ -31,8 +37,23 @@ function initials(name: string) {
 }
 
 export default function ProfilePage() {
-  const router = useRouter()
-  const { user, logout } = useAuth()
+  const { user, logout, refreshUser } = useAuth()
+
+  const [fullName, setFullName] = React.useState("")
+  const [email, setEmail] = React.useState("")
+  const [savingProfile, setSavingProfile] = React.useState(false)
+
+  const [currentPassword, setCurrentPassword] = React.useState("")
+  const [newPassword, setNewPassword] = React.useState("")
+  const [confirmPassword, setConfirmPassword] = React.useState("")
+  const [savingPassword, setSavingPassword] = React.useState(false)
+
+  React.useEffect(() => {
+    if (user) {
+      setFullName(user.fullName)
+      setEmail(user.email)
+    }
+  }, [user])
 
   if (!user) {
     return (
@@ -42,19 +63,52 @@ export default function ProfilePage() {
     )
   }
 
-  async function handleLogout() {
-    await logout()
-    router.push("/login")
+  async function handleSaveProfile() {
+    if (!fullName.trim() || !email.trim()) return
+    setSavingProfile(true)
+    try {
+      await apiUpdateProfile({ fullName: fullName.trim(), email: email.trim() })
+      await refreshUser()
+      toast.success("Profile updated")
+    } catch (err: any) {
+      toast.error("Failed to update profile", {
+        description: err?.message || "Please try again.",
+      })
+    } finally {
+      setSavingProfile(false)
+    }
+  }
+
+  async function handleChangePassword() {
+    if (!currentPassword || !newPassword) return
+    if (newPassword !== confirmPassword) {
+      toast.error("New passwords do not match")
+      return
+    }
+    if (newPassword.length < 8) {
+      toast.error("Password must be at least 8 characters")
+      return
+    }
+    setSavingPassword(true)
+    try {
+      await apiChangePassword({ currentPassword, newPassword })
+      toast.success("Password changed")
+      setCurrentPassword("")
+      setNewPassword("")
+      setConfirmPassword("")
+    } catch (err: any) {
+      toast.error("Failed to change password", {
+        description: err?.message || "Please try again.",
+      })
+    } finally {
+      setSavingPassword(false)
+    }
   }
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="mx-auto max-w-2xl flex flex-col gap-6">
       <Card>
         <CardHeader>
-          <CardTitle>My Profile</CardTitle>
-          <CardDescription>Your account information</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-6">
           <div className="flex items-center gap-4">
             <Avatar className="size-16">
               <AvatarFallback className="bg-primary/10 text-lg font-semibold text-primary">
@@ -62,34 +116,35 @@ export default function ProfilePage() {
               </AvatarFallback>
             </Avatar>
             <div className="flex flex-col">
-              <h2 className="text-lg font-semibold">{user.fullName}</h2>
-              <p className="text-sm text-muted-foreground">{user.email}</p>
+              <CardTitle>My Profile</CardTitle>
+              <CardDescription>{user.email}</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-6">
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="profile-fullname">Full Name</Label>
+              <Input
+                id="profile-fullname"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                maxLength={200}
+              />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="profile-email">Email</Label>
+              <Input
+                id="profile-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
             </div>
           </div>
 
-          <Separator />
-
-          <div className="grid gap-4">
-            <div className="flex items-center gap-3">
-              <div className="flex size-9 items-center justify-center rounded-lg bg-muted">
-                <UserIcon className="size-4 text-muted-foreground" />
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Full Name</p>
-                <p className="text-sm font-medium">{user.fullName}</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className="flex size-9 items-center justify-center rounded-lg bg-muted">
-                <Mail className="size-4 text-muted-foreground" />
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Email</p>
-                <p className="text-sm font-medium">{user.email}</p>
-              </div>
-            </div>
-
+          <div className="flex flex-col gap-3">
             <div className="flex items-center gap-3">
               <div className="flex size-9 items-center justify-center rounded-lg bg-muted">
                 <Shield className="size-4 text-muted-foreground" />
@@ -121,14 +176,86 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          <Separator />
-
           <div className="flex justify-end">
-            <Button variant="destructive" onClick={handleLogout}>
-              <LogOut />
-              Sign out
+            <Button
+              onClick={handleSaveProfile}
+              disabled={savingProfile || !fullName.trim() || !email.trim()}
+            >
+              <Save data-icon="inline-start" />
+              {savingProfile ? "Saving..." : "Save Changes"}
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Change Password</CardTitle>
+          <CardDescription>
+            Update your password. You&apos;ll remain signed in after the change.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="current-password">Current Password</Label>
+            <Input
+              id="current-password"
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              placeholder="Enter current password"
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="new-password">New Password</Label>
+            <Input
+              id="new-password"
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="Minimum 8 characters"
+            />
+            <p className="text-xs text-muted-foreground">
+              Must be 8+ characters with uppercase, lowercase, digit, and special character.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="confirm-password">Confirm New Password</Label>
+            <Input
+              id="confirm-password"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Re-enter new password"
+            />
+          </div>
+
+          <div className="flex justify-end">
+            <Button
+              variant="outline"
+              onClick={handleChangePassword}
+              disabled={
+                savingPassword ||
+                !currentPassword ||
+                !newPassword ||
+                !confirmPassword
+              }
+            >
+              <Lock data-icon="inline-start" />
+              {savingPassword ? "Changing..." : "Change Password"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="flex justify-end pt-2">
+          <Button variant="destructive" onClick={async () => { await logout() }}>
+            <LogOut data-icon="inline-start" />
+            Sign out
+          </Button>
         </CardContent>
       </Card>
     </div>

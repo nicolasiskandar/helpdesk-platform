@@ -428,4 +428,161 @@ public class AuthServiceTests
         await act.Should().ThrowAsync<UnauthorizedAccessException>()
             .WithMessage("*Invalid refresh token*");
     }
+
+    // ---------- UpdateProfileAsync ----------
+
+    [Fact]
+    public async Task UpdateProfileAsync_Success_UpdatesNameAndEmail()
+    {
+        var userId = Guid.NewGuid();
+        var user = new User
+        {
+            Id = userId,
+            Email = "old@example.com",
+            FullName = "Old Name",
+            IsActive = true,
+            CreatedAt = new DateTime(2026, 1, 1),
+            Role = new Role { Name = "Employee" }
+        };
+
+        _unitOfWorkMock.Setup(u => u.Users.GetByIdAsync(userId)).ReturnsAsync(user);
+        _unitOfWorkMock.Setup(u => u.Users.EmailExistsAsync("new@example.com")).ReturnsAsync(false);
+
+        var request = new UpdateProfileRequest("New Name", "new@example.com");
+
+        var result = await _sut.UpdateProfileAsync(userId, request);
+
+        result.FullName.Should().Be("New Name");
+        result.Email.Should().Be("new@example.com");
+        user.Email.Should().Be("new@example.com");
+        user.FullName.Should().Be("New Name");
+        _unitOfWorkMock.Verify(u => u.Users.UpdateAsync(user), Times.Once);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateProfileAsync_SameEmail_NoDuplicateCheck()
+    {
+        var userId = Guid.NewGuid();
+        var user = new User
+        {
+            Id = userId,
+            Email = "same@example.com",
+            FullName = "Old Name",
+            IsActive = true,
+            CreatedAt = new DateTime(2026, 1, 1),
+            Role = new Role { Name = "Employee" }
+        };
+
+        _unitOfWorkMock.Setup(u => u.Users.GetByIdAsync(userId)).ReturnsAsync(user);
+
+        var request = new UpdateProfileRequest("New Name", "same@example.com");
+
+        var result = await _sut.UpdateProfileAsync(userId, request);
+
+        result.FullName.Should().Be("New Name");
+        _unitOfWorkMock.Verify(u => u.Users.EmailExistsAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateProfileAsync_DuplicateEmail_ThrowsInvalidOperationException()
+    {
+        var userId = Guid.NewGuid();
+        var user = new User
+        {
+            Id = userId,
+            Email = "old@example.com",
+            FullName = "Old Name",
+            IsActive = true,
+            Role = new Role { Name = "Employee" }
+        };
+
+        _unitOfWorkMock.Setup(u => u.Users.GetByIdAsync(userId)).ReturnsAsync(user);
+        _unitOfWorkMock.Setup(u => u.Users.EmailExistsAsync("taken@example.com")).ReturnsAsync(true);
+
+        var request = new UpdateProfileRequest("New Name", "taken@example.com");
+
+        var act = () => _sut.UpdateProfileAsync(userId, request);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*already exists*");
+    }
+
+    [Fact]
+    public async Task UpdateProfileAsync_UserNotFound_ThrowsKeyNotFoundException()
+    {
+        _unitOfWorkMock.Setup(u => u.Users.GetByIdAsync(It.IsAny<Guid>())).ReturnsAsync((User?)null);
+
+        var request = new UpdateProfileRequest("Name", "email@test.com");
+
+        var act = () => _sut.UpdateProfileAsync(Guid.NewGuid(), request);
+
+        await act.Should().ThrowAsync<KeyNotFoundException>()
+            .WithMessage("*not found*");
+    }
+
+    // ---------- ChangePasswordAsync ----------
+
+    [Fact]
+    public async Task ChangePasswordAsync_Success_HashesNewPassword()
+    {
+        var userId = Guid.NewGuid();
+        var user = new User
+        {
+            Id = userId,
+            Email = "test@example.com",
+            PasswordHash = "old-hash",
+            IsActive = true,
+            Role = new Role { Name = "Employee" }
+        };
+
+        _unitOfWorkMock.Setup(u => u.Users.GetByIdAsync(userId)).ReturnsAsync(user);
+        _passwordHasherMock.Setup(p => p.VerifyPassword("OldPass1!", "old-hash")).Returns(true);
+        _passwordHasherMock.Setup(p => p.HashPassword("NewPass2!")).Returns("new-hash");
+
+        var request = new ChangePasswordRequest("OldPass1!", "NewPass2!");
+
+        await _sut.ChangePasswordAsync(userId, request);
+
+        user.PasswordHash.Should().Be("new-hash");
+        _unitOfWorkMock.Verify(u => u.Users.UpdateAsync(user), Times.Once);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_WrongCurrentPassword_ThrowsUnauthorizedAccessException()
+    {
+        var userId = Guid.NewGuid();
+        var user = new User
+        {
+            Id = userId,
+            Email = "test@example.com",
+            PasswordHash = "old-hash",
+            IsActive = true,
+            Role = new Role { Name = "Employee" }
+        };
+
+        _unitOfWorkMock.Setup(u => u.Users.GetByIdAsync(userId)).ReturnsAsync(user);
+        _passwordHasherMock.Setup(p => p.VerifyPassword("WrongPass!", "old-hash")).Returns(false);
+
+        var request = new ChangePasswordRequest("WrongPass!", "NewPass2!");
+
+        var act = () => _sut.ChangePasswordAsync(userId, request);
+
+        await act.Should().ThrowAsync<UnauthorizedAccessException>()
+            .WithMessage("*incorrect*");
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_UserNotFound_ThrowsKeyNotFoundException()
+    {
+        _unitOfWorkMock.Setup(u => u.Users.GetByIdAsync(It.IsAny<Guid>())).ReturnsAsync((User?)null);
+
+        var request = new ChangePasswordRequest("OldPass1!", "NewPass2!");
+
+        var act = () => _sut.ChangePasswordAsync(Guid.NewGuid(), request);
+
+        await act.Should().ThrowAsync<KeyNotFoundException>()
+            .WithMessage("*not found*");
+    }
 }

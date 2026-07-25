@@ -37,6 +37,16 @@ public record UserResponse(
     DateTime? LastLoginAt
 );
 
+public record UpdateProfileRequest(
+    string FullName,
+    [EmailAddress] string Email
+);
+
+public record ChangePasswordRequest(
+    string CurrentPassword,
+    string NewPassword
+);
+
 public record ErrorResponse(
     string Message,
     IDictionary<string, string[]>? Errors = null

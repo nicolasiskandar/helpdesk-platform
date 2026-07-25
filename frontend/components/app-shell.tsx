@@ -16,6 +16,7 @@ const TITLES: { match: (p: string) => boolean; title: string }[] = [
   { match: (p) => p === "/notifications", title: "Notifications" },
   { match: (p) => p === "/profile", title: "My Profile" },
   { match: (p) => p === "/admin/users", title: "User Management" },
+  { match: (p) => p === "/admin/users/new", title: "Create User" },
   { match: (p) => p === "/admin/settings", title: "Admin Settings" },
 ]
 

@@ -9,4 +9,6 @@ public interface IAuthService
     Task<AuthResponse> RefreshAsync(RefreshRequest request, string ipAddress);
     Task LogoutAsync(LogoutRequest request, string ipAddress);
     Task<UserResponse> GetCurrentUserAsync(Guid userId);
+    Task<UserResponse> UpdateProfileAsync(Guid userId, UpdateProfileRequest request);
+    Task ChangePasswordAsync(Guid userId, ChangePasswordRequest request);
 }

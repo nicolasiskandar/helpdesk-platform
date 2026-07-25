@@ -11,13 +11,6 @@ import { cn } from "@/lib/utils"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
@@ -33,8 +26,6 @@ import {
 } from "@/components/ui/input-group"
 import { useStore } from "@/lib/store"
 import { useAuth } from "@/lib/auth"
-import { ROLE_LABELS } from "@/lib/data"
-import type { Role } from "@/lib/types"
 
 function initials(name: string) {
   return name
@@ -46,7 +37,7 @@ function initials(name: string) {
 
 export function AppTopbar({ title }: { title: string }) {
   const router = useRouter()
-  const { role, setRole, unreadCount } = useStore()
+  const { unreadCount } = useStore()
   const { user: authUser, logout } = useAuth()
 
   const displayName = authUser?.fullName || "User"
@@ -81,26 +72,6 @@ export function AppTopbar({ title }: { title: string }) {
           </InputGroup>
         </div>
 
-        <Select value={role} onValueChange={(v) => setRole(v as Role)}>
-          <SelectTrigger
-            size="sm"
-            className="w-auto gap-2"
-            aria-label="Switch role"
-          >
-            <span className="hidden text-xs text-muted-foreground sm:inline">
-              Viewing as
-            </span>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {(Object.keys(ROLE_LABELS) as Role[]).map((r) => (
-              <SelectItem key={r} value={r}>
-                {ROLE_LABELS[r]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
         <Button
           variant="ghost"
           size="icon-sm"
@@ -132,7 +103,7 @@ export function AppTopbar({ title }: { title: string }) {
             <div className="hidden flex-col items-start leading-tight md:flex">
               <span className="text-xs font-medium">{displayName}</span>
               <span className="text-[11px] text-muted-foreground">
-                {ROLE_LABELS[role]}
+                {displayEmail}
               </span>
             </div>
             <ChevronsUpDown className="hidden size-3.5 text-muted-foreground md:block" />

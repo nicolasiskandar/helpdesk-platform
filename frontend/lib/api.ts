@@ -168,6 +168,32 @@ export async function apiGetMe(
   return handleResponse<UserResponse>(res)
 }
 
+export async function apiUpdateProfile(request: {
+  fullName: string
+  email: string
+}): Promise<UserResponse> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/auth/me`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(request),
+  })
+  return handleResponse<UserResponse>(res)
+}
+
+export async function apiChangePassword(request: {
+  currentPassword: string
+  newPassword: string
+}): Promise<void> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/auth/change-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(request),
+  })
+  return handleResponse<void>(res)
+}
+
 // ---------- Ticket API ----------
 
 function getAccessToken(): string {
@@ -392,4 +418,94 @@ export async function apiGetStatuses(): Promise<StatusResponse[]> {
     headers: authHeaders(token),
   })
   return handleResponse<StatusResponse[]>(res)
+}
+
+// ---------- User Management API ----------
+
+export interface UserListResponse {
+  users: UserResponse[]
+  totalCount: number
+  page: number
+  pageSize: number
+}
+
+export async function apiGetUsers(
+  search?: string,
+  roleId?: number,
+  isActive?: boolean,
+  page = 1,
+  pageSize = 20
+): Promise<UserListResponse> {
+  const token = getAccessToken()
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
+  if (search) params.set("search", search)
+  if (roleId !== undefined) params.set("roleId", String(roleId))
+  if (isActive !== undefined) params.set("isActive", String(isActive))
+  const res = await fetch(`${API_BASE}/api/users?${params}`, {
+    headers: authHeaders(token),
+  })
+  return handleResponse<UserListResponse>(res)
+}
+
+export async function apiGetUserById(id: string): Promise<UserResponse> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/users/${id}`, {
+    headers: authHeaders(token),
+  })
+  return handleResponse<UserResponse>(res)
+}
+
+export async function apiCreateUser(request: {
+  email: string
+  password: string
+  fullName: string
+  roleId: number
+}): Promise<UserResponse> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/users`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(request),
+  })
+  return handleResponse<UserResponse>(res)
+}
+
+export async function apiUpdateUser(
+  id: string,
+  request: {
+    fullName?: string
+    email?: string
+    roleId?: number
+    isActive?: boolean
+  }
+): Promise<UserResponse> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/users/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(request),
+  })
+  return handleResponse<UserResponse>(res)
+}
+
+export async function apiDeactivateUser(id: string): Promise<void> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/users/${id}/deactivate`, {
+    method: "PATCH",
+    headers: authHeaders(token),
+  })
+  return handleResponse<void>(res)
+}
+
+export async function apiActivateUser(id: string): Promise<UserResponse> {
+  return apiUpdateUser(id, { isActive: true })
+}
+
+export async function apiDeleteUser(id: string): Promise<void> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/users/${id}`, {
+    method: "DELETE",
+    headers: authHeaders(token),
+  })
+  return handleResponse<void>(res)
 }

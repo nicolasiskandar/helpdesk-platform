@@ -117,6 +117,56 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
+    /// Update the current authenticated user's profile (name and email).
+    /// </summary>
+    [Authorize]
+    [HttpPut("me")]
+    [ProducesResponseType(typeof(UserResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileRequest request)
+    {
+        var userId = GetUserIdFromClaims();
+        if (userId == null)
+            return Unauthorized();
+
+        try
+        {
+            var result = await _authService.UpdateProfileAsync(userId.Value, request);
+            return Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ErrorResponse(ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Change the current authenticated user's password.
+    /// </summary>
+    [Authorize]
+    [HttpPost("change-password")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
+    {
+        var userId = GetUserIdFromClaims();
+        if (userId == null)
+            return Unauthorized();
+
+        try
+        {
+            await _authService.ChangePasswordAsync(userId.Value, request);
+            return NoContent();
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return BadRequest(new ErrorResponse(ex.Message));
+        }
+    }
+
+    /// <summary>
     /// Get the public RSA key in JWKS format.
     /// </summary>
     /// <remarks>

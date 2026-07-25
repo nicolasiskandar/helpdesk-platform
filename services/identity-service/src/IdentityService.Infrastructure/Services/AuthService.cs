@@ -153,6 +153,46 @@ public class AuthService : IAuthService
         );
     }
 
+    public async Task<UserResponse> UpdateProfileAsync(Guid userId, UpdateProfileRequest request)
+    {
+        var user = await _unitOfWork.Users.GetByIdAsync(userId)
+            ?? throw new KeyNotFoundException("User not found.");
+
+        if (!string.Equals(user.Email, request.Email, StringComparison.OrdinalIgnoreCase))
+        {
+            if (await _unitOfWork.Users.EmailExistsAsync(request.Email))
+                throw new InvalidOperationException("A user with this email address already exists.");
+            user.Email = request.Email;
+        }
+
+        user.FullName = request.FullName;
+        await _unitOfWork.Users.UpdateAsync(user);
+        await _unitOfWork.SaveChangesAsync();
+
+        return new UserResponse(
+            Id: user.Id,
+            Email: user.Email,
+            FullName: user.FullName,
+            Role: user.Role.Name,
+            IsActive: user.IsActive,
+            CreatedAt: user.CreatedAt,
+            LastLoginAt: user.LastLoginAt
+        );
+    }
+
+    public async Task ChangePasswordAsync(Guid userId, ChangePasswordRequest request)
+    {
+        var user = await _unitOfWork.Users.GetByIdAsync(userId)
+            ?? throw new KeyNotFoundException("User not found.");
+
+        if (!_passwordHasher.VerifyPassword(request.CurrentPassword, user.PasswordHash))
+            throw new UnauthorizedAccessException("Current password is incorrect.");
+
+        user.PasswordHash = _passwordHasher.HashPassword(request.NewPassword);
+        await _unitOfWork.Users.UpdateAsync(user);
+        await _unitOfWork.SaveChangesAsync();
+    }
+
     private async Task<string> CreateRefreshTokenAsync(Guid userId)
     {
         var tokenValue = _jwtTokenService.GenerateRefreshToken();

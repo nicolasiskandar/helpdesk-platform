@@ -44,7 +44,6 @@ interface NewTicketInput {
 interface StoreValue {
   currentUserId: string
   role: Role
-  setRole: (role: Role) => void
   tickets: Ticket[]
   ticketsLoading: boolean
   refreshTickets: () => Promise<void>
@@ -126,21 +125,17 @@ function buildActivity(auditLog: AuditLogEntryResponse[]): ActivityEntry[] {
   }))
 }
 
-const ROLE_DEFAULT_USER: Record<Role, string> = {
-  admin: "u-1",
-  agent: "u-2",
-  employee: "u-5",
-  manager: "u-7",
-}
-
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const { user: authUser } = useAuth()
-  const [role, setRole] = React.useState<Role>("admin")
   const [tickets, setTickets] = React.useState<Ticket[]>([])
   const [ticketsLoading, setTicketsLoading] = React.useState(true)
   const [notifications] = React.useState<NotificationItem[]>([])
 
-  const currentUserId = authUser?.id || ROLE_DEFAULT_USER[role]
+  const role: Role = authUser
+    ? (authUser.role.toLowerCase() as Role)
+    : "employee"
+
+  const currentUserId = authUser?.id || ""
 
   const fetchTickets = React.useCallback(async () => {
     setTicketsLoading(true)
@@ -151,7 +146,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         : await apiGetTickets(1, 500)
       setTickets(data.tickets.map(mapTicket))
     } catch {
-      // API may be unreachable — show empty state
       setTickets([])
     } finally {
       setTicketsLoading(false)
@@ -346,7 +340,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const value: StoreValue = {
     currentUserId,
     role,
-    setRole,
     tickets,
     ticketsLoading,
     refreshTickets: fetchTickets,
