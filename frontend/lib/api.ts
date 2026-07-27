@@ -383,6 +383,26 @@ export async function apiGetAttachments(
   return handleResponse<AttachmentResponse[]>(res)
 }
 
+export function apiAttachmentDownloadUrl(ticketId: string, attachmentId: string): string {
+  const token = getAccessToken()
+  return `${API_BASE}/api/tickets/${ticketId}/attachments/${attachmentId}`
+}
+
+export async function apiUploadAttachment(
+  ticketId: string,
+  file: File
+): Promise<AttachmentResponse> {
+  const token = getAccessToken()
+  const formData = new FormData()
+  formData.append("file", file)
+  const res = await fetch(`${API_BASE}/api/tickets/${ticketId}/attachments`, {
+    method: "POST",
+    headers: authHeaders(token),
+    body: formData,
+  })
+  return handleResponse<AttachmentResponse>(res)
+}
+
 export async function apiGetAuditLog(
   ticketId: string,
   page = 1,

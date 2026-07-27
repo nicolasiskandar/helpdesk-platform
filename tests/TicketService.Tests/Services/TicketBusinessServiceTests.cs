@@ -12,6 +12,7 @@ public class TicketBusinessServiceTests
 {
     private readonly Mock<IUnitOfWork> _unitOfWorkMock = new();
     private readonly Mock<IReferenceNumberGenerator> _referenceNumberGeneratorMock = new();
+    private readonly Mock<IFileStorageService> _fileStorageMock = new();
     private readonly TicketBusinessService _sut;
 
     private readonly Mock<ITicketRepository> _ticketRepoMock = new();
@@ -36,7 +37,7 @@ public class TicketBusinessServiceTests
         _unitOfWorkMock.Setup(u => u.TicketAuditLogs).Returns(_auditLogRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Outbox).Returns(_outboxRepoMock.Object);
 
-        _sut = new TicketBusinessService(_unitOfWorkMock.Object, _referenceNumberGeneratorMock.Object);
+        _sut = new TicketBusinessService(_unitOfWorkMock.Object, _referenceNumberGeneratorMock.Object, _fileStorageMock.Object);
     }
 
     [Fact]

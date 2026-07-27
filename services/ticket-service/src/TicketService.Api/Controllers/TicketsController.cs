@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TicketService.Application.DTOs;
 using TicketService.Application.Interfaces;
+using TicketService.Infrastructure.Services;
 
 namespace TicketService.Api.Controllers;
 
@@ -12,10 +13,14 @@ namespace TicketService.Api.Controllers;
 public class TicketsController : ControllerBase
 {
     private readonly ITicketService _ticketService;
+    private readonly IFileStorageService _fileStorage;
+    private readonly ILogger<TicketsController> _logger;
 
-    public TicketsController(ITicketService ticketService)
+    public TicketsController(ITicketService ticketService, IFileStorageService fileStorage, ILogger<TicketsController> logger)
     {
         _ticketService = ticketService;
+        _fileStorage = fileStorage;
+        _logger = logger;
     }
 
     /// <summary>
@@ -200,6 +205,69 @@ public class TicketsController : ControllerBase
     {
         var attachments = await _ticketService.GetAttachmentsAsync(ticketId);
         return Ok(attachments);
+    }
+
+    /// <summary>
+    /// Uploads a file attachment to a ticket.
+    /// </summary>
+    [HttpPost("{ticketId:guid}/attachments")]
+    [ProducesResponseType(typeof(AttachmentResponse), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [RequestSizeLimit(10 * 1024 * 1024)]
+    public async Task<IActionResult> UploadAttachment(Guid ticketId, IFormFile file)
+    {
+        _logger.LogInformation("UploadAttachment called for ticket {TicketId}, file: {FileName}, size: {FileSize}", ticketId, file.FileName, file.Length);
+
+        if (file.Length == 0)
+            return BadRequest(new ErrorResponse("File is empty.", null));
+
+        var userId = GetUserIdFromClaims();
+        var attachment = await _ticketService.UploadAttachmentAsync(ticketId, file.OpenReadStream(), file.FileName, userId);
+
+        _logger.LogInformation("UploadAttachment completed for ticket {TicketId}, attachmentId: {AttachmentId}", ticketId, attachment.Id);
+
+        return CreatedAtAction(nameof(GetAttachments), new { ticketId }, attachment);
+    }
+
+    /// <summary>
+    /// Downloads an attachment file.
+    /// </summary>
+    [HttpGet("{ticketId:guid}/attachments/{attachmentId:guid}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DownloadAttachment(Guid ticketId, Guid attachmentId)
+    {
+        var attachments = await _ticketService.GetAttachmentsAsync(ticketId);
+        var attachment = attachments.FirstOrDefault(a => a.Id == attachmentId);
+        if (attachment is null)
+            return NotFound(new ErrorResponse("Attachment not found.", null));
+
+        var stream = _fileStorage.OpenFileAsync(attachment.FileUrl);
+        var contentType = GetContentType(attachment.FileName);
+        return File(stream, contentType, attachment.FileName);
+    }
+
+    private static string GetContentType(string fileName)
+    {
+        var ext = Path.GetExtension(fileName).ToLowerInvariant();
+        return ext switch
+        {
+            ".txt" => "text/plain",
+            ".pdf" => "application/pdf",
+            ".png" => "image/png",
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".gif" => "image/gif",
+            ".svg" => "image/svg+xml",
+            ".doc" or ".docx" => "application/msword",
+            ".xls" or ".xlsx" => "application/vnd.ms-excel",
+            ".zip" => "application/zip",
+            ".json" => "application/json",
+            ".csv" => "text/csv",
+            ".xml" => "application/xml",
+            ".mp4" => "video/mp4",
+            ".mp3" => "audio/mpeg",
+            _ => "application/octet-stream",
+        };
     }
 
     /// <summary>

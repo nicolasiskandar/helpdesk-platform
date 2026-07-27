@@ -144,6 +144,7 @@ services:
         condition: service_started
     volumes:
       - ./infra/certs:/app/certs:ro
+      - ticket-uploads:/app/uploads
     networks:
       - helpdesk-network
     healthcheck:
@@ -239,6 +240,7 @@ volumes:
   rabbitmq-data:
   prometheus-data:
   grafana-data:
+  ticket-uploads:
 
 networks:
   helpdesk-network:

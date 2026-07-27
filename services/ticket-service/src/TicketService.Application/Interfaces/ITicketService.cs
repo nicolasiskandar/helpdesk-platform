@@ -22,6 +22,7 @@ public interface ITicketService
 
     Task<IReadOnlyList<AttachmentResponse>> GetAttachmentsAsync(Guid ticketId);
     Task<AttachmentResponse> AddAttachmentAsync(Guid ticketId, string fileName, string fileUrl, Guid uploadedByUserId);
+    Task<AttachmentResponse> UploadAttachmentAsync(Guid ticketId, Stream fileStream, string fileName, Guid uploadedByUserId);
 
     Task<AuditLogListResponse> GetAuditLogAsync(Guid ticketId, int page, int pageSize);
 

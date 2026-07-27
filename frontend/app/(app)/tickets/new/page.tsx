@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { ArrowLeftIcon, SendIcon } from "lucide-react"
+import { ArrowLeftIcon, SendIcon, PaperclipIcon, XIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useStore } from "@/lib/store"
+import { apiUploadAttachment } from "@/lib/api"
 import type { TicketCategory, TicketPriority } from "@/lib/types"
 
 const CATEGORIES: { value: TicketCategory; label: string }[] = [
@@ -35,6 +36,14 @@ const PRIORITIES: { value: TicketPriority; label: string }[] = [
   { value: "Critical", label: "Critical" },
 ]
 
+const MAX_FILE_SIZE = 10 * 1024 * 1024
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 export default function NewTicketPage() {
   const router = useRouter()
   const { createTicket } = useStore()
@@ -43,9 +52,28 @@ export default function NewTicketPage() {
   const [description, setDescription] = React.useState("")
   const [category, setCategory] = React.useState<TicketCategory>("")
   const [priority, setPriority] = React.useState<TicketPriority>("")
+  const [files, setFiles] = React.useState<File[]>([])
   const [submitting, setSubmitting] = React.useState(false)
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
 
   const canSubmit = subject.trim() && description.trim() && category && priority
+
+  function handleFilesSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const selected = Array.from(e.target.files || [])
+    const valid = selected.filter((f) => {
+      if (f.size > MAX_FILE_SIZE) {
+        toast.warning(`${f.name} exceeds 10 MB limit`)
+        return false
+      }
+      return true
+    })
+    setFiles((prev) => [...prev, ...valid])
+    if (fileInputRef.current) fileInputRef.current.value = ""
+  }
+
+  function removeFile(index: number) {
+    setFiles((prev) => prev.filter((_, i) => i !== index))
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -54,6 +82,17 @@ export default function NewTicketPage() {
     setSubmitting(true)
     try {
       const ticket = await createTicket({ subject, description, category, priority })
+
+      for (const file of files) {
+        try {
+          await apiUploadAttachment(ticket.id, file)
+        } catch (err: any) {
+          toast.error(`Failed to upload ${file.name}`, {
+            description: err?.message || "Upload failed",
+          })
+        }
+      }
+
       toast.success("Ticket created", {
         description: `${ticket.reference} — ${ticket.subject}`,
       })
@@ -147,6 +186,44 @@ export default function NewTicketPage() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label>Attachments</Label>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <PaperclipIcon />
+                  Add files
+                </Button>
+                <span className="text-xs text-muted-foreground">Max 10 MB per file</span>
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={handleFilesSelected}
+              />
+              {files.length > 0 && (
+                <div className="flex flex-col gap-1.5 mt-1">
+                  {files.map((file, i) => (
+                    <div key={`${file.name}-${i}`} className="flex items-center justify-between rounded-md border px-3 py-1.5 text-sm">
+                      <span className="truncate mr-2">{file.name}</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-muted-foreground text-xs">{formatFileSize(file.size)}</span>
+                        <button type="button" onClick={() => removeFile(i)} className="text-muted-foreground hover:text-foreground">
+                          <XIcon className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end gap-3 pt-2">

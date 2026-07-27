@@ -11,11 +11,13 @@ public class TicketBusinessService : ITicketService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IReferenceNumberGenerator _referenceNumberGenerator;
+    private readonly IFileStorageService _fileStorage;
 
-    public TicketBusinessService(IUnitOfWork unitOfWork, IReferenceNumberGenerator referenceNumberGenerator)
+    public TicketBusinessService(IUnitOfWork unitOfWork, IReferenceNumberGenerator referenceNumberGenerator, IFileStorageService fileStorage)
     {
         _unitOfWork = unitOfWork;
         _referenceNumberGenerator = referenceNumberGenerator;
+        _fileStorage = fileStorage;
     }
 
     public async Task<TicketResponse> CreateTicketAsync(CreateTicketRequest request, Guid createdByUserId)
@@ -364,6 +366,29 @@ public class TicketBusinessService : ITicketService
     {
         var ticket = await _unitOfWork.Tickets.GetByIdAsync(ticketId)
             ?? throw new KeyNotFoundException("Ticket not found.");
+
+        var attachment = new TicketAttachment
+        {
+            Id = Guid.NewGuid(),
+            TicketId = ticketId,
+            FileName = fileName,
+            FileUrl = fileUrl,
+            UploadedByUserId = uploadedByUserId,
+            UploadedAt = DateTime.UtcNow
+        };
+
+        await _unitOfWork.TicketAttachments.AddAsync(attachment);
+        await _unitOfWork.SaveChangesAsync();
+
+        return MapAttachmentToResponse(attachment);
+    }
+
+    public async Task<AttachmentResponse> UploadAttachmentAsync(Guid ticketId, Stream fileStream, string fileName, Guid uploadedByUserId)
+    {
+        var ticket = await _unitOfWork.Tickets.GetByIdAsync(ticketId)
+            ?? throw new KeyNotFoundException("Ticket not found.");
+
+        var fileUrl = await _fileStorage.SaveFileAsync(fileStream, fileName, ticketId.ToString());
 
         var attachment = new TicketAttachment
         {

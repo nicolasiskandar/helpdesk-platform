@@ -16,6 +16,9 @@ public static class DependencyInjection
         services.AddDbContext<TicketDbContext>(options =>
             options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
 
+        var uploadsDir = configuration["FileStorage:UploadsDirectory"] ?? "uploads";
+        services.AddSingleton<IFileStorageService>(new LocalFileStorageService(uploadsDir));
+
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped<IReferenceNumberGenerator, ReferenceNumberGenerator>();
         services.AddScoped<IEventPublisher, RabbitMQPublisher>();

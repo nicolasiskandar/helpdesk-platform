@@ -50,7 +50,7 @@ import { useStore } from "@/lib/store"
 import { formatRelative, formatDateTime } from "@/lib/analytics"
 import type { Ticket, Comment, TicketStatus, TicketCategory, TicketPriority } from "@/lib/types"
 import type { AuditLogEntryResponse, AttachmentResponse, CategoryResponse, PriorityResponse } from "@/lib/api"
-import { apiGetTicketByReference, apiGetCategories, apiGetPriorities } from "@/lib/api"
+import { apiGetTicketByReference, apiGetCategories, apiGetPriorities, apiAttachmentDownloadUrl } from "@/lib/api"
 
 function initials(id: string) {
   return id.slice(0, 2).toUpperCase()
@@ -449,18 +449,32 @@ export default function TicketDetailPage() {
                   ) : (
                     <div className="flex flex-col gap-2">
                       {attachments.map((a) => (
-                        <div
+                        <button
                           key={a.id}
-                          className="flex items-center gap-3 rounded-md border p-3"
+                          type="button"
+                          onClick={async () => {
+                            const res = await fetch(apiAttachmentDownloadUrl(ticket.id, a.id), {
+                              headers: { Authorization: `Bearer ${sessionStorage.getItem("accessToken") || ""}` },
+                            })
+                            if (!res.ok) return
+                            const blob = await res.blob()
+                            const url = URL.createObjectURL(blob)
+                            const link = document.createElement("a")
+                            link.href = url
+                            link.download = a.fileName
+                            link.click()
+                            URL.revokeObjectURL(url)
+                          }}
+                          className="flex items-center gap-3 rounded-md border p-3 text-left transition-colors hover:bg-muted/50"
                         >
-                          <PaperclipIcon className="size-4 text-muted-foreground" />
-                          <div className="flex-1">
-                            <p className="text-sm font-medium">{a.fileName}</p>
+                          <PaperclipIcon className="size-4 text-muted-foreground shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{a.fileName}</p>
                             <p className="text-xs text-muted-foreground">
                               {formatDateTime(a.uploadedAt)}
                             </p>
                           </div>
-                        </div>
+                        </button>
                       ))}
                     </div>
                   )}
