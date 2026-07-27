@@ -212,6 +212,10 @@ curl http://localhost:5000/api/tickets \
 # Get ticket by ID
 curl http://localhost:5000/api/tickets/<id> \
   -H "Authorization: Bearer <ACCESS_TOKEN>"
+
+# Delete a ticket (Admin or ticket Creator only, must be Open status)
+curl -X DELETE http://localhost:5000/api/tickets/<id> \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
 ```
 
 ## Observability
@@ -345,7 +349,7 @@ Unit tests use **xUnit**, **Moq**, and **FluentAssertions**.
 ./scripts.sh down             # Stop all services
 ./scripts.sh logs             # Tail logs from all services
 ./scripts.sh frontend-dev     # Run frontend locally (no Docker)
-./scripts.sh test             # Run all unit tests (91 tests)
+./scripts.sh test             # Run all unit tests (137 tests)
 ./scripts.sh coverage         # Run tests and show code coverage
 ./scripts.sh clean            # Remove test results and build artifacts
 ./scripts.sh help             # Show all available commands
@@ -355,14 +359,16 @@ Unit tests use **xUnit**, **Moq**, and **FluentAssertions**.
 
 | File | Tests | What's tested |
 |------|-------|---------------|
-| `AuthServiceTests.cs` | 10 | Register, login, refresh, logout, get-user |
+| `AuthServiceTests.cs` | 13 | Register, login, refresh, logout, get-user, update-profile, change-password |
+| `UserServiceTests.cs` | 16 | User CRUD, admin constraint, search/filter/paging |
 | `PasswordHasherTests.cs` | 4 | Hash, verify, salt uniqueness |
 | `JwtTokenServiceTests.cs` | 5 | Token generation, claims, validation |
 | `AuthValidatorTests.cs` | 15 | All FluentValidation rules |
+| `UserValidatorTests.cs` | 13 | CreateUser, UpdateUser, UpdateProfile, ChangePassword validators |
 | `TicketBusinessServiceTests.cs` | 14 | Ticket CRUD, assignment, workflow |
 | `ReferenceNumberGeneratorTests.cs` | 4 | Reference number format and uniqueness |
 | `TicketValidatorTests.cs` | 18 | All FluentValidation rules for tickets |
-| **Total** | **91** | |
+| **Total** | **102** | |
 
 ## Tech Stack
 
