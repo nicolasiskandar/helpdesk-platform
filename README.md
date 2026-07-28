@@ -223,7 +223,7 @@ curl http://localhost:5000/.well-known/jwks.json
 ### User Management Endpoints (Admin / Manager)
 
 ```bash
-# List all users (paginated, filterable by search, roleId, isActive)
+# List all users (all authenticated users, paginated, filterable)
 curl "http://localhost:5000/api/users?page=1&pageSize=20&search=admin" \
   -H "Authorization: Bearer <ACCESS_TOKEN>"
 
@@ -324,6 +324,17 @@ curl http://localhost:5000/api/tickets/<id>/attachments \
 curl http://localhost:5000/api/tickets/<ticketId>/attachments/<attachmentId> \
   -H "Authorization: Bearer <ACCESS_TOKEN>" -o file
 
+# Get comments for a ticket (role-based: private comments visible only to
+# ticket creator, assigned agent, and admin)
+curl http://localhost:5000/api/tickets/<id>/comments \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
+
+# Add a comment to a ticket
+curl -X POST http://localhost:5000/api/tickets/<id>/comments \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{ "content": "Working on it", "isPrivate": false }'
+
 # Get agent workload stats (Admin/Manager)
 curl http://localhost:5000/api/tickets/agent-workload \
   -H "Authorization: Bearer <ACCESS_TOKEN>"
@@ -405,7 +416,7 @@ Log format:
 | Table | Description |
 |-------|-------------|
 | `Tickets` | Ticket records with reference numbers (TKT-XXXXXX) |
-| `TicketComments` | Comments on tickets |
+| `TicketComments` | Public or private comments (private = ticket creator + assigned agent + admin only) |
 | `TicketAssignments` | Agent assignment history |
 | `TicketAttachments` | File metadata for ticket attachments (files stored on disk) |
 | `TicketStatusHistory` | Status change audit trail |
@@ -466,7 +477,7 @@ Unit tests use **xUnit**, **Moq**, and **FluentAssertions**.
 ./scripts.sh down             # Stop all services
 ./scripts.sh logs             # Tail logs from all services
 ./scripts.sh frontend-dev     # Run frontend locally (no Docker)
-./scripts.sh test             # Run all unit tests (153 tests)
+./scripts.sh test             # Run all unit tests (201 tests)
 ./scripts.sh coverage         # Run tests and show code coverage
 ./scripts.sh clean            # Remove test results and build artifacts
 ./scripts.sh help             # Show all available commands
@@ -482,8 +493,9 @@ Unit tests use **xUnit**, **Moq**, and **FluentAssertions**.
 | `JwtTokenServiceTests.cs` | 10 | Token generation, claims, validation, Name claim |
 | `AuthValidatorTests.cs` | 18 | All FluentValidation rules |
 | `UserValidatorTests.cs` | 27 | CreateUser, UpdateUser, UpdateProfile, ChangePassword validators |
-| `TicketBusinessServiceTests.cs` | 41 | Ticket CRUD, assignment, workflow, self-assignment, open unassigned query, unassign outbox |
-| **Total** | **153** | |
+| `TicketBusinessServiceTests.cs` | 48 | Ticket CRUD, assignment, workflow, self-assignment, open unassigned query, unassign outbox, comment visibility, status transition validation |
+| `NotificationBusinessServiceTests.cs` | 16 | Event processing, preferences, notifications CRUD, SignalR, email delivery |
+| **Total** | **201** | |
 
 ## Tech Stack
 

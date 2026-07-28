@@ -26,9 +26,12 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarMenuBadge,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
 } from "@/components/ui/sidebar"
 import { useStore } from "@/lib/store"
 import type { Role } from "@/lib/types"
@@ -39,6 +42,14 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string }>
   roles: Role[]
   badge?: "unread" | "open"
+  children?: NavItemChild[]
+}
+
+interface NavItemChild {
+  title: string
+  href: string
+  icon: React.ComponentType<{ className?: string }>
+  roles: Role[]
 }
 
 const mainNav: NavItem[] = [
@@ -54,18 +65,20 @@ const mainNav: NavItem[] = [
     icon: Ticket,
     roles: ["admin", "agent", "manager", "employee"],
     badge: "open",
-  },
-  {
-    title: "Create Ticket",
-    href: "/tickets/new",
-    icon: PlusCircle,
-    roles: ["admin", "agent", "manager", "employee"],
-  },
-  {
-    title: "Ticket Queue",
-    href: "/tickets/queue",
-    icon: ListTodo,
-    roles: ["admin", "agent", "manager"],
+    children: [
+      {
+        title: "Ticket Queue",
+        href: "/tickets/queue",
+        icon: ListTodo,
+        roles: ["admin", "agent", "manager"],
+      },
+      {
+        title: "Create Ticket",
+        href: "/tickets/new",
+        icon: PlusCircle,
+        roles: ["admin", "employee"],
+      },
+    ],
   },
   {
     title: "Reports",
@@ -135,7 +148,11 @@ export function AppSidebar() {
 
   function renderItems(items: NavItem[]) {
     return items
-      .filter((item) => item.roles.includes(role))
+      .filter((item) => {
+        if (item.roles.includes(role)) return true
+        if (item.children?.some((child) => child.roles.includes(role))) return true
+        return false
+      })
       .map((item) => {
         const badgeValue =
           item.badge === "unread"
@@ -143,6 +160,47 @@ export function AppSidebar() {
             : item.badge === "open"
               ? openCount
               : 0
+
+        if (item.children) {
+          const visibleChildren = item.children.filter((child) =>
+            child.roles.includes(role)
+          )
+          return (
+            <SidebarMenuItem key={item.href}>
+              <SidebarMenuButton
+                isActive={isActive(item.href)}
+                tooltip={item.title}
+                render={
+                  <Link href={item.href}>
+                    <item.icon />
+                    <span>{item.title}</span>
+                  </Link>
+                }
+              />
+              {item.badge && badgeValue > 0 ? (
+                <SidebarMenuBadge>{badgeValue}</SidebarMenuBadge>
+              ) : null}
+              {visibleChildren.length > 0 && (
+                <SidebarMenuSub>
+                  {visibleChildren.map((child) => (
+                    <SidebarMenuSubItem key={child.href}>
+                      <SidebarMenuSubButton
+                        isActive={isActive(child.href)}
+                        render={
+                          <Link href={child.href}>
+                            <child.icon />
+                            <span>{child.title}</span>
+                          </Link>
+                        }
+                      />
+                    </SidebarMenuSubItem>
+                  ))}
+                </SidebarMenuSub>
+              )}
+            </SidebarMenuItem>
+          )
+        }
+
         return (
           <SidebarMenuItem key={item.href}>
             <SidebarMenuButton

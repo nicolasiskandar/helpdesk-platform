@@ -917,6 +917,121 @@ public class TicketBusinessServiceTests
     }
 
     [Fact]
+    public async Task ChangeStatusAsync_ValidTransition_InProgressToPendingConfirmation_Succeeds()
+    {
+        var ticketId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var ticket = new Ticket
+        {
+            Id = ticketId, ReferenceNumber = "TKT-000001", Title = "Test",
+            CategoryId = 1, PriorityId = 1, StatusId = 2,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 2, Name = "In Progress" }
+        };
+        var newStatus = new Status { Id = 3, Name = "Resolved - Pending Confirmation" };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _statusRepoMock.Setup(r => r.GetByIdAsync(3)).ReturnsAsync(newStatus);
+
+        var result = await _sut.ChangeStatusAsync(ticketId, new ChangeStatusRequest(3, null), userId);
+
+        result.StatusName.Should().Be("Resolved - Pending Confirmation");
+    }
+
+    [Fact]
+    public async Task ChangeStatusAsync_ValidTransition_PendingToClosed_Succeeds()
+    {
+        var ticketId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var ticket = new Ticket
+        {
+            Id = ticketId, ReferenceNumber = "TKT-000001", Title = "Test",
+            CategoryId = 1, PriorityId = 1, StatusId = 3,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 3, Name = "Resolved - Pending Confirmation" }
+        };
+        var newStatus = new Status { Id = 4, Name = "Closed" };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _statusRepoMock.Setup(r => r.GetByIdAsync(4)).ReturnsAsync(newStatus);
+
+        var result = await _sut.ChangeStatusAsync(ticketId, new ChangeStatusRequest(4, null), userId);
+
+        result.StatusName.Should().Be("Closed");
+    }
+
+    [Fact]
+    public async Task ChangeStatusAsync_InvalidTransition_OpenToClosed_ThrowsInvalidOperationException()
+    {
+        var ticketId = Guid.NewGuid();
+        var ticket = new Ticket
+        {
+            Id = ticketId, ReferenceNumber = "TKT-000001", Title = "Test",
+            CategoryId = 1, PriorityId = 1, StatusId = 1,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 1, Name = "Open" }
+        };
+        var closedStatus = new Status { Id = 4, Name = "Closed" };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _statusRepoMock.Setup(r => r.GetByIdAsync(4)).ReturnsAsync(closedStatus);
+
+        var act = () => _sut.ChangeStatusAsync(ticketId, new ChangeStatusRequest(4, null), Guid.NewGuid());
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*Cannot transition*");
+    }
+
+    [Fact]
+    public async Task ChangeStatusAsync_TerminalState_ClosedToInProgress_ThrowsInvalidOperationException()
+    {
+        var ticketId = Guid.NewGuid();
+        var ticket = new Ticket
+        {
+            Id = ticketId, ReferenceNumber = "TKT-000001", Title = "Test",
+            CategoryId = 1, PriorityId = 1, StatusId = 4,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 4, Name = "Closed" }
+        };
+        var inProgressStatus = new Status { Id = 2, Name = "In Progress" };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _statusRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(inProgressStatus);
+
+        var act = () => _sut.ChangeStatusAsync(ticketId, new ChangeStatusRequest(2, null), Guid.NewGuid());
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*Cannot change status*");
+    }
+
+    [Fact]
+    public async Task ChangeStatusAsync_ValidTransition_PendingToInProgress_Succeeds()
+    {
+        var ticketId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var ticket = new Ticket
+        {
+            Id = ticketId, ReferenceNumber = "TKT-000001", Title = "Test",
+            CategoryId = 1, PriorityId = 1, StatusId = 3,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 3, Name = "Resolved - Pending Confirmation" }
+        };
+        var newStatus = new Status { Id = 2, Name = "In Progress" };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _statusRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(newStatus);
+
+        var result = await _sut.ChangeStatusAsync(ticketId, new ChangeStatusRequest(2, null), userId);
+
+        result.StatusName.Should().Be("In Progress");
+    }
+
+    [Fact]
     public async Task AddCommentAsync_TicketNotFound_ThrowsKeyNotFoundException()
     {
         // Arrange

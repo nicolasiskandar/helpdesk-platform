@@ -197,7 +197,7 @@ export async function apiChangePassword(request: {
 
 // ---------- Ticket API ----------
 
-function getAccessToken(): string {
+export function getAccessToken(): string {
   if (typeof window === "undefined") return ""
   return sessionStorage.getItem("accessToken") || ""
 }
@@ -580,4 +580,95 @@ export async function apiGetAgentWorkload(): Promise<AgentWorkloadResponse[]> {
     headers: authHeaders(token),
   })
   return handleResponse<AgentWorkloadResponse[]>(res)
+}
+
+// ---------- Notification API ----------
+
+export interface NotificationResponse {
+  id: string
+  type: string
+  title: string
+  message: string
+  ticketId: string | null
+  ticketReferenceNumber: string | null
+  isRead: boolean
+  createdAt: string
+}
+
+export interface NotificationListResponse {
+  notifications: NotificationResponse[]
+  unreadCount: number
+  page: number
+  pageSize: number
+}
+
+export interface PreferenceResponse {
+  ticketCreatedInApp: boolean
+  ticketCreatedEmail: boolean
+  ticketAssignedInApp: boolean
+  ticketAssignedEmail: boolean
+  ticketUnassignedInApp: boolean
+  ticketUnassignedEmail: boolean
+  ticketStatusChangedInApp: boolean
+  ticketStatusChangedEmail: boolean
+  ticketCommentedInApp: boolean
+  ticketCommentedEmail: boolean
+}
+
+export async function apiGetNotifications(
+  page = 1,
+  pageSize = 20,
+  unreadOnly?: boolean
+): Promise<NotificationListResponse> {
+  const token = getAccessToken()
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
+  if (unreadOnly !== undefined) params.set("unreadOnly", String(unreadOnly))
+  const res = await fetch(`${API_BASE}/api/notifications?${params}`, {
+    headers: authHeaders(token),
+  })
+  return handleResponse<NotificationListResponse>(res)
+}
+
+export async function apiGetUnreadCount(): Promise<number> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/notifications/unread-count`, {
+    headers: authHeaders(token),
+  })
+  return handleResponse<number>(res)
+}
+
+export async function apiMarkNotificationRead(id: string): Promise<void> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/notifications/${id}/read`, {
+    method: "PATCH",
+    headers: authHeaders(token),
+  })
+  return handleResponse<void>(res)
+}
+
+export async function apiMarkAllNotificationsRead(): Promise<void> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/notifications/read-all`, {
+    method: "PATCH",
+    headers: authHeaders(token),
+  })
+  return handleResponse<void>(res)
+}
+
+export async function apiGetNotificationPreferences(): Promise<PreferenceResponse> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/notifications/preferences`, {
+    headers: authHeaders(token),
+  })
+  return handleResponse<PreferenceResponse>(res)
+}
+
+export async function apiUpdateNotificationPreferences(request: Partial<PreferenceResponse>): Promise<void> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/notifications/preferences`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(request),
+  })
+  return handleResponse<void>(res)
 }

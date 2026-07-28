@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
+import { RoleGuard } from "@/components/role-guard"
 import {
   Select,
   SelectContent,
@@ -107,7 +108,8 @@ export default function NewTicketPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <RoleGuard allowedRoles={["admin", "employee"]}>
+      <div className="flex flex-col gap-6">
       <div className="flex items-center gap-3">
         <Button
           variant="ghost"
@@ -243,6 +245,7 @@ export default function NewTicketPage() {
           </form>
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </RoleGuard>
   )
 }

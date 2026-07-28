@@ -1,0 +1,39 @@
+using System.Diagnostics;
+
+namespace NotificationService.Api.Middleware;
+
+public class RequestLoggingMiddleware
+{
+    private readonly RequestDelegate _next;
+    private readonly ILogger<RequestLoggingMiddleware> _logger;
+
+    public RequestLoggingMiddleware(RequestDelegate next, ILogger<RequestLoggingMiddleware> logger)
+    {
+        _next = next;
+        _logger = logger;
+    }
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        var correlationId = context.Request.Headers["X-Correlation-ID"].FirstOrDefault()
+                            ?? Guid.NewGuid().ToString("N");
+        context.Response.Headers["X-Correlation-ID"] = correlationId;
+
+        var sw = Stopwatch.StartNew();
+        await _next(context);
+        sw.Stop();
+
+        var level = context.Response.StatusCode >= 500 ? LogLevel.Error
+                   : context.Response.StatusCode >= 400 ? LogLevel.Warning
+                   : LogLevel.Information;
+
+        _logger.Log(level,
+            "{Method} {Path} {StatusCode} {ElapsedMs}ms [{CorrelationId}] TraceId={TraceId}",
+            context.Request.Method,
+            context.Request.Path,
+            context.Response.StatusCode,
+            sw.ElapsedMilliseconds,
+            correlationId,
+            Activity.Current?.TraceId);
+    }
+}

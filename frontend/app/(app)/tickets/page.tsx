@@ -26,8 +26,7 @@ import Link from "next/link"
 const STATUSES: TicketStatus[] = [
   "Open",
   "In Progress",
-  "Pending",
-  "Resolved",
+  "Pending Resolution",
   "Closed",
 ]
 const PRIORITIES: TicketPriority[] = ["Critical", "High", "Medium", "Low"]
@@ -165,12 +164,14 @@ export default function TicketsPage() {
               : "Search, filter, and manage the full ticket queue."}
           </p>
         </div>
-        <Button
-          render={<Link href="/tickets/new" />}
-        >
-          <PlusIcon data-icon="inline-start" />
-          New Ticket
-        </Button>
+        {(role === "employee" || role === "admin") && (
+          <Button
+            render={<Link href="/tickets/new" />}
+          >
+            <PlusIcon data-icon="inline-start" />
+            New Ticket
+          </Button>
+        )}
       </div>
 
       {/* Status quick filter */}

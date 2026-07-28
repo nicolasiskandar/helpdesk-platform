@@ -236,6 +236,23 @@ public class TicketBusinessService : ITicketService
         var newStatus = await _unitOfWork.Statuses.GetByIdAsync(request.StatusId)
             ?? throw new InvalidOperationException("Invalid status.");
 
+        var allowedTransitions = new Dictionary<int, HashSet<int>>
+        {
+            [1] = new() { 2 },                          // Open → In Progress
+            [2] = new() { 1, 3 },                       // In Progress → Open, Pending Confirmation
+            [3] = new() { 2, 4 },                       // Pending Confirmation → In Progress, Closed
+        };
+
+        if (allowedTransitions.TryGetValue(ticket.StatusId, out var allowed) && !allowed.Contains(request.StatusId))
+        {
+            throw new InvalidOperationException($"Cannot transition from '{ticket.Status.Name}' to '{newStatus.Name}'.");
+        }
+
+        if (ticket.StatusId == 4 || ticket.StatusId == 5)
+        {
+            throw new InvalidOperationException($"Cannot change status from '{ticket.Status.Name}'.");
+        }
+
         var oldStatusName = ticket.Status.Name;
 
         ticket.StatusId = request.StatusId;

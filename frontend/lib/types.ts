@@ -12,8 +12,7 @@ export type TicketPriority = "Low" | "Medium" | "High" | "Critical"
 export type TicketStatus =
   | "Open"
   | "In Progress"
-  | "Pending"
-  | "Resolved"
+  | "Pending Resolution"
   | "Closed"
 
 export interface User {

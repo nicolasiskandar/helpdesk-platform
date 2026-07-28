@@ -91,9 +91,8 @@ public class TicketRepository : ITicketRepository
             .Include(t => t.Status)
             .Include(t => t.Assignments)
             .Where(t =>
-                // Open tickets with no active assignment (available for pickup)
-                (openStatus != null && t.StatusId == openStatus.Id &&
-                    !_context.TicketAssignments.Any(a => a.TicketId == t.Id && a.UnassignedAt == null))
+                // All open tickets
+                (openStatus != null && t.StatusId == openStatus.Id)
                 // Tickets where this agent has an active assignment
                 || _context.TicketAssignments.Any(a => a.TicketId == t.Id && a.AgentUserId == agentUserId && a.UnassignedAt == null)
                 // Closed tickets visible to everyone
@@ -148,8 +147,7 @@ public class TicketRepository : ITicketRepository
 
         var query = _context.Tickets
             .Where(t =>
-                (openStatus != null && t.StatusId == openStatus.Id &&
-                    !_context.TicketAssignments.Any(a => a.TicketId == t.Id && a.UnassignedAt == null))
+                (openStatus != null && t.StatusId == openStatus.Id)
                 || _context.TicketAssignments.Any(a => a.TicketId == t.Id && a.AgentUserId == agentUserId && a.UnassignedAt == null)
                 || (closedStatus != null && t.StatusId == closedStatus.Id))
             .AsQueryable();

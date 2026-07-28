@@ -19,10 +19,15 @@ import {
   apiGetOpenUnassignedTickets,
   apiClaimTicket,
   apiGetUsers,
+  apiGetNotifications,
+  apiGetUnreadCount,
+  apiMarkNotificationRead as apiMarkNotifRead,
+  apiMarkAllNotificationsRead as apiMarkAllNotifsRead,
   type TicketResponse,
   type CommentResponse,
   type AuditLogEntryResponse,
   type AttachmentResponse,
+  type NotificationResponse,
 } from "./api"
 import { useAuth } from "./auth"
 import type {
@@ -61,6 +66,7 @@ interface StoreValue {
   deleteTicket: (id: string) => Promise<void>
   markNotificationRead: (id: string) => void
   markAllNotificationsRead: () => void
+  refreshNotifications: () => Promise<void>
   loadTicketDetail: (id: string) => Promise<Ticket | null>
   loadComments: (ticketId: string) => Promise<Comment[]>
   loadAuditLog: (ticketId: string) => Promise<AuditLogEntryResponse[]>
@@ -90,9 +96,9 @@ const PRIORITY_MAP: Record<string, TicketPriority> = {
 const STATUS_MAP: Record<string, TicketStatus> = {
   Open: "Open",
   "In Progress": "In Progress",
-  "Resolved - Pending Confirmation": "Resolved",
+  "Resolved - Pending Confirmation": "Pending Resolution",
   Closed: "Closed",
-  "Resolved by AI": "Resolved",
+  "Resolved by AI": "Closed",
 }
 
 const SLA_HOURS: Record<TicketPriority, number> = {
@@ -125,6 +131,26 @@ function mapTicket(res: TicketResponse, userMap: Record<string, string> = {}): T
   }
 }
 
+const NOTIF_TYPE_MAP: Record<string, NotificationItem["type"]> = {
+  created: "comment",
+  assigned: "assignment",
+  unassigned: "assignment",
+  status_changed: "status",
+  comment: "comment",
+}
+
+function mapNotification(res: NotificationResponse): NotificationItem {
+  return {
+    id: res.id,
+    type: NOTIF_TYPE_MAP[res.type] || "status",
+    title: res.title,
+    body: res.message,
+    ticketRef: res.ticketReferenceNumber ?? undefined,
+    createdAt: res.createdAt,
+    read: res.isRead,
+  }
+}
+
 function normalizeRole(role: string): Role {
   const normalized = role.toLowerCase()
   if (normalized === "admin") return "admin"
@@ -147,7 +173,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const { user: authUser } = useAuth()
   const [tickets, setTickets] = React.useState<Ticket[]>([])
   const [ticketsLoading, setTicketsLoading] = React.useState(true)
-  const [notifications] = React.useState<NotificationItem[]>([])
+  const [notifications, setNotifications] = React.useState<NotificationItem[]>([])
+  const [unreadCount, setUnreadCount] = React.useState(0)
   const [openUnassignedTickets, setOpenUnassignedTickets] = React.useState<Ticket[]>([])
   const [openUnassignedTicketsLoading, setOpenUnassignedTicketsLoading] = React.useState(false)
   const [userMap, setUserMap] = React.useState<Record<string, string>>({})
@@ -226,7 +253,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     async (id: string, patch: Partial<Ticket>) => {
       if (patch.status) {
         const STATUS_IDS: Record<TicketStatus, number> = {
-          Open: 1, "In Progress": 2, Pending: 3, Resolved: 3, Closed: 4,
+          Open: 1, "In Progress": 2, "Pending Resolution": 3, Closed: 4,
         }
         const updated = await apiChangeStatus(id, STATUS_IDS[patch.status])
         setTickets((prev) =>
@@ -440,15 +467,44 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     []
   )
 
-  const markNotificationRead = React.useCallback((_id: string) => {
-    // Notifications are not backed by API yet — no-op
+  const markNotificationRead = React.useCallback(
+    async (id: string) => {
+      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)))
+      setUnreadCount((prev) => Math.max(0, prev - 1))
+      try {
+        await apiMarkNotifRead(id)
+      } catch { /* revert on failure — re-fetch next cycle */ }
+    },
+    []
+  )
+
+  const markAllNotificationsRead = React.useCallback(async () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
+    setUnreadCount(0)
+    try {
+      await apiMarkAllNotifsRead()
+    } catch { /* revert on failure */ }
   }, [])
 
-  const markAllNotificationsRead = React.useCallback(() => {
-    // Notifications are not backed by API yet — no-op
+  const refreshNotifications = React.useCallback(async () => {
+    try {
+      const [notifData, count] = await Promise.all([
+        apiGetNotifications(1, 50),
+        apiGetUnreadCount(),
+      ])
+      setNotifications(notifData.notifications.map(mapNotification))
+      setUnreadCount(count)
+    } catch { /* ignore */ }
   }, [])
 
-  const unreadCount = 0
+  React.useEffect(() => {
+    if (authUser) {
+      refreshNotifications()
+    } else {
+      setNotifications([])
+      setUnreadCount(0)
+    }
+  }, [authUser, refreshNotifications])
 
   const value: StoreValue = {
     currentUserId,
@@ -467,6 +523,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     deleteTicket,
     markNotificationRead,
     markAllNotificationsRead,
+    refreshNotifications,
     loadTicketDetail,
     loadComments,
     loadAuditLog,
@@ -492,10 +549,8 @@ export function statusBadgeClass(status: TicketStatus): string {
       return "bg-info/10 text-info border-info/25"
     case "In Progress":
       return "bg-primary/10 text-primary border-primary/25"
-    case "Pending":
+    case "Pending Resolution":
       return "bg-warning/15 text-warning-foreground border-warning/30"
-    case "Resolved":
-      return "bg-success/12 text-success border-success/30"
     case "Closed":
       return "bg-muted text-muted-foreground border-border"
   }

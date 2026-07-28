@@ -162,6 +162,13 @@ export default function TeamWorkloadPage() {
   const totalResolved = agents.reduce((sum, agent) => sum + agent.resolvedCount, 0)
   const busiestOpen = Math.max(...agents.map((agent) => agent.openCount), 1)
   const availableAgents = [...agents].sort((a, b) => a.openCount - b.openCount || a.fullName.localeCompare(b.fullName))
+  const agentItems = React.useMemo(() => {
+    const items: Record<string, string> = {}
+    for (const agent of availableAgents) {
+      items[agent.agentUserId] = `${agent.fullName} (${agent.openCount} open)`
+    }
+    return items
+  }, [availableAgents])
 
   async function assignQueuedTicket(ticketId: string) {
     const agentId = targetAgents[ticketId]
@@ -362,6 +369,7 @@ export default function TeamWorkloadPage() {
                       </TableCell>
                       <TableCell>
                         <Select
+                          items={agentItems}
                           value={targetAgents[ticket.id] ?? ""}
                           onValueChange={(agentId) =>
                             setTargetAgents((current) => ({ ...current, [ticket.id]: agentId }))

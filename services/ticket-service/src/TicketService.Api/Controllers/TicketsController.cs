@@ -27,6 +27,7 @@ public class TicketsController : ControllerBase
     /// Creates a new ticket.
     /// </summary>
     [HttpPost]
+    [Authorize(Roles = "Admin,Employee")]
     [ProducesResponseType(typeof(TicketResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> CreateTicket([FromBody] CreateTicketRequest request)
@@ -201,6 +202,7 @@ public class TicketsController : ControllerBase
     /// Claims an open ticket (self-assign and set status to In Progress).
     /// </summary>
     [HttpPost("{ticketId:guid}/claim")]
+    [Authorize(Roles = "IT Support Agent")]
     [ProducesResponseType(typeof(AssignmentResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]

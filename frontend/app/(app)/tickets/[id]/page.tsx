@@ -65,20 +65,11 @@ function initials(name: string) {
     .slice(0, 2)
 }
 
-const STATUSES: { value: TicketStatus; label: string }[] = [
-  { value: "Open", label: "Open" },
-  { value: "In Progress", label: "In Progress" },
-  { value: "Pending", label: "Pending" },
-  { value: "Resolved", label: "Resolved" },
-  { value: "Closed", label: "Closed" },
-]
-
 const STATUS_IDS: Record<TicketStatus, number> = {
   Open: 1,
   "In Progress": 2,
-  Pending: 3,
-  Resolved: 4,
-  Closed: 5,
+  "Pending Resolution": 3,
+  Closed: 4,
 }
 
 const CATEGORY_IDS: Record<TicketCategory, number> = {
@@ -193,7 +184,7 @@ export default function TicketDetailPage() {
     apiGetCategories().then(setCategories).catch(() => {})
     apiGetPriorities().then(setPriorities).catch(() => {})
     apiGetUsers(undefined, undefined, true, 1, 200).then((res) => {
-      if (!cancelled) setAgents(res.users.filter((u) => u.role !== "Admin"))
+      if (!cancelled) setAgents(res.users.filter((u) => u.role === "IT Support Agent"))
     }).catch(() => {})
     return () => { cancelled = true }
   }, [paramId, loadTicketDetail, loadComments, loadAuditLog, loadAttachments])
@@ -224,6 +215,39 @@ export default function TicketDetailPage() {
       toast.success(`Status changed to ${newStatus}`)
     } catch {
       toast.error("Failed to change status")
+    }
+  }
+
+  async function handleConfirmResolution() {
+    if (!ticket) return
+    try {
+      await updateTicket(ticket.id, { status: "Closed" })
+      setTicket({ ...ticket, status: "Closed" })
+      toast.success("Resolution confirmed — ticket closed")
+    } catch {
+      toast.error("Failed to confirm resolution")
+    }
+  }
+
+  async function handleReopenTicket() {
+    if (!ticket) return
+    try {
+      await updateTicket(ticket.id, { status: "In Progress" })
+      setTicket({ ...ticket, status: "In Progress" })
+      toast.success("Ticket reopened")
+    } catch {
+      toast.error("Failed to reopen ticket")
+    }
+  }
+
+  async function handleResolve() {
+    if (!ticket) return
+    try {
+      await updateTicket(ticket.id, { status: "Pending Resolution" })
+      setTicket({ ...ticket, status: "Pending Resolution" })
+      toast.success("Ticket marked as resolved — awaiting confirmation")
+    } catch {
+      toast.error("Failed to resolve ticket")
     }
   }
 
@@ -613,26 +637,72 @@ export default function TicketDetailPage() {
             <CardContent className="flex flex-col gap-4 text-sm">
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Status</span>
-                {canChangeStatus ? (
-                  <Select
-                    value={ticket.status}
-                    onValueChange={(v) => handleStatusChange(v as TicketStatus)}
-                  >
-                    <SelectTrigger className="w-[140px] h-8 text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {STATUSES.map((s) => (
-                        <SelectItem key={s.value} value={s.value}>
-                          {s.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <StatusBadge status={ticket.status} />
-                )}
+                <StatusBadge status={ticket.status} />
               </div>
+
+              {/* Agent / Manager / Admin action buttons */}
+              {canChangeStatus && ticket.status === "Open" && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleStatusChange("In Progress")}
+                  className="w-full"
+                >
+                  Start Working
+                </Button>
+              )}
+              {canChangeStatus && ticket.status === "In Progress" && (
+                <Button
+                  size="sm"
+                  variant="default"
+                  onClick={handleResolve}
+                  className="w-full"
+                >
+                  Resolve Ticket
+                </Button>
+              )}
+              {canChangeStatus && ticket.status === "Pending Resolution" && role === "admin" && (
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onClick={handleConfirmResolution}
+                    className="flex-1"
+                  >
+                    Close
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleReopenTicket}
+                    className="flex-1"
+                  >
+                    Reopen
+                  </Button>
+                </div>
+              )}
+
+              {/* Employee (ticket creator) action buttons */}
+              {!canChangeStatus && ticket.status === "Pending Resolution" && isCreator && (
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onClick={handleConfirmResolution}
+                    className="flex-1"
+                  >
+                    Confirm Resolved
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleReopenTicket}
+                    className="flex-1"
+                  >
+                    Reopen
+                  </Button>
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Priority</span>
                 <PriorityIndicator priority={ticket.priority} />
@@ -733,7 +803,7 @@ export default function TicketDetailPage() {
             </Card>
           )}
 
-          {ticket.status === "Open" && activeAssigneeIds.length === 0 && role !== "employee" && (
+          {ticket.status === "Open" && activeAssigneeIds.length === 0 && role === "agent" && (
             <Card>
               <CardHeader>
                 <CardTitle>Pick Up Ticket</CardTitle>

@@ -65,6 +65,7 @@ services:
     depends_on:
       - identity-service
       - ticket-service
+      - notification-service
       - otel-collector
     networks:
       - helpdesk-network
@@ -145,6 +146,81 @@ services:
     volumes:
       - ./infra/certs:/app/certs:ro
       - ticket-uploads:/app/uploads
+    networks:
+      - helpdesk-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL (notification service)
+  # ---------------------------------------------------------------------------
+  notification-postgres:
+    image: postgres:16-alpine
+    container_name: helpdesk-notification-postgres
+    environment:
+      POSTGRES_DB: NotificationDb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - notification-postgres-data:/var/lib/postgresql/data
+    networks:
+      - helpdesk-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d NotificationDb"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
+  # Mailpit (dev email)
+  # ---------------------------------------------------------------------------
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: helpdesk-mailpit
+    ports:
+      - "8025:8025"   # Web UI
+      - "1025:1025"   # SMTP
+    networks:
+      - helpdesk-network
+
+  # ---------------------------------------------------------------------------
+  # Notification Service
+  # ---------------------------------------------------------------------------
+  notification-service:
+    build:
+      context: ./services/notification-service
+      dockerfile: Dockerfile
+    container_name: helpdesk-notification-service
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=notification-postgres;Port=5432;Database=NotificationDb;Username=postgres;Password=postgres"
+      Jwt__PublicKeyPath: /app/certs/public.pem
+      Jwt__Issuer: ${JWT_ISSUER}
+      Jwt__Audience: ${JWT_AUDIENCE}
+      RabbitMQ__HostName: rabbitmq
+      RabbitMQ__Port: "5672"
+      RabbitMQ__ExchangeName: ticket.events
+      Email__SmtpHost: mailpit
+      Email__SmtpPort: "1025"
+      OTEL_SERVICE_NAME: helpdesk-notification-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    ports:
+      - "5012:8080"
+    depends_on:
+      notification-postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    volumes:
+      - ./infra/certs:/app/certs:ro
     networks:
       - helpdesk-network
     healthcheck:
@@ -241,6 +317,7 @@ volumes:
   prometheus-data:
   grafana-data:
   ticket-uploads:
+  notification-postgres-data:
 
 networks:
   helpdesk-network:
