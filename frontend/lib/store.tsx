@@ -16,6 +16,9 @@ import {
   apiAddComment,
   apiGetAttachments,
   apiGetAuditLog,
+  apiGetOpenUnassignedTickets,
+  apiClaimTicket,
+  apiGetUsers,
   type TicketResponse,
   type CommentResponse,
   type AuditLogEntryResponse,
@@ -44,6 +47,7 @@ interface NewTicketInput {
 interface StoreValue {
   currentUserId: string
   role: Role
+  userMap: Record<string, string>
   tickets: Ticket[]
   ticketsLoading: boolean
   refreshTickets: () => Promise<void>
@@ -53,6 +57,7 @@ interface StoreValue {
   updateTicket: (id: string, patch: Partial<Ticket>, activity?: string, detail?: string) => Promise<void>
   addComment: (ticketId: string, body: string, internal: boolean) => Promise<void>
   assignTicket: (ticketId: string, assigneeId: string | null) => Promise<void>
+  claimTicket: (ticketId: string) => Promise<void>
   deleteTicket: (id: string) => Promise<void>
   markNotificationRead: (id: string) => void
   markAllNotificationsRead: () => void
@@ -60,6 +65,9 @@ interface StoreValue {
   loadComments: (ticketId: string) => Promise<Comment[]>
   loadAuditLog: (ticketId: string) => Promise<AuditLogEntryResponse[]>
   loadAttachments: (ticketId: string) => Promise<AttachmentResponse[]>
+  openUnassignedTickets: Ticket[]
+  openUnassignedTicketsLoading: boolean
+  fetchOpenUnassignedTickets: () => Promise<void>
 }
 
 const StoreContext = React.createContext<StoreValue | null>(null)
@@ -82,9 +90,9 @@ const PRIORITY_MAP: Record<string, TicketPriority> = {
 const STATUS_MAP: Record<string, TicketStatus> = {
   Open: "Open",
   "In Progress": "In Progress",
-  Pending: "Pending",
-  Resolved: "Resolved",
+  "Resolved - Pending Confirmation": "Resolved",
   Closed: "Closed",
+  "Resolved by AI": "Resolved",
 }
 
 const SLA_HOURS: Record<TicketPriority, number> = {
@@ -94,7 +102,7 @@ const SLA_HOURS: Record<TicketPriority, number> = {
   Low: 48,
 }
 
-function mapTicket(res: TicketResponse): Ticket {
+function mapTicket(res: TicketResponse, userMap: Record<string, string> = {}): Ticket {
   return {
     id: res.id,
     reference: res.referenceNumber,
@@ -104,7 +112,9 @@ function mapTicket(res: TicketResponse): Ticket {
     priority: PRIORITY_MAP[res.priorityName] || "Medium",
     status: STATUS_MAP[res.statusName] || "Open",
     requesterId: res.createdByUserId,
-    assigneeId: null,
+    assigneeId: res.assigneeUserId ?? null,
+    assigneeIds: res.assigneeUserId ? [res.assigneeUserId] : [],
+    assigneeName: res.assigneeUserId ? (userMap[res.assigneeUserId] || undefined) : undefined,
     createdAt: res.createdAt,
     updatedAt: res.updatedAt,
     resolvedAt: null,
@@ -113,6 +123,14 @@ function mapTicket(res: TicketResponse): Ticket {
     activity: [],
     attachments: [],
   }
+}
+
+function normalizeRole(role: string): Role {
+  const normalized = role.toLowerCase()
+  if (normalized === "admin") return "admin"
+  if (normalized === "manager") return "manager"
+  if (normalized === "it support agent" || normalized === "agent") return "agent"
+  return "employee"
 }
 
 function buildActivity(auditLog: AuditLogEntryResponse[]): ActivityEntry[] {
@@ -130,10 +148,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [tickets, setTickets] = React.useState<Ticket[]>([])
   const [ticketsLoading, setTicketsLoading] = React.useState(true)
   const [notifications] = React.useState<NotificationItem[]>([])
+  const [openUnassignedTickets, setOpenUnassignedTickets] = React.useState<Ticket[]>([])
+  const [openUnassignedTicketsLoading, setOpenUnassignedTicketsLoading] = React.useState(false)
+  const [userMap, setUserMap] = React.useState<Record<string, string>>({})
 
-  const role: Role = authUser
-    ? (authUser.role.toLowerCase() as Role)
-    : "employee"
+  const role: Role = authUser ? normalizeRole(authUser.role) : "employee"
 
   const currentUserId = authUser?.id || ""
 
@@ -144,13 +163,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const data = isEmployee
         ? await apiGetMyTickets(1, 500)
         : await apiGetTickets(1, 500)
-      setTickets(data.tickets.map(mapTicket))
+      setTickets(data.tickets.map((t) => mapTicket(t, userMap)))
     } catch {
       setTickets([])
     } finally {
       setTicketsLoading(false)
     }
-  }, [role])
+  }, [role, userMap])
 
   React.useEffect(() => {
     if (authUser) {
@@ -160,6 +179,20 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setTicketsLoading(false)
     }
   }, [authUser, fetchTickets])
+
+  React.useEffect(() => {
+    if (authUser) {
+      apiGetUsers(undefined, undefined, true, 1, 500)
+        .then((res) => {
+          const map: Record<string, string> = {}
+          for (const u of res.users) map[u.id] = u.fullName
+          setUserMap(map)
+        })
+        .catch(() => {})
+    } else {
+      setUserMap({})
+    }
+  }, [authUser])
 
   const createTicket = React.useCallback(
     async (input: NewTicketInput): Promise<Ticket> => {
@@ -182,22 +215,22 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         categoryId: CATEGORY_IDS[input.category],
         priorityId: PRIORITY_IDS[input.priority],
       })
-      const ticket = mapTicket(created)
+      const ticket = mapTicket(created, userMap)
       setTickets((prev) => [ticket, ...prev])
       return ticket
     },
-    []
+    [userMap]
   )
 
   const updateTicket = React.useCallback(
     async (id: string, patch: Partial<Ticket>) => {
       if (patch.status) {
         const STATUS_IDS: Record<TicketStatus, number> = {
-          Open: 1, "In Progress": 2, Pending: 3, Resolved: 4, Closed: 5,
+          Open: 1, "In Progress": 2, Pending: 3, Resolved: 3, Closed: 4,
         }
         const updated = await apiChangeStatus(id, STATUS_IDS[patch.status])
         setTickets((prev) =>
-          prev.map((t) => (t.id === id ? { ...t, ...mapTicket(updated) } : t))
+          prev.map((t) => (t.id === id ? { ...t, ...mapTicket(updated, userMap) } : t))
         )
         return
       }
@@ -218,10 +251,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }
       const updated = await apiUpdateTicket(id, request)
       setTickets((prev) =>
-        prev.map((t) => (t.id === id ? { ...t, ...mapTicket(updated) } : t))
+        prev.map((t) => (t.id === id ? { ...t, ...mapTicket(updated, userMap) } : t))
       )
     },
-    []
+    [userMap]
   )
 
   const addComment = React.useCallback(
@@ -234,15 +267,53 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const assignTicket = React.useCallback(
     async (ticketId: string, assigneeId: string | null) => {
       if (assigneeId) {
-        await apiAssignAgent(ticketId, assigneeId)
+        // Optimistic update: immediately assign and transition to In Progress
+        const prevTickets = tickets
+        setTickets((prev) =>
+          prev.map((t) => {
+            if (t.id !== ticketId) return t
+            return {
+              ...t,
+              assigneeId,
+              assigneeIds: [assigneeId],
+              assigneeName: userMap[assigneeId] || undefined,
+              status: t.status === "Open" ? "In Progress" : t.status,
+            }
+          })
+        )
+        try {
+          await apiAssignAgent(ticketId, assigneeId)
+        } catch {
+          setTickets(prevTickets)
+          throw new Error("Failed to assign ticket")
+        }
+      } else {
+        // Unassign: optimistic update — clear assignee and revert to Open
+        const prevTickets = tickets
+        setTickets((prev) =>
+          prev.map((t) => {
+            if (t.id !== ticketId) return t
+            return {
+              ...t,
+              assigneeId: null,
+              assigneeIds: [],
+              assigneeName: undefined,
+              status: t.status === "In Progress" ? "Open" : t.status,
+            }
+          })
+        )
+        try {
+          const current = tickets.find((t) => t.id === ticketId)
+          if (current?.assigneeId) {
+            await apiUnassignAgent(ticketId, current.assigneeId)
+          }
+        } catch {
+          setTickets(prevTickets)
+          throw new Error("Failed to unassign ticket")
+        }
       }
-      // Refetch ticket to get updated state
-      try {
-        const updated = await apiGetTickets(1, 500)
-        setTickets(updated.tickets.map(mapTicket))
-      } catch { /* ignore */ }
     },
-    []
+    [tickets, role, userMap]
   )
 
   const deleteTicket = React.useCallback(
@@ -253,16 +324,58 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     []
   )
 
+  const claimTicket = React.useCallback(
+    async (ticketId: string) => {
+      // Optimistic update: remove from unassigned list and assign to current user
+      const prevTickets = tickets
+      const prevUnassigned = openUnassignedTickets
+      setOpenUnassignedTickets((prev) => prev.filter((t) => t.id !== ticketId))
+      setTickets((prev) =>
+        prev.map((t) => {
+          if (t.id !== ticketId) return t
+          return {
+            ...t,
+            assigneeId: currentUserId,
+            assigneeIds: [currentUserId],
+            assigneeName: userMap[currentUserId] || undefined,
+            status: t.status === "Open" ? "In Progress" : t.status,
+          }
+        })
+      )
+      try {
+        await apiClaimTicket(ticketId)
+      } catch {
+        setTickets(prevTickets)
+        setOpenUnassignedTickets(prevUnassigned)
+        throw new Error("Failed to claim ticket")
+      }
+    },
+    [tickets, openUnassignedTickets, currentUserId, userMap]
+  )
+
+  const fetchOpenUnassignedTickets = React.useCallback(async () => {
+    setOpenUnassignedTicketsLoading(true)
+    try {
+      const data = await apiGetOpenUnassignedTickets(1, 500)
+      setOpenUnassignedTickets(data.tickets.map((t) => mapTicket(t, userMap)))
+    } catch {
+      setOpenUnassignedTickets([])
+    } finally {
+      setOpenUnassignedTicketsLoading(false)
+    }
+  }, [userMap])
+
   const loadTicketDetail = React.useCallback(
     async (id: string): Promise<Ticket | null> => {
       try {
         const res = await apiGetTicketById(id)
-        const ticket = mapTicket(res)
+        const ticket = mapTicket(res, userMap)
         // Load assignments to get assigneeId
         try {
           const assignments = await apiGetAssignments(id)
-          const active = assignments.find((a) => !a.unassignedAt)
-          if (active) ticket.assigneeId = active.agentUserId
+          const active = assignments.filter((a) => !a.unassignedAt)
+          ticket.assigneeIds = active.map((a) => a.agentUserId)
+          ticket.assigneeId = ticket.assigneeIds[0] ?? null
         } catch { /* ignore */ }
         // Load comments
         try {
@@ -295,7 +408,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         return null
       }
     },
-    []
+    [userMap]
   )
 
   const loadComments = React.useCallback(
@@ -340,6 +453,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const value: StoreValue = {
     currentUserId,
     role,
+    userMap,
     tickets,
     ticketsLoading,
     refreshTickets: fetchTickets,
@@ -349,6 +463,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     updateTicket,
     addComment,
     assignTicket,
+    claimTicket,
     deleteTicket,
     markNotificationRead,
     markAllNotificationsRead,
@@ -356,6 +471,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     loadComments,
     loadAuditLog,
     loadAttachments,
+    openUnassignedTickets,
+    openUnassignedTicketsLoading,
+    fetchOpenUnassignedTickets,
   }
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>

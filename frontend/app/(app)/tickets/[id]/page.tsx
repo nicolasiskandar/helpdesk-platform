@@ -12,6 +12,7 @@ import {
   ClockIcon,
   PencilIcon,
   TrashIcon,
+  HandIcon,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -49,11 +50,18 @@ import { StatusBadge, PriorityIndicator } from "@/components/ticket-badges"
 import { useStore } from "@/lib/store"
 import { formatRelative, formatDateTime } from "@/lib/analytics"
 import type { Ticket, Comment, TicketStatus, TicketCategory, TicketPriority } from "@/lib/types"
-import type { AuditLogEntryResponse, AttachmentResponse, CategoryResponse, PriorityResponse } from "@/lib/api"
-import { apiGetTicketByReference, apiGetCategories, apiGetPriorities, apiAttachmentDownloadUrl } from "@/lib/api"
+import type { AuditLogEntryResponse, AttachmentResponse, CategoryResponse, PriorityResponse, UserResponse } from "@/lib/api"
+import { apiGetTicketByReference, apiGetCategories, apiGetPriorities, apiAttachmentDownloadUrl, apiGetUsers, apiUnassignAgent } from "@/lib/api"
 
-function initials(id: string) {
-  return id.slice(0, 2).toUpperCase()
+function initials(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2)
 }
 
 const STATUSES: { value: TicketStatus; label: string }[] = [
@@ -97,10 +105,12 @@ export default function TicketDetailPage() {
     loadAttachments,
     addComment,
     assignTicket,
+    claimTicket,
     updateTicket,
     deleteTicket,
     currentUserId,
     role,
+    userMap,
   } = useStore()
 
   const paramId = params.id as string
@@ -124,6 +134,10 @@ export default function TicketDetailPage() {
 
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
+  const [claiming, setClaiming] = React.useState(false)
+  const [assigning, setAssigning] = React.useState(false)
+  const [unassigningId, setUnassigningId] = React.useState<string | null>(null)
+  const [agents, setAgents] = React.useState<UserResponse[]>([])
 
   React.useEffect(() => {
     let cancelled = false
@@ -159,6 +173,9 @@ export default function TicketDetailPage() {
     load()
     apiGetCategories().then(setCategories).catch(() => {})
     apiGetPriorities().then(setPriorities).catch(() => {})
+    apiGetUsers(undefined, undefined, true, 1, 200).then((res) => {
+      if (!cancelled) setAgents(res.users.filter((u) => u.role !== "Admin"))
+    }).catch(() => {})
     return () => { cancelled = true }
   }, [paramId, loadTicketDetail, loadComments, loadAuditLog, loadAttachments])
 
@@ -239,6 +256,71 @@ export default function TicketDetailPage() {
     }
   }
 
+  async function handleClaim() {
+    if (!ticket) return
+    setClaiming(true)
+    try {
+      setTicket({
+        ...ticket,
+        assigneeId: currentUserId,
+        assigneeIds: [currentUserId],
+        assigneeName: userMap[currentUserId] || ticket.assigneeName,
+        status: ticket.status === "Open" ? "In Progress" : ticket.status,
+      })
+      await claimTicket(ticket.id)
+      toast.success("Ticket claimed", {
+        description: `${ticket.reference} is now assigned to you.`,
+      })
+    } catch {
+      toast.error("Failed to claim ticket")
+      const refreshed = await loadTicketDetail(ticket.id)
+      if (refreshed) setTicket(refreshed)
+    } finally {
+      setClaiming(false)
+    }
+  }
+
+  async function handleAssign(agentId: string) {
+    if (!ticket || !agentId || assigning) return
+    setAssigning(true)
+    try {
+      await assignTicket(ticket.id, agentId)
+      const assigneeIds = Array.from(new Set([...ticket.assigneeIds, agentId]))
+      setTicket({
+        ...ticket,
+        assigneeId: assigneeIds[0] ?? null,
+        assigneeIds,
+        assigneeName: userMap[agentId] || ticket.assigneeName,
+        status: ticket.status === "Open" ? "In Progress" : ticket.status,
+      })
+      toast.success("Agent assigned")
+    } catch {
+      toast.error("Failed to assign agent")
+    } finally {
+      setAssigning(false)
+    }
+  }
+
+  async function handleUnassign(agentId: string) {
+    if (!ticket || unassigningId) return
+    setUnassigningId(agentId)
+    try {
+      await apiUnassignAgent(ticket.id, agentId)
+      const assigneeIds = ticket.assigneeIds.filter((id) => id !== agentId)
+      setTicket({
+        ...ticket,
+        assigneeId: assigneeIds[0] ?? null,
+        assigneeIds,
+        status: assigneeIds.length === 0 && ticket.status === "In Progress" ? "Open" : ticket.status,
+      })
+      toast.success("Agent unassigned")
+    } catch {
+      toast.error("Failed to unassign agent")
+    } finally {
+      setUnassigningId(null)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex flex-col gap-6">
@@ -272,6 +354,13 @@ export default function TicketDetailPage() {
   const isAdmin = role === "admin"
   const canEdit = isOpen && (isCreator || isAdmin)
   const canDelete = isOpen && (isCreator || isAdmin)
+  const canManageAssignments = role === "admin" || role === "manager"
+  const activeAssigneeIds = ticket.assigneeIds.length > 0
+    ? ticket.assigneeIds
+    : ticket.assigneeId
+      ? [ticket.assigneeId]
+      : []
+  const assignableAgents = agents.filter((agent) => !activeAssigneeIds.includes(agent.id))
 
   return (
     <div className="flex flex-col gap-6">
@@ -373,13 +462,13 @@ export default function TicketDetailPage() {
                     <CardContent className="flex gap-3 p-4">
                       <Avatar className="size-8">
                         <AvatarFallback className="bg-muted text-[10px]">
-                          {initials(c.authorId)}
+                          {(userMap[c.authorId] || c.authorId).slice(0, 2).toUpperCase()}
                         </AvatarFallback>
                       </Avatar>
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium">
-                            {c.authorId === currentUserId ? "You" : c.authorId.slice(0, 8)}
+                            {c.authorId === currentUserId ? "You" : (userMap[c.authorId] || c.authorId.slice(0, 8))}
                           </span>
                           {c.internal && (
                             <Badge variant="outline" className="text-[10px]">
@@ -542,31 +631,93 @@ export default function TicketDetailPage() {
                 <CardTitle>Assignment</CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
-                {ticket.assigneeId ? (
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Avatar className="size-7">
-                        <AvatarFallback className="bg-muted text-[10px]">
-                          {initials(ticket.assigneeId)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <span className="text-sm">{ticket.assigneeId.slice(0, 8)}</span>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={async () => {
-                        await assignTicket(ticket.id, null)
-                        setTicket({ ...ticket, assigneeId: null })
-                        toast.success("Agent unassigned")
-                      }}
-                    >
-                      <UserMinusIcon className="size-4" />
-                    </Button>
+                {activeAssigneeIds.length > 0 ? (
+                  <div className="flex flex-col gap-2">
+                    {activeAssigneeIds.map((agentId) => (
+                      <div key={agentId} className="flex items-center justify-between rounded-md border px-3 py-2">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <Avatar className="size-7">
+                            <AvatarFallback className="bg-muted text-[10px]">
+                              {(userMap[agentId] || agentId).slice(0, 2).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="truncate text-sm">{userMap[agentId] || agentId.slice(0, 8)}</span>
+                        </div>
+                        {canManageAssignments && (
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => handleUnassign(agentId)}
+                            disabled={unassigningId === agentId}
+                          >
+                            <UserMinusIcon className="size-4" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                    {canManageAssignments && assignableAgents.length > 0 && (
+                      <Select
+                        value=""
+                        onValueChange={handleAssign}
+                        disabled={assigning}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={assigning ? "Assigning..." : "Add another agent..."} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {assignableAgents.map((a) => (
+                            <SelectItem key={a.id} value={a.id}>
+                              {a.fullName}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
+                ) : canManageAssignments && agents.length > 0 ? (
+                  <Select
+                    value=""
+                    onValueChange={handleAssign}
+                    disabled={assigning}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={assigning ? "Assigning..." : "Assign to agent..."} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {agents.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.fullName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 ) : (
-                  <p className="text-sm text-muted-foreground">Unassigned</p>
+                  <div className="flex items-center gap-2 rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
+                    <UserPlusIcon className="size-4" />
+                    Unassigned
+                  </div>
                 )}
+              </CardContent>
+            </Card>
+          )}
+
+          {ticket.status === "Open" && activeAssigneeIds.length === 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Pick Up Ticket</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground mb-3">
+                  Claim this ticket to start working on it. It will be assigned to you and moved to In Progress.
+                </p>
+                <Button
+                  onClick={handleClaim}
+                  disabled={claiming}
+                  className="w-full"
+                >
+                  <HandIcon data-icon="inline-start" className="size-4" />
+                  {claiming ? "Claiming..." : "Pick Up This Ticket"}
+                </Button>
               </CardContent>
             </Card>
           )}

@@ -52,7 +52,7 @@ export function byStatus(tickets: Ticket[]) {
   }))
 }
 
-export function agentPerformance(tickets: Ticket[]) {
+export function agentPerformance(tickets: Ticket[], userMap: Record<string, string> = {}) {
   // Group by assigneeId and compute stats
   const assignees = new Map<string, { assigned: number; resolved: number }>()
   for (const t of tickets) {
@@ -64,7 +64,7 @@ export function agentPerformance(tickets: Ticket[]) {
   }
   return Array.from(assignees.entries()).map(([id, stats]) => ({
     id,
-    name: id.slice(0, 8),
+    name: userMap[id] || id.slice(0, 8),
     assigned: stats.assigned,
     resolved: stats.resolved,
     active: stats.assigned - stats.resolved,

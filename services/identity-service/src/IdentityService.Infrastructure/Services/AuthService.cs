@@ -54,7 +54,7 @@ public class AuthService : IAuthService
         await LogActivityAsync(user.Id, "Register", ipAddress);
         await _unitOfWork.SaveChangesAsync();
 
-        var accessToken = _jwtTokenService.GenerateAccessToken(user.Id, user.Email, defaultRole.Name);
+        var accessToken = _jwtTokenService.GenerateAccessToken(user.Id, user.Email, defaultRole.Name, user.FullName);
         var refreshToken = await CreateRefreshTokenAsync(user.Id);
         await _unitOfWork.SaveChangesAsync();
 
@@ -86,7 +86,7 @@ public class AuthService : IAuthService
         await _unitOfWork.Users.UpdateAsync(user);
         await LogActivityAsync(user.Id, "LoginSuccess", ipAddress);
 
-        var accessToken = _jwtTokenService.GenerateAccessToken(user.Id, user.Email, user.Role.Name);
+        var accessToken = _jwtTokenService.GenerateAccessToken(user.Id, user.Email, user.Role.Name, user.FullName);
         var refreshToken = await CreateRefreshTokenAsync(user.Id);
         await _unitOfWork.SaveChangesAsync();
 
@@ -114,7 +114,7 @@ public class AuthService : IAuthService
         await _unitOfWork.RefreshTokens.RevokeAsync(storedToken);
         await LogActivityAsync(user.Id, "TokenRefresh", ipAddress);
 
-        var accessToken = _jwtTokenService.GenerateAccessToken(user.Id, user.Email, user.Role.Name);
+        var accessToken = _jwtTokenService.GenerateAccessToken(user.Id, user.Email, user.Role.Name, user.FullName);
         var newRefreshToken = await CreateRefreshTokenAsync(user.Id);
 
         await _unitOfWork.SaveChangesAsync();

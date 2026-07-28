@@ -22,6 +22,7 @@ public class UsersController : ControllerBase
     /// Gets all users (paginated, filterable).
     /// </summary>
     [HttpGet]
+    [Authorize(Roles = "Admin,Manager")]
     [ProducesResponseType(typeof(UserListResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetUsers(
         [FromQuery] string? search = null,
@@ -38,6 +39,7 @@ public class UsersController : ControllerBase
     /// Gets a user by ID.
     /// </summary>
     [HttpGet("{id:guid}")]
+    [Authorize(Roles = "Admin,Manager")]
     [ProducesResponseType(typeof(UserResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetUserById(Guid id)

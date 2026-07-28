@@ -29,7 +29,8 @@ public record TicketResponse(
     string StatusName,
     Guid CreatedByUserId,
     DateTime CreatedAt,
-    DateTime UpdatedAt
+    DateTime UpdatedAt,
+    Guid? AssigneeUserId = null
 );
 
 public record TicketListResponse(

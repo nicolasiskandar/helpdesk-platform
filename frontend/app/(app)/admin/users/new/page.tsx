@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select"
 import { apiCreateUser, apiGetUsers } from "@/lib/api"
 import type { ApiError } from "@/lib/api"
+import { RoleGuard } from "@/components/role-guard"
 
 const ALL_ROLE_OPTIONS = [
   { value: "1", label: "Admin" },
@@ -78,6 +79,7 @@ export default function CreateUserPage() {
   }
 
   return (
+    <RoleGuard allowedRoles={["admin"]}>
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
         <button
@@ -184,5 +186,6 @@ export default function CreateUserPage() {
         </div>
       </Card>
     </div>
+    </RoleGuard>
   )
 }

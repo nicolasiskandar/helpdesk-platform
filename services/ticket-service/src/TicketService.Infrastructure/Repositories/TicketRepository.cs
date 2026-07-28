@@ -20,6 +20,7 @@ public class TicketRepository : ITicketRepository
             .Include(t => t.Category)
             .Include(t => t.Priority)
             .Include(t => t.Status)
+            .Include(t => t.Assignments)
             .FirstOrDefaultAsync(t => t.Id == id);
     }
 
@@ -29,6 +30,7 @@ public class TicketRepository : ITicketRepository
             .Include(t => t.Category)
             .Include(t => t.Priority)
             .Include(t => t.Status)
+            .Include(t => t.Assignments)
             .FirstOrDefaultAsync(t => t.ReferenceNumber == referenceNumber);
     }
 
@@ -38,6 +40,7 @@ public class TicketRepository : ITicketRepository
             .Include(t => t.Category)
             .Include(t => t.Priority)
             .Include(t => t.Status)
+            .Include(t => t.Assignments)
             .AsQueryable();
 
         if (createdFrom.HasValue)
@@ -58,7 +61,40 @@ public class TicketRepository : ITicketRepository
             .Include(t => t.Category)
             .Include(t => t.Priority)
             .Include(t => t.Status)
+            .Include(t => t.Assignments)
             .Where(t => t.CreatedByUserId == userId)
+            .AsQueryable();
+
+        if (createdFrom.HasValue)
+            query = query.Where(t => t.CreatedAt >= createdFrom.Value);
+        if (createdTo.HasValue)
+            query = query.Where(t => t.CreatedAt <= createdTo.Value);
+
+        return await query
+            .OrderByDescending(t => t.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+    }
+
+    public async Task<IReadOnlyList<Ticket>> GetByAgentUserIdAsync(Guid agentUserId, int page, int pageSize, DateTime? createdFrom = null, DateTime? createdTo = null)
+    {
+        var openStatus = await _context.Statuses.FirstOrDefaultAsync(s => s.Name == "Open");
+        var closedStatus = await _context.Statuses.FirstOrDefaultAsync(s => s.Name == "Closed");
+
+        var query = _context.Tickets
+            .Include(t => t.Category)
+            .Include(t => t.Priority)
+            .Include(t => t.Status)
+            .Include(t => t.Assignments)
+            .Where(t =>
+                // Open tickets with no active assignment (available for pickup)
+                (openStatus != null && t.StatusId == openStatus.Id &&
+                    !_context.TicketAssignments.Any(a => a.TicketId == t.Id && a.UnassignedAt == null))
+                // Tickets where this agent has an active assignment
+                || _context.TicketAssignments.Any(a => a.TicketId == t.Id && a.AgentUserId == agentUserId && a.UnassignedAt == null)
+                // Closed tickets visible to everyone
+                || (closedStatus != null && t.StatusId == closedStatus.Id))
             .AsQueryable();
 
         if (createdFrom.HasValue)
@@ -97,6 +133,54 @@ public class TicketRepository : ITicketRepository
             query = query.Where(t => t.CreatedAt <= createdTo.Value);
 
         return await query.CountAsync();
+    }
+
+    public async Task<int> GetCountByAgentUserIdAsync(Guid agentUserId, DateTime? createdFrom = null, DateTime? createdTo = null)
+    {
+        var openStatus = await _context.Statuses.FirstOrDefaultAsync(s => s.Name == "Open");
+        var closedStatus = await _context.Statuses.FirstOrDefaultAsync(s => s.Name == "Closed");
+
+        var query = _context.Tickets
+            .Where(t =>
+                (openStatus != null && t.StatusId == openStatus.Id &&
+                    !_context.TicketAssignments.Any(a => a.TicketId == t.Id && a.UnassignedAt == null))
+                || _context.TicketAssignments.Any(a => a.TicketId == t.Id && a.AgentUserId == agentUserId && a.UnassignedAt == null)
+                || (closedStatus != null && t.StatusId == closedStatus.Id))
+            .AsQueryable();
+
+        if (createdFrom.HasValue)
+            query = query.Where(t => t.CreatedAt >= createdFrom.Value);
+        if (createdTo.HasValue)
+            query = query.Where(t => t.CreatedAt <= createdTo.Value);
+
+        return await query.CountAsync();
+    }
+
+    public async Task<IReadOnlyList<Ticket>> GetOpenUnassignedTicketsAsync(int page, int pageSize)
+    {
+        var openStatus = await _context.Statuses.FirstOrDefaultAsync(s => s.Name == "Open");
+
+        return await _context.Tickets
+            .Include(t => t.Category)
+            .Include(t => t.Priority)
+            .Include(t => t.Status)
+            .Include(t => t.Assignments)
+            .Where(t => openStatus != null && t.StatusId == openStatus.Id)
+            .Where(t => !_context.TicketAssignments.Any(a => a.TicketId == t.Id && a.UnassignedAt == null))
+            .OrderByDescending(t => t.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+    }
+
+    public async Task<int> GetOpenUnassignedTicketsCountAsync()
+    {
+        var openStatus = await _context.Statuses.FirstOrDefaultAsync(s => s.Name == "Open");
+
+        return await _context.Tickets
+            .Where(t => openStatus != null && t.StatusId == openStatus.Id)
+            .Where(t => !_context.TicketAssignments.Any(a => a.TicketId == t.Id && a.UnassignedAt == null))
+            .CountAsync();
     }
 
     public async Task AddAsync(Ticket ticket)

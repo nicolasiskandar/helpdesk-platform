@@ -8,7 +8,8 @@ import { AppTopbar } from "@/components/app-topbar"
 const TITLES: { match: (p: string) => boolean; title: string }[] = [
   { match: (p) => p === "/dashboard", title: "Dashboard" },
   { match: (p) => p === "/tickets/new", title: "Create Ticket" },
-  { match: (p) => /^\/tickets\/HLX-/.test(p), title: "Ticket Details" },
+  { match: (p) => p === "/tickets/queue", title: "Ticket Queue" },
+  { match: (p) => /^\/tickets\/[^/]+$/.test(p), title: "Ticket Details" },
   { match: (p) => p === "/tickets", title: "Tickets" },
   { match: (p) => p === "/reports", title: "Reports & Analytics" },
   { match: (p) => p.startsWith("/knowledge-base"), title: "Knowledge Base" },
@@ -17,6 +18,7 @@ const TITLES: { match: (p: string) => boolean; title: string }[] = [
   { match: (p) => p === "/profile", title: "My Profile" },
   { match: (p) => p === "/admin/users", title: "User Management" },
   { match: (p) => p === "/admin/users/new", title: "Create User" },
+  { match: (p) => p === "/admin/team-workload", title: "Team Workload" },
   { match: (p) => p === "/admin/settings", title: "Admin Settings" },
 ]
 

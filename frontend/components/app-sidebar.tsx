@@ -13,6 +13,8 @@ import {
   Settings,
   Users,
   LifeBuoy,
+  ListTodo,
+  Activity,
 } from "lucide-react"
 
 import {
@@ -60,6 +62,12 @@ const mainNav: NavItem[] = [
     roles: ["admin", "agent", "manager", "employee"],
   },
   {
+    title: "Ticket Queue",
+    href: "/tickets/queue",
+    icon: ListTodo,
+    roles: ["admin", "agent", "manager", "employee"],
+  },
+  {
     title: "Reports",
     href: "/reports",
     icon: BarChart3,
@@ -95,6 +103,12 @@ const adminNav: NavItem[] = [
     href: "/admin/users",
     icon: Users,
     roles: ["admin"],
+  },
+  {
+    title: "Team Workload",
+    href: "/admin/team-workload",
+    icon: Activity,
+    roles: ["admin", "manager"],
   },
   {
     title: "Admin Settings",
@@ -177,7 +191,7 @@ export function AppSidebar() {
             <SidebarMenu>{renderItems(supportNav)}</SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        {role === "admin" ? (
+        {adminNav.some((item) => item.roles.includes(role)) ? (
           <SidebarGroup>
             <SidebarGroupLabel>Administration</SidebarGroupLabel>
             <SidebarGroupContent>

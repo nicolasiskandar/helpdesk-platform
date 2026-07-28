@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/table"
 import { EditUserDialog } from "@/components/edit-user-dialog"
 import { DeleteUserDialog } from "@/components/delete-user-dialog"
+import { RoleGuard } from "@/components/role-guard"
 import { useAuth } from "@/lib/auth"
 import { apiGetUsers } from "@/lib/api"
 import type { UserResponse } from "@/lib/api"
@@ -125,6 +126,7 @@ export default function UsersPage() {
   }
 
   return (
+    <RoleGuard allowedRoles={["admin"]}>
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-1">
@@ -329,5 +331,6 @@ export default function UsersPage() {
         onAction={fetchUsers}
       />
     </div>
+    </RoleGuard>
   )
 }

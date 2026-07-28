@@ -79,6 +79,7 @@ curl http://localhost:5011/health/ready
 All API calls go through the Gateway at `http://localhost:5000`. The gateway routes:
 
 - `/api/auth/*` → Identity Service
+- `/api/users/*` → Identity Service
 - `/api/tickets/*` → Ticket Service
 
 ### POST /api/auth/register
@@ -183,6 +184,34 @@ curl -X POST http://localhost:5000/api/auth/logout \
 
 Response: `204 No Content`
 
+### PUT /api/auth/me
+
+Update the current user's profile (name, email). Requires authentication.
+
+```bash
+curl -X PUT http://localhost:5000/api/auth/me \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "fullName": "New Name",
+    "email": "newemail@example.com"
+  }'
+```
+
+### POST /api/auth/change-password
+
+Change the current user's password. Requires the current password for verification.
+
+```bash
+curl -X POST http://localhost:5000/api/auth/change-password \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "currentPassword": "OldPassword123!",
+    "newPassword": "NewPassword456!"
+  }'
+```
+
 ### GET /.well-known/jwks.json
 
 Returns the public RSA key in JWKS format for JWT validation.
@@ -190,6 +219,56 @@ Returns the public RSA key in JWKS format for JWT validation.
 ```bash
 curl http://localhost:5000/.well-known/jwks.json
 ```
+
+### User Management Endpoints (Admin / Manager)
+
+```bash
+# List all users (paginated, filterable by search, roleId, isActive)
+curl "http://localhost:5000/api/users?page=1&pageSize=20&search=admin" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
+
+# Get user by ID
+curl http://localhost:5000/api/users/<id> \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
+
+# Create a new user (Admin only)
+curl -X POST http://localhost:5000/api/users \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "agent@helpdesk.com",
+    "password": "Agent123!",
+    "fullName": "New Agent",
+    "roleName": "IT Support Agent"
+  }'
+
+# Update a user (Admin only)
+curl -X PUT http://localhost:5000/api/users/<id> \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "updated@helpdesk.com",
+    "fullName": "Updated Name",
+    "roleName": "Employee",
+    "isActive": true
+  }'
+
+# Deactivate a user (Admin only)
+curl -X PATCH http://localhost:5000/api/users/<id>/deactivate \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
+
+# Activate a user (Admin only — use PUT with isActive: true)
+curl -X PUT http://localhost:5000/api/users/<id> \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{ "isActive": true }'
+
+# Delete a user (Admin only)
+curl -X DELETE http://localhost:5000/api/users/<id> \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
+```
+
+**Single admin constraint**: Only one Admin user is allowed. The system rejects creating a second Admin or promoting a user to Admin if one already exists. An existing Admin can change their own role away from Admin.
 
 ### Ticket Endpoints
 
@@ -205,12 +284,48 @@ curl -X POST http://localhost:5000/api/tickets \
     "priorityName": "Medium"
   }'
 
+# Create a ticket with attachment
+curl -X POST http://localhost:5000/api/tickets \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -F "ticket={\"title\":\"Printer not working\",\"description\":\"The 3rd floor printer is jammed\",\"categoryName\":\"Hardware\",\"priorityName\":\"Medium\"};type=application/json" \
+  -F "file=@screenshot.png"
+
 # List all tickets
 curl http://localhost:5000/api/tickets \
   -H "Authorization: Bearer <ACCESS_TOKEN>"
 
+# List open unassigned tickets (for ticket queue / self-assignment)
+curl http://localhost:5000/api/tickets/open-unassigned \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
+
 # Get ticket by ID
 curl http://localhost:5000/api/tickets/<id> \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
+
+# Assign an agent to a ticket (Admin/Manager)
+curl -X POST http://localhost:5000/api/tickets/<id>/assignments \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{ "agentUserId": "<agent-user-id>" }'
+
+# Unassign the agent from a ticket (Admin/Manager)
+curl -X DELETE http://localhost:5000/api/tickets/<id>/assignments/<agent-user-id> \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
+
+# Pick up (self-assign) an open unassigned ticket (any role)
+curl -X POST http://localhost:5000/api/tickets/<id>/claim \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
+
+# Get ticket attachments
+curl http://localhost:5000/api/tickets/<id>/attachments \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
+
+# Download a ticket attachment
+curl http://localhost:5000/api/tickets/<ticketId>/attachments/<attachmentId> \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" -o file
+
+# Get agent workload stats (Admin/Manager)
+curl http://localhost:5000/api/tickets/agent-workload \
   -H "Authorization: Bearer <ACCESS_TOKEN>"
 
 # Delete a ticket (Admin or ticket Creator only, must be Open status)
@@ -292,7 +407,9 @@ Log format:
 | `Tickets` | Ticket records with reference numbers (TKT-XXXXXX) |
 | `TicketComments` | Comments on tickets |
 | `TicketAssignments` | Agent assignment history |
+| `TicketAttachments` | File metadata for ticket attachments (files stored on disk) |
 | `TicketStatusHistory` | Status change audit trail |
+| `TicketAuditLog` | Full audit trail for all ticket changes (who, what, when) |
 | `Categories` | Ticket categories (seeded) |
 | `Priorities` | Ticket priorities with levels (seeded) |
 | `Statuses` | Ticket statuses (seeded) |
@@ -349,7 +466,7 @@ Unit tests use **xUnit**, **Moq**, and **FluentAssertions**.
 ./scripts.sh down             # Stop all services
 ./scripts.sh logs             # Tail logs from all services
 ./scripts.sh frontend-dev     # Run frontend locally (no Docker)
-./scripts.sh test             # Run all unit tests (137 tests)
+./scripts.sh test             # Run all unit tests (153 tests)
 ./scripts.sh coverage         # Run tests and show code coverage
 ./scripts.sh clean            # Remove test results and build artifacts
 ./scripts.sh help             # Show all available commands
@@ -359,16 +476,14 @@ Unit tests use **xUnit**, **Moq**, and **FluentAssertions**.
 
 | File | Tests | What's tested |
 |------|-------|---------------|
-| `AuthServiceTests.cs` | 13 | Register, login, refresh, logout, get-user, update-profile, change-password |
-| `UserServiceTests.cs` | 16 | User CRUD, admin constraint, search/filter/paging |
+| `AuthServiceTests.cs` | 23 | Register, login, refresh, logout, get-user, update-profile, change-password |
+| `UserServiceTests.cs` | 30 | User CRUD, single admin constraint, search/filter/paging |
 | `PasswordHasherTests.cs` | 4 | Hash, verify, salt uniqueness |
-| `JwtTokenServiceTests.cs` | 5 | Token generation, claims, validation |
-| `AuthValidatorTests.cs` | 15 | All FluentValidation rules |
-| `UserValidatorTests.cs` | 13 | CreateUser, UpdateUser, UpdateProfile, ChangePassword validators |
-| `TicketBusinessServiceTests.cs` | 14 | Ticket CRUD, assignment, workflow |
-| `ReferenceNumberGeneratorTests.cs` | 4 | Reference number format and uniqueness |
-| `TicketValidatorTests.cs` | 18 | All FluentValidation rules for tickets |
-| **Total** | **102** | |
+| `JwtTokenServiceTests.cs` | 10 | Token generation, claims, validation, Name claim |
+| `AuthValidatorTests.cs` | 18 | All FluentValidation rules |
+| `UserValidatorTests.cs` | 27 | CreateUser, UpdateUser, UpdateProfile, ChangePassword validators |
+| `TicketBusinessServiceTests.cs` | 41 | Ticket CRUD, assignment, workflow, self-assignment, open unassigned query, unassign outbox |
+| **Total** | **153** | |
 
 ## Tech Stack
 

@@ -102,10 +102,21 @@ public class TicketBusinessService : ITicketService
         return MapToResponse(ticket, ticket.Category, ticket.Priority, ticket.Status);
     }
 
-    public async Task<TicketListResponse> GetTicketsAsync(int page, int pageSize, DateTime? createdFrom = null, DateTime? createdTo = null)
+    public async Task<TicketListResponse> GetTicketsAsync(int page, int pageSize, DateTime? createdFrom = null, DateTime? createdTo = null, Guid? agentUserId = null)
     {
-        var tickets = await _unitOfWork.Tickets.GetAllAsync(page, pageSize, createdFrom, createdTo);
-        var totalCount = await _unitOfWork.Tickets.GetCountAsync(createdFrom, createdTo);
+        IReadOnlyList<Ticket> tickets;
+        int totalCount;
+
+        if (agentUserId.HasValue)
+        {
+            tickets = await _unitOfWork.Tickets.GetByAgentUserIdAsync(agentUserId.Value, page, pageSize, createdFrom, createdTo);
+            totalCount = await _unitOfWork.Tickets.GetCountByAgentUserIdAsync(agentUserId.Value, createdFrom, createdTo);
+        }
+        else
+        {
+            tickets = await _unitOfWork.Tickets.GetAllAsync(page, pageSize, createdFrom, createdTo);
+            totalCount = await _unitOfWork.Tickets.GetCountAsync(createdFrom, createdTo);
+        }
 
         var responses = tickets.Select(t => MapToResponse(t, t.Category, t.Priority, t.Status)).ToList();
         return new TicketListResponse(responses, totalCount, page, pageSize);
@@ -263,7 +274,7 @@ public class TicketBusinessService : ITicketService
         return assignments.Select(MapAssignmentToResponse).ToList();
     }
 
-    public async Task<AssignmentResponse> AssignAgentAsync(Guid ticketId, AssignAgentRequest request, Guid assignedByUserId)
+    public async Task<AssignmentResponse> AssignAgentAsync(Guid ticketId, AssignAgentRequest request, Guid assignedByUserId, string assignedByName)
     {
         var ticket = await _unitOfWork.Tickets.GetByIdAsync(ticketId)
             ?? throw new KeyNotFoundException("Ticket not found.");
@@ -272,6 +283,32 @@ public class TicketBusinessService : ITicketService
         if (existing != null)
         {
             throw new InvalidOperationException("Agent is already assigned to this ticket.");
+        }
+
+        if (ticket.Status.Name == "Open")
+        {
+            var inProgressStatus = await _unitOfWork.Statuses.GetByNameAsync("In Progress")
+                ?? throw new InvalidOperationException("In Progress status not found.");
+
+            var oldStatusName = ticket.Status.Name;
+            ticket.StatusId = inProgressStatus.Id;
+            ticket.UpdatedAt = DateTime.UtcNow;
+            await _unitOfWork.Tickets.UpdateAsync(ticket);
+
+            var statusAudit = CreateAuditEntry(ticketId, assignedByUserId, "Status", oldStatusName, "In Progress");
+            statusAudit.ChangedByType = "User";
+            await _unitOfWork.TicketAuditLogs.AddAsync(statusAudit);
+
+            var statusOutbox = new OutboxMessage
+            {
+                Id = Guid.NewGuid(),
+                EventType = "ticket.status_changed",
+                Payload = JsonSerializer.Serialize(new TicketStatusChangedEvent(
+                    ticketId, ticket.ReferenceNumber, oldStatusName, "In Progress",
+                    assignedByUserId, "User", DateTime.UtcNow)),
+                CreatedAt = DateTime.UtcNow
+            };
+            await _unitOfWork.Outbox.AddAsync(statusOutbox);
         }
 
         var assignment = new TicketAssignment
@@ -285,7 +322,7 @@ public class TicketBusinessService : ITicketService
 
         await _unitOfWork.TicketAssignments.AddAsync(assignment);
 
-        var auditLog = CreateAuditEntry(ticketId, assignedByUserId, "Assignment", null, $"Assigned agent {request.AgentUserId}");
+        var auditLog = CreateAuditEntry(ticketId, assignedByUserId, "Assignment", null, $"Assigned to {assignedByName}");
         await _unitOfWork.TicketAuditLogs.AddAsync(auditLog);
 
         var outboxMessage = new OutboxMessage
@@ -308,7 +345,7 @@ public class TicketBusinessService : ITicketService
         return MapAssignmentToResponse(assignment);
     }
 
-    public async Task UnassignAgentAsync(Guid ticketId, UnassignAgentRequest request, Guid changedByUserId)
+    public async Task UnassignAgentAsync(Guid ticketId, UnassignAgentRequest request, Guid changedByUserId, string changedByName)
     {
         var ticket = await _unitOfWork.Tickets.GetByIdAsync(ticketId)
             ?? throw new KeyNotFoundException("Ticket not found.");
@@ -319,10 +356,155 @@ public class TicketBusinessService : ITicketService
         assignment.UnassignedAt = DateTime.UtcNow;
         await _unitOfWork.TicketAssignments.UpdateAsync(assignment);
 
-        var auditLog = CreateAuditEntry(ticketId, changedByUserId, "Assignment", $"Assigned agent {request.AgentUserId}", "Unassigned");
+        var allAssignments = await _unitOfWork.TicketAssignments.GetByTicketIdAsync(ticketId);
+        var hasRemaining = allAssignments.Any(a => a.Id != assignment.Id && a.UnassignedAt == null);
+
+        if (!hasRemaining && ticket.Status.Name == "In Progress")
+        {
+            var openStatus = await _unitOfWork.Statuses.GetByNameAsync("Open")
+                ?? throw new InvalidOperationException("Open status not found.");
+
+            var oldStatusName = ticket.Status.Name;
+            ticket.StatusId = openStatus.Id;
+            ticket.UpdatedAt = DateTime.UtcNow;
+            await _unitOfWork.Tickets.UpdateAsync(ticket);
+
+            var statusAudit = CreateAuditEntry(ticketId, changedByUserId, "Status", oldStatusName, "Open");
+            statusAudit.ChangedByType = "User";
+            await _unitOfWork.TicketAuditLogs.AddAsync(statusAudit);
+
+            var statusOutbox = new OutboxMessage
+            {
+                Id = Guid.NewGuid(),
+                EventType = "ticket.status_changed",
+                Payload = JsonSerializer.Serialize(new TicketStatusChangedEvent(
+                    ticketId, ticket.ReferenceNumber, oldStatusName, "Open",
+                    changedByUserId, "User", DateTime.UtcNow)),
+                CreatedAt = DateTime.UtcNow
+            };
+            await _unitOfWork.Outbox.AddAsync(statusOutbox);
+        }
+
+        var auditLog = CreateAuditEntry(ticketId, changedByUserId, "Assignment", $"Assigned to {changedByName}", "Unassigned");
         await _unitOfWork.TicketAuditLogs.AddAsync(auditLog);
 
+        var outboxMessage = new OutboxMessage
+        {
+            Id = Guid.NewGuid(),
+            EventType = "ticket.unassigned",
+            Payload = JsonSerializer.Serialize(new TicketAssignedEvent(
+                ticketId,
+                ticket.ReferenceNumber,
+                request.AgentUserId,
+                changedByUserId,
+                assignment.UnassignedAt.Value
+            )),
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await _unitOfWork.Outbox.AddAsync(outboxMessage);
         await _unitOfWork.SaveChangesAsync();
+    }
+
+    public async Task<AssignmentResponse> ClaimTicketAsync(Guid ticketId, Guid userId, string userName)
+    {
+        var ticket = await _unitOfWork.Tickets.GetByIdAsync(ticketId)
+            ?? throw new KeyNotFoundException("Ticket not found.");
+
+        var openStatus = await _unitOfWork.Statuses.GetByNameAsync("Open")
+            ?? throw new InvalidOperationException("Open status not found.");
+
+        if (ticket.StatusId != openStatus.Id)
+            throw new InvalidOperationException("Only open tickets can be claimed.");
+
+        var existing = await _unitOfWork.TicketAssignments.GetActiveAssignmentAsync(ticketId, userId);
+        if (existing != null)
+            throw new InvalidOperationException("Ticket is already assigned.");
+
+        var inProgressStatus = await _unitOfWork.Statuses.GetByNameAsync("In Progress")
+            ?? throw new InvalidOperationException("In Progress status not found.");
+
+        var assignment = new TicketAssignment
+        {
+            Id = Guid.NewGuid(),
+            TicketId = ticketId,
+            AgentUserId = userId,
+            AssignedByUserId = userId,
+            AssignedAt = DateTime.UtcNow
+        };
+
+        await _unitOfWork.TicketAssignments.AddAsync(assignment);
+
+        var oldStatusName = ticket.Status.Name;
+        ticket.StatusId = inProgressStatus.Id;
+        ticket.UpdatedAt = DateTime.UtcNow;
+        await _unitOfWork.Tickets.UpdateAsync(ticket);
+
+        var assignmentAudit = CreateAuditEntry(ticketId, userId, "Assignment", null, $"Assigned to {userName}");
+        await _unitOfWork.TicketAuditLogs.AddAsync(assignmentAudit);
+
+        var statusAudit = CreateAuditEntry(ticketId, userId, "Status", oldStatusName, "In Progress");
+        await _unitOfWork.TicketAuditLogs.AddAsync(statusAudit);
+
+        var assignedOutbox = new OutboxMessage
+        {
+            Id = Guid.NewGuid(),
+            EventType = "ticket.assigned",
+            Payload = JsonSerializer.Serialize(new TicketAssignedEvent(
+                ticketId,
+                ticket.ReferenceNumber,
+                userId,
+                userId,
+                assignment.AssignedAt
+            )),
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await _unitOfWork.Outbox.AddAsync(assignedOutbox);
+
+        var statusOutbox = new OutboxMessage
+        {
+            Id = Guid.NewGuid(),
+            EventType = "ticket.status_changed",
+            Payload = JsonSerializer.Serialize(new TicketStatusChangedEvent(
+                ticketId,
+                ticket.ReferenceNumber,
+                oldStatusName,
+                "In Progress",
+                userId,
+                "User",
+                DateTime.UtcNow
+            )),
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await _unitOfWork.Outbox.AddAsync(statusOutbox);
+        await _unitOfWork.SaveChangesAsync();
+
+        return MapAssignmentToResponse(assignment);
+    }
+
+    public async Task<TicketListResponse> GetOpenUnassignedTicketsAsync(int page, int pageSize)
+    {
+        var tickets = await _unitOfWork.Tickets.GetOpenUnassignedTicketsAsync(page, pageSize);
+        var totalCount = await _unitOfWork.Tickets.GetOpenUnassignedTicketsCountAsync();
+
+        var responses = tickets.Select(t => MapToResponse(t, t.Category, t.Priority, t.Status)).ToList();
+        return new TicketListResponse(responses, totalCount, page, pageSize);
+    }
+
+    public async Task<IReadOnlyList<AgentWorkloadResponse>> GetAgentWorkloadAsync()
+    {
+        var workload = await _unitOfWork.TicketAssignments.GetAgentWorkloadAsync();
+        return workload
+            .Select(w => new AgentWorkloadResponse(
+                w.AgentUserId,
+                w.OpenCount,
+                w.ResolvedCount,
+                w.OpenTickets.Select(MapWorkloadTicketToResponse).ToList(),
+                w.ResolvedTickets.Select(MapWorkloadTicketToResponse).ToList()
+            ))
+            .ToList();
     }
 
     public async Task<IReadOnlyList<CommentResponse>> GetCommentsAsync(Guid ticketId, bool includeInternal)
@@ -435,6 +617,11 @@ public class TicketBusinessService : ITicketService
 
     private static TicketResponse MapToResponse(Ticket ticket, Category category, Priority priority, Status status)
     {
+        var activeAssignee = ticket.Assignments?
+            .Where(a => a.UnassignedAt == null)
+            .OrderByDescending(a => a.AssignedAt)
+            .FirstOrDefault();
+
         return new TicketResponse(
             ticket.Id,
             ticket.ReferenceNumber,
@@ -445,7 +632,8 @@ public class TicketBusinessService : ITicketService
             status.Name,
             ticket.CreatedByUserId,
             ticket.CreatedAt,
-            ticket.UpdatedAt
+            ticket.UpdatedAt,
+            activeAssignee?.AgentUserId
         );
     }
 
@@ -492,6 +680,20 @@ public class TicketBusinessService : ITicketService
             entry.OldValue,
             entry.NewValue,
             entry.ChangedAt
+        );
+    }
+
+    private static AgentWorkloadTicketResponse MapWorkloadTicketToResponse(AgentWorkloadTicketEntry ticket)
+    {
+        return new AgentWorkloadTicketResponse(
+            ticket.TicketId,
+            ticket.ReferenceNumber,
+            ticket.Title,
+            ticket.CategoryName,
+            ticket.PriorityName,
+            ticket.StatusName,
+            ticket.CreatedAt,
+            ticket.UpdatedAt
         );
     }
 

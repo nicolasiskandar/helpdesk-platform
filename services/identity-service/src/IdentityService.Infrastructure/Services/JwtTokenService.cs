@@ -42,7 +42,7 @@ public class JwtTokenService : IJwtTokenService
         _publicKeyRsa.ImportFromPem(publicKeyPem);
     }
 
-    public string GenerateAccessToken(Guid userId, string email, string role)
+    public string GenerateAccessToken(Guid userId, string email, string role, string fullName)
     {
         var securityKey = new RsaSecurityKey(_privateKeyRsa) { KeyId = "identity-rsa-key" };
         var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.RsaSha256);
@@ -52,7 +52,8 @@ public class JwtTokenService : IJwtTokenService
             new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
             new Claim(JwtRegisteredClaimNames.Email, email),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new Claim(ClaimTypes.Role, role)
+            new Claim(ClaimTypes.Role, role),
+            new Claim(ClaimTypes.Name, fullName)
         };
 
         var token = new JwtSecurityToken(

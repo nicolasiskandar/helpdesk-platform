@@ -43,7 +43,7 @@ public class AuthServiceTests
         _unitOfWorkMock.Setup(u => u.Users.EmailExistsAsync("test@example.com")).ReturnsAsync(false);
         _unitOfWorkMock.Setup(u => u.Roles.GetByNameAsync("Employee")).ReturnsAsync(role);
         _passwordHasherMock.Setup(p => p.HashPassword("Pass123!")).Returns("hashed-password");
-        _jwtTokenServiceMock.Setup(j => j.GenerateAccessToken(It.IsAny<Guid>(), "test@example.com", "Employee")).Returns("jwt-token");
+        _jwtTokenServiceMock.Setup(j => j.GenerateAccessToken(It.IsAny<Guid>(), "test@example.com", "Employee", It.IsAny<string>())).Returns("jwt-token");
 
         var request = new RegisterRequest("test@example.com", "Pass123!", "Test User");
 
@@ -101,7 +101,7 @@ public class AuthServiceTests
 
         _unitOfWorkMock.Setup(u => u.Users.GetByEmailAsync("test@example.com")).ReturnsAsync(user);
         _passwordHasherMock.Setup(p => p.VerifyPassword("Pass123!", "hashed-password")).Returns(true);
-        _jwtTokenServiceMock.Setup(j => j.GenerateAccessToken(userId, "test@example.com", "Employee")).Returns("jwt-token");
+        _jwtTokenServiceMock.Setup(j => j.GenerateAccessToken(userId, "test@example.com", "Employee", It.IsAny<string>())).Returns("jwt-token");
 
         var request = new LoginRequest("test@example.com", "Pass123!");
 
@@ -192,7 +192,7 @@ public class AuthServiceTests
         };
 
         _unitOfWorkMock.Setup(u => u.RefreshTokens.GetByTokenAsync(It.IsAny<string>())).ReturnsAsync(storedToken);
-        _jwtTokenServiceMock.Setup(j => j.GenerateAccessToken(userId, "test@example.com", "Employee")).Returns("new-jwt");
+        _jwtTokenServiceMock.Setup(j => j.GenerateAccessToken(userId, "test@example.com", "Employee", It.IsAny<string>())).Returns("new-jwt");
 
         var request = new RefreshRequest("old-refresh-token");
 

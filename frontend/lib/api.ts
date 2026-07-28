@@ -34,6 +34,7 @@ export interface TicketResponse {
   createdByUserId: string
   createdAt: string
   updatedAt: string
+  assigneeUserId?: string
 }
 
 export interface TicketListResponse {
@@ -298,6 +299,29 @@ export async function apiDeleteTicket(id: string): Promise<void> {
   return handleResponse<void>(res)
 }
 
+export async function apiGetOpenUnassignedTickets(
+  page = 1,
+  pageSize = 20
+): Promise<TicketListResponse> {
+  const token = getAccessToken()
+  const res = await fetch(
+    `${API_BASE}/api/tickets/open-unassigned?page=${page}&pageSize=${pageSize}`,
+    { headers: authHeaders(token) }
+  )
+  return handleResponse<TicketListResponse>(res)
+}
+
+export async function apiClaimTicket(
+  ticketId: string
+): Promise<AssignmentResponse> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/tickets/${ticketId}/claim`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+  })
+  return handleResponse<AssignmentResponse>(res)
+}
+
 export async function apiChangeStatus(
   id: string,
   statusId: number,
@@ -528,4 +552,33 @@ export async function apiDeleteUser(id: string): Promise<void> {
     headers: authHeaders(token),
   })
   return handleResponse<void>(res)
+}
+
+// ---------- Agent Workload API ----------
+
+export interface AgentWorkloadResponse {
+  agentUserId: string
+  openCount: number
+  resolvedCount: number
+  openTickets: AgentWorkloadTicketResponse[]
+  resolvedTickets: AgentWorkloadTicketResponse[]
+}
+
+export interface AgentWorkloadTicketResponse {
+  ticketId: string
+  referenceNumber: string
+  title: string
+  categoryName: string
+  priorityName: string
+  statusName: string
+  createdAt: string
+  updatedAt: string
+}
+
+export async function apiGetAgentWorkload(): Promise<AgentWorkloadResponse[]> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/tickets/agent-workload`, {
+    headers: authHeaders(token),
+  })
+  return handleResponse<AgentWorkloadResponse[]>(res)
 }

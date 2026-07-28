@@ -61,6 +61,8 @@ export interface Ticket {
   status: TicketStatus
   requesterId: string
   assigneeId: string | null
+  assigneeIds: string[]
+  assigneeName?: string
   createdAt: string
   updatedAt: string
   resolvedAt: string | null

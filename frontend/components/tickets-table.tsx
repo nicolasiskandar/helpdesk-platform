@@ -20,8 +20,15 @@ import { StatusBadge, PriorityIndicator } from "@/components/ticket-badges"
 import { formatRelative } from "@/lib/analytics"
 import type { Ticket } from "@/lib/types"
 
-function initials(id: string) {
-  return id.slice(0, 2).toUpperCase()
+function initials(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2)
 }
 
 export function TicketsTable({
@@ -85,15 +92,15 @@ export function TicketsTable({
               </TableCell>
               {!compact && (
                 <TableCell>
-                  {ticket.assigneeId ? (
+                  {ticket.assigneeName ? (
                     <div className="flex items-center gap-2">
                       <Avatar className="size-6">
                         <AvatarFallback className="bg-muted text-[10px]">
-                          {initials(ticket.assigneeId)}
+                          {initials(ticket.assigneeName)}
                         </AvatarFallback>
                       </Avatar>
                       <span className="text-sm">
-                        {ticket.assigneeId.slice(0, 8)}
+                        {ticket.assigneeName}
                       </span>
                     </div>
                   ) : (

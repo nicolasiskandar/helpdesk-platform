@@ -9,4 +9,5 @@ public interface ITicketAssignmentRepository
     Task AddAsync(TicketAssignment assignment);
     Task UpdateAsync(TicketAssignment assignment);
     Task DeleteAsync(TicketAssignment assignment);
+    Task<IReadOnlyList<AgentWorkloadEntry>> GetAgentWorkloadAsync();
 }

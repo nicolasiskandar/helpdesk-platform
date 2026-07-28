@@ -37,7 +37,7 @@ public class TicketsController : ControllerBase
     }
 
     /// <summary>
-    /// Gets all tickets (paginated).
+    /// Gets all tickets (paginated). For agents, returns only open unassigned, assigned, and closed tickets.
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(TicketListResponse), StatusCodes.Status200OK)]
@@ -47,7 +47,15 @@ public class TicketsController : ControllerBase
         [FromQuery] DateTime? createdFrom = null,
         [FromQuery] DateTime? createdTo = null)
     {
-        var result = await _ticketService.GetTicketsAsync(page, pageSize, createdFrom, createdTo);
+        var role = GetUserRoleFromClaims();
+        Guid? agentUserId = null;
+
+        if (role == "IT Support Agent" || role == "Agent")
+        {
+            agentUserId = GetUserIdFromClaims();
+        }
+
+        var result = await _ticketService.GetTicketsAsync(page, pageSize, createdFrom, createdTo, agentUserId);
         return Ok(result);
     }
 
@@ -88,6 +96,19 @@ public class TicketsController : ControllerBase
     {
         var userId = GetUserIdFromClaims();
         var result = await _ticketService.GetMyTicketsAsync(userId, page, pageSize, createdFrom, createdTo);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Gets open, unassigned tickets available for pickup.
+    /// </summary>
+    [HttpGet("open-unassigned")]
+    [ProducesResponseType(typeof(TicketListResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetOpenUnassignedTickets(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
+    {
+        var result = await _ticketService.GetOpenUnassignedTicketsAsync(page, pageSize);
         return Ok(result);
     }
 
@@ -150,12 +171,14 @@ public class TicketsController : ControllerBase
     /// Assigns an agent to a ticket.
     /// </summary>
     [HttpPost("{ticketId:guid}/assignments")]
+    [Authorize(Roles = "Admin,Manager")]
     [ProducesResponseType(typeof(AssignmentResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> AssignAgent(Guid ticketId, [FromBody] AssignAgentRequest request)
     {
         var userId = GetUserIdFromClaims();
-        var assignment = await _ticketService.AssignAgentAsync(ticketId, request, userId);
+        var userName = GetUserNameFromClaims();
+        var assignment = await _ticketService.AssignAgentAsync(ticketId, request, userId, userName);
         return CreatedAtAction(nameof(GetAssignments), new { ticketId }, assignment);
     }
 
@@ -163,13 +186,30 @@ public class TicketsController : ControllerBase
     /// Unassigns an agent from a ticket.
     /// </summary>
     [HttpDelete("{ticketId:guid}/assignments/{agentUserId:guid}")]
+    [Authorize(Roles = "Admin,Manager")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> UnassignAgent(Guid ticketId, Guid agentUserId)
     {
         var userId = GetUserIdFromClaims();
-        await _ticketService.UnassignAgentAsync(ticketId, new UnassignAgentRequest(agentUserId), userId);
+        var userName = GetUserNameFromClaims();
+        await _ticketService.UnassignAgentAsync(ticketId, new UnassignAgentRequest(agentUserId), userId, userName);
         return NoContent();
+    }
+
+    /// <summary>
+    /// Claims an open ticket (self-assign and set status to In Progress).
+    /// </summary>
+    [HttpPost("{ticketId:guid}/claim")]
+    [ProducesResponseType(typeof(AssignmentResponse), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ClaimTicket(Guid ticketId)
+    {
+        var userId = GetUserIdFromClaims();
+        var userName = GetUserNameFromClaims();
+        var assignment = await _ticketService.ClaimTicketAsync(ticketId, userId, userName);
+        return CreatedAtAction(nameof(GetAssignments), new { ticketId }, assignment);
     }
 
     /// <summary>
@@ -317,6 +357,18 @@ public class TicketsController : ControllerBase
         return Ok(statuses);
     }
 
+    /// <summary>
+    /// Gets agent workload (open and resolved ticket counts per agent).
+    /// </summary>
+    [HttpGet("agent-workload")]
+    [Authorize(Roles = "Admin,Manager")]
+    [ProducesResponseType(typeof(IReadOnlyList<AgentWorkloadResponse>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetAgentWorkload()
+    {
+        var workload = await _ticketService.GetAgentWorkloadAsync();
+        return Ok(workload);
+    }
+
     private Guid GetUserIdFromClaims()
     {
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
@@ -327,5 +379,10 @@ public class TicketsController : ControllerBase
     private string GetUserRoleFromClaims()
     {
         return User.FindFirst(ClaimTypes.Role)?.Value ?? "Employee";
+    }
+
+    private string GetUserNameFromClaims()
+    {
+        return User.FindFirst(ClaimTypes.Name)?.Value ?? "Unknown";
     }
 }

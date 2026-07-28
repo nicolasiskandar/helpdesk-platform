@@ -25,6 +25,7 @@ import { StatCard } from "@/components/stat-card"
 import { VolumeChart } from "@/components/reports/volume-chart"
 import { ResolutionChart } from "@/components/reports/resolution-chart"
 import { useStore } from "@/lib/store"
+import { RoleGuard } from "@/components/role-guard"
 import {
   ticketTrend,
   resolutionTimeTrend,
@@ -36,10 +37,10 @@ function initials(name: string) {
 }
 
 export default function ReportsPage() {
-  const { tickets } = useStore()
+  const { tickets, userMap } = useStore()
   const trend = ticketTrend()
   const resolution = resolutionTimeTrend()
-  const performance = [...agentPerformance(tickets)].sort(
+  const performance = [...agentPerformance(tickets, userMap)].sort(
     (a, b) => b.resolved - a.resolved
   )
 
@@ -50,6 +51,7 @@ export default function ReportsPage() {
   }
 
   return (
+    <RoleGuard allowedRoles={["admin", "manager"]}>
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -193,5 +195,6 @@ export default function ReportsPage() {
         </CardContent>
       </Card>
     </div>
+    </RoleGuard>
   )
 }

@@ -7,15 +7,18 @@ public interface ITicketService
     Task<TicketResponse> CreateTicketAsync(CreateTicketRequest request, Guid createdByUserId);
     Task<TicketResponse> GetTicketByIdAsync(Guid id);
     Task<TicketResponse> GetTicketByReferenceNumberAsync(string referenceNumber);
-    Task<TicketListResponse> GetTicketsAsync(int page, int pageSize, DateTime? createdFrom = null, DateTime? createdTo = null);
+    Task<TicketListResponse> GetTicketsAsync(int page, int pageSize, DateTime? createdFrom = null, DateTime? createdTo = null, Guid? agentUserId = null);
     Task<TicketListResponse> GetMyTicketsAsync(Guid userId, int page, int pageSize, DateTime? createdFrom = null, DateTime? createdTo = null);
     Task<TicketResponse> UpdateTicketAsync(Guid id, UpdateTicketRequest request, Guid changedByUserId, string requestedByRole);
     Task<TicketResponse> ChangeStatusAsync(Guid id, ChangeStatusRequest request, Guid changedByUserId, string changedByType = "User");
     Task DeleteTicketAsync(Guid id, Guid requestedByUserId, string requestedByRole);
 
     Task<IReadOnlyList<AssignmentResponse>> GetAssignmentsAsync(Guid ticketId);
-    Task<AssignmentResponse> AssignAgentAsync(Guid ticketId, AssignAgentRequest request, Guid assignedByUserId);
-    Task UnassignAgentAsync(Guid ticketId, UnassignAgentRequest request, Guid changedByUserId);
+    Task<AssignmentResponse> AssignAgentAsync(Guid ticketId, AssignAgentRequest request, Guid assignedByUserId, string assignedByName);
+    Task UnassignAgentAsync(Guid ticketId, UnassignAgentRequest request, Guid changedByUserId, string changedByName);
+    Task<AssignmentResponse> ClaimTicketAsync(Guid ticketId, Guid userId, string userName);
+    Task<TicketListResponse> GetOpenUnassignedTicketsAsync(int page, int pageSize);
+    Task<IReadOnlyList<AgentWorkloadResponse>> GetAgentWorkloadAsync();
 
     Task<IReadOnlyList<CommentResponse>> GetCommentsAsync(Guid ticketId, bool includeInternal);
     Task<CommentResponse> AddCommentAsync(Guid ticketId, AddCommentRequest request, Guid authorUserId);

@@ -53,7 +53,7 @@ public class JwtTokenServiceTests : IDisposable
     public void GenerateAccessToken_ReturnsNonEmptyJwt()
     {
         // Act
-        var token = _sut.GenerateAccessToken(Guid.NewGuid(), "test@example.com", "Employee");
+        var token = _sut.GenerateAccessToken(Guid.NewGuid(), "test@example.com", "Employee", "Test User");
 
         // Assert
         token.Should().NotBeNullOrWhiteSpace();
@@ -67,7 +67,7 @@ public class JwtTokenServiceTests : IDisposable
         var userId = Guid.NewGuid();
 
         // Act
-        var token = _sut.GenerateAccessToken(userId, "test@example.com", "Employee");
+        var token = _sut.GenerateAccessToken(userId, "test@example.com", "Employee", "Test User");
 
         // Assert - decode payload (base64url)
         var parts = token.Split('.');
