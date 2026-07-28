@@ -65,7 +65,7 @@ const mainNav: NavItem[] = [
     title: "Ticket Queue",
     href: "/tickets/queue",
     icon: ListTodo,
-    roles: ["admin", "agent", "manager", "employee"],
+    roles: ["admin", "agent", "manager"],
   },
   {
     title: "Reports",

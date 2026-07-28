@@ -3,6 +3,7 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { useStore, statusBadgeClass } from "@/lib/store"
+import { RoleGuard } from "@/components/role-guard"
 import type { Ticket } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -56,6 +57,7 @@ export default function TicketQueuePage() {
   }
 
   return (
+    <RoleGuard allowedRoles={["admin", "agent", "manager"]}>
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold tracking-tight text-balance">
@@ -155,5 +157,6 @@ export default function TicketQueuePage() {
         )}
       </Card>
     </div>
+    </RoleGuard>
   )
 }

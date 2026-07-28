@@ -13,6 +13,7 @@ import {
   PencilIcon,
   TrashIcon,
   HandIcon,
+  XIcon,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -51,7 +52,7 @@ import { useStore } from "@/lib/store"
 import { formatRelative, formatDateTime } from "@/lib/analytics"
 import type { Ticket, Comment, TicketStatus, TicketCategory, TicketPriority } from "@/lib/types"
 import type { AuditLogEntryResponse, AttachmentResponse, CategoryResponse, PriorityResponse, UserResponse } from "@/lib/api"
-import { apiGetTicketByReference, apiGetCategories, apiGetPriorities, apiAttachmentDownloadUrl, apiGetUsers, apiUnassignAgent } from "@/lib/api"
+import { apiGetTicketByReference, apiGetCategories, apiGetPriorities, apiAttachmentDownloadUrl, apiGetUsers, apiUnassignAgent, apiUploadAttachment } from "@/lib/api"
 
 function initials(name: string) {
   return name
@@ -131,6 +132,24 @@ export default function TicketDetailPage() {
   const [savingEdit, setSavingEdit] = React.useState(false)
   const [categories, setCategories] = React.useState<CategoryResponse[]>([])
   const [priorities, setPriorities] = React.useState<PriorityResponse[]>([])
+  const [editFiles, setEditFiles] = React.useState<File[]>([])
+  const editFileInputRef = React.useRef<HTMLInputElement>(null)
+
+  const MAX_FILE_SIZE = 10 * 1024 * 1024
+
+  function handleEditFilesSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const selected = Array.from(e.target.files || [])
+    const valid = selected.filter((f) => {
+      if (f.size > MAX_FILE_SIZE) { toast.warning(`${f.name} exceeds 10 MB limit`); return false }
+      return true
+    })
+    setEditFiles((prev) => [...prev, ...valid])
+    if (editFileInputRef.current) editFileInputRef.current.value = ""
+  }
+
+  function removeEditFile(index: number) {
+    setEditFiles((prev) => prev.filter((_, i) => i !== index))
+  }
 
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
@@ -214,6 +233,7 @@ export default function TicketDetailPage() {
     setEditDescription(ticket.description)
     setEditCategory(ticket.category)
     setEditPriority(ticket.priority)
+    setEditFiles([])
     setEditOpen(true)
   }
 
@@ -227,6 +247,15 @@ export default function TicketDetailPage() {
         category: editCategory,
         priority: editPriority,
       })
+      for (const file of editFiles) {
+        try {
+          await apiUploadAttachment(ticket.id, file)
+        } catch (err: any) {
+          toast.error(`Failed to upload ${file.name}`, { description: err?.message || "Upload failed" })
+        }
+      }
+      const updatedAttachments = await loadAttachments(ticket.id)
+      setAttachments(updatedAttachments)
       setTicket({
         ...ticket,
         subject: editTitle,
@@ -234,6 +263,7 @@ export default function TicketDetailPage() {
         category: editCategory,
         priority: editPriority,
       })
+      setEditFiles([])
       setEditOpen(false)
       toast.success("Ticket updated")
     } catch {
@@ -701,7 +731,7 @@ export default function TicketDetailPage() {
             </Card>
           )}
 
-          {ticket.status === "Open" && activeAssigneeIds.length === 0 && (
+          {ticket.status === "Open" && activeAssigneeIds.length === 0 && role !== "employee" && (
             <Card>
               <CardHeader>
                 <CardTitle>Pick Up Ticket</CardTitle>
@@ -781,6 +811,45 @@ export default function TicketDetailPage() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>Attachments</Label>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => editFileInputRef.current?.click()}
+                >
+                  <PaperclipIcon />
+                  Add files
+                </Button>
+                <span className="text-xs text-muted-foreground">Max 10 MB per file</span>
+              </div>
+              <input
+                ref={editFileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={handleEditFilesSelected}
+              />
+              {editFiles.length > 0 && (
+                <div className="flex flex-col gap-1.5 mt-1">
+                  {editFiles.map((file, i) => (
+                    <div key={`${file.name}-${i}`} className="flex items-center justify-between rounded-md border px-3 py-1.5 text-sm">
+                      <span className="truncate mr-2">{file.name}</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-muted-foreground text-xs">
+                          {file.size < 1024 ? `${file.size} B` : file.size < 1024 * 1024 ? `${(file.size / 1024).toFixed(1)} KB` : `${(file.size / (1024 * 1024)).toFixed(1)} MB`}
+                        </span>
+                        <button type="button" onClick={() => removeEditFile(i)} className="text-muted-foreground hover:text-foreground">
+                          <XIcon className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>
