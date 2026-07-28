@@ -57,12 +57,15 @@ public class TicketRepository : ITicketRepository
 
     public async Task<IReadOnlyList<Ticket>> GetByCreatedByUserIdAsync(Guid userId, int page, int pageSize, DateTime? createdFrom = null, DateTime? createdTo = null)
     {
+        var closedStatus = await _context.Statuses.FirstOrDefaultAsync(s => s.Name == "Closed");
+
         var query = _context.Tickets
             .Include(t => t.Category)
             .Include(t => t.Priority)
             .Include(t => t.Status)
             .Include(t => t.Assignments)
-            .Where(t => t.CreatedByUserId == userId)
+            .Where(t => t.CreatedByUserId == userId
+                || (closedStatus != null && t.StatusId == closedStatus.Id))
             .AsQueryable();
 
         if (createdFrom.HasValue)
@@ -123,8 +126,11 @@ public class TicketRepository : ITicketRepository
 
     public async Task<int> GetCountByCreatedByUserIdAsync(Guid userId, DateTime? createdFrom = null, DateTime? createdTo = null)
     {
+        var closedStatus = await _context.Statuses.FirstOrDefaultAsync(s => s.Name == "Closed");
+
         var query = _context.Tickets
-            .Where(t => t.CreatedByUserId == userId)
+            .Where(t => t.CreatedByUserId == userId
+                || (closedStatus != null && t.StatusId == closedStatus.Id))
             .AsQueryable();
 
         if (createdFrom.HasValue)

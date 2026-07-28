@@ -46,7 +46,7 @@ function initials(name: string) {
 }
 
 export default function DashboardPage() {
-  const { tickets, role, currentUserId, ticketsLoading } = useStore()
+  const { tickets, role, currentUserId, ticketsLoading, userMap } = useStore()
   const { user: authUser } = useAuth()
 
   const displayName = authUser?.fullName || "User"
@@ -61,7 +61,7 @@ export default function DashboardPage() {
   const stats = ticketStats(scoped)
   const categories = byCategory(scoped)
   const priorities = byPriority(scoped).filter((p) => p.count > 0)
-  const performance = agentPerformance(tickets)
+  const performance = agentPerformance(tickets, userMap)
 
   const recent = [...scoped]
     .sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt))

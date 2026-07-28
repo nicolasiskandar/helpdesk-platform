@@ -8,7 +8,7 @@ namespace IdentityService.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin")]
+[Authorize]
 public class UsersController : ControllerBase
 {
     private readonly IUserService _userService;
@@ -22,7 +22,7 @@ public class UsersController : ControllerBase
     /// Gets all users (paginated, filterable).
     /// </summary>
     [HttpGet]
-    [Authorize(Roles = "Admin,Manager")]
+    [Authorize]
     [ProducesResponseType(typeof(UserListResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetUsers(
         [FromQuery] string? search = null,
@@ -52,6 +52,7 @@ public class UsersController : ControllerBase
     /// Creates a new user.
     /// </summary>
     [HttpPost]
+    [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(UserResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> CreateUser([FromBody] CreateUserRequest request)
@@ -64,6 +65,7 @@ public class UsersController : ControllerBase
     /// Updates a user's profile, role, or active status.
     /// </summary>
     [HttpPut("{id:guid}")]
+    [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(UserResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -77,6 +79,7 @@ public class UsersController : ControllerBase
     /// Deactivates a user (soft delete).
     /// </summary>
     [HttpPatch("{id:guid}/deactivate")]
+    [Authorize(Roles = "Admin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeactivateUser(Guid id)
@@ -93,6 +96,7 @@ public class UsersController : ControllerBase
     /// Permanently deletes a user.
     /// </summary>
     [HttpDelete("{id:guid}")]
+    [Authorize(Roles = "Admin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteUser(Guid id)
