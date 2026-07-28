@@ -56,7 +56,7 @@ export interface CommentResponse {
   id: string
   authorUserId: string
   content: string
-  isInternal: boolean
+  isPrivate: boolean
   createdAt: string
 }
 
@@ -372,12 +372,11 @@ export async function apiUnassignAgent(
 }
 
 export async function apiGetComments(
-  ticketId: string,
-  includeInternal = true
+  ticketId: string
 ): Promise<CommentResponse[]> {
   const token = getAccessToken()
   const res = await fetch(
-    `${API_BASE}/api/tickets/${ticketId}/comments?includeInternal=${includeInternal}`,
+    `${API_BASE}/api/tickets/${ticketId}/comments`,
     { headers: authHeaders(token) }
   )
   return handleResponse<CommentResponse[]>(res)
@@ -386,13 +385,13 @@ export async function apiGetComments(
 export async function apiAddComment(
   ticketId: string,
   content: string,
-  isInternal: boolean
+  isPrivate: boolean
 ): Promise<CommentResponse> {
   const token = getAccessToken()
   const res = await fetch(`${API_BASE}/api/tickets/${ticketId}/comments`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
-    body: JSON.stringify({ content, isInternal }),
+    body: JSON.stringify({ content, isPrivate }),
   })
   return handleResponse<CommentResponse>(res)
 }

@@ -121,7 +121,7 @@ export default function TicketDetailPage() {
   const [attachments, setAttachments] = React.useState<AttachmentResponse[]>([])
   const [loading, setLoading] = React.useState(true)
   const [commentText, setCommentText] = React.useState("")
-  const [isInternal, setIsInternal] = React.useState(false)
+  const [isPrivate, setIsPrivate] = React.useState(false)
   const [submittingComment, setSubmittingComment] = React.useState(false)
 
   const [editOpen, setEditOpen] = React.useState(false)
@@ -202,9 +202,9 @@ export default function TicketDetailPage() {
     if (!ticket || !commentText.trim() || submittingComment) return
     setSubmittingComment(true)
     try {
-      await addComment(ticket.id, commentText.trim(), isInternal)
+      await addComment(ticket.id, commentText.trim(), isPrivate)
       setCommentText("")
-      setIsInternal(false)
+      setIsPrivate(false)
       // Reload comments
       const c = await loadComments(ticket.id)
       setComments(c)
@@ -391,6 +391,8 @@ export default function TicketDetailPage() {
       ? [ticket.assigneeId]
       : []
   const assignableAgents = agents.filter((agent) => !activeAssigneeIds.includes(agent.id))
+  const isAssignedAgent = activeAssigneeIds.includes(currentUserId)
+  const canSeePrivate = isCreator || isAssignedAgent || isAdmin
 
   return (
     <div className="flex flex-col gap-6">
@@ -459,15 +461,15 @@ export default function TicketDetailPage() {
                     rows={3}
                   />
                   <div className="flex items-center justify-between">
-                    {role !== "employee" && (
+                    {canSeePrivate && (
                       <label className="flex items-center gap-2 text-sm text-muted-foreground">
                         <input
                           type="checkbox"
-                          checked={isInternal}
-                          onChange={(e) => setIsInternal(e.target.checked)}
+                          checked={isPrivate}
+                          onChange={(e) => setIsPrivate(e.target.checked)}
                           className="accent-primary"
                         />
-                        Internal note
+                        Private
                       </label>
                     )}
                     <Button
@@ -500,9 +502,9 @@ export default function TicketDetailPage() {
                           <span className="text-sm font-medium">
                             {c.authorId === currentUserId ? "You" : (userMap[c.authorId] || c.authorId.slice(0, 8))}
                           </span>
-                          {c.internal && (
+                          {c.isPrivate && (
                             <Badge variant="outline" className="text-[10px]">
-                              Internal
+                              Private
                             </Badge>
                           )}
                           <span className="text-xs text-muted-foreground">

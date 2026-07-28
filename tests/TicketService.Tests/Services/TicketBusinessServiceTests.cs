@@ -307,11 +307,11 @@ public class TicketBusinessServiceTests
         _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
 
         // Act
-        var result = await _sut.AddCommentAsync(ticketId, new AddCommentRequest("Test comment", false), authorUserId);
+        var result = await _sut.AddCommentAsync(ticketId, new AddCommentRequest("Test comment", false), authorUserId, "Employee");
 
         // Assert
         result.Content.Should().Be("Test comment");
-        result.IsInternal.Should().BeFalse();
+        result.IsPrivate.Should().BeFalse();
         result.AuthorUserId.Should().Be(authorUserId);
 
         _commentRepoMock.Verify(r => r.AddAsync(It.Is<TicketComment>(c =>
@@ -924,11 +924,44 @@ public class TicketBusinessServiceTests
         _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync((Ticket?)null);
 
         // Act
-        var act = () => _sut.AddCommentAsync(ticketId, new AddCommentRequest("Comment", false), Guid.NewGuid());
+        var act = () => _sut.AddCommentAsync(ticketId, new AddCommentRequest("Comment", false), Guid.NewGuid(), "Employee");
 
         // Assert
         await act.Should().ThrowAsync<KeyNotFoundException>()
             .WithMessage("*Ticket not found*");
+    }
+
+    [Fact]
+    public async Task AddCommentAsync_PrivateComment_UnauthorizedUser_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var authorUserId = Guid.NewGuid();
+        var ticketCreatorUserId = Guid.NewGuid();
+
+        var ticket = new Ticket
+        {
+            Id = ticketId,
+            ReferenceNumber = "TKT-000001",
+            Title = "Test",
+            CategoryId = 1,
+            PriorityId = 1,
+            StatusId = 1,
+            CreatedByUserId = ticketCreatorUserId,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 1, Name = "Open" }
+        };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _assignmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(new List<TicketAssignment>());
+
+        // Act - Employee who is not creator and not assigned tries to create private comment
+        var act = () => _sut.AddCommentAsync(ticketId, new AddCommentRequest("Private comment", true), authorUserId, "Employee");
+
+        // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*permission*");
     }
 
     [Fact]
@@ -1004,43 +1037,79 @@ public class TicketBusinessServiceTests
     {
         // Arrange
         var ticketId = Guid.NewGuid();
+        var viewerUserId = Guid.NewGuid();
+        var ticketCreatorUserId = Guid.NewGuid();
         var comments = new List<TicketComment>
         {
-            new() { Id = Guid.NewGuid(), TicketId = ticketId, AuthorUserId = Guid.NewGuid(), Content = "Public comment", IsInternal = false, CreatedAt = DateTime.UtcNow },
-            new() { Id = Guid.NewGuid(), TicketId = ticketId, AuthorUserId = Guid.NewGuid(), Content = "Internal note", IsInternal = true, CreatedAt = DateTime.UtcNow }
+            new() { Id = Guid.NewGuid(), TicketId = ticketId, AuthorUserId = Guid.NewGuid(), Content = "Public comment", IsPrivate = false, CreatedAt = DateTime.UtcNow },
+            new() { Id = Guid.NewGuid(), TicketId = ticketId, AuthorUserId = viewerUserId, Content = "Private note", IsPrivate = true, CreatedAt = DateTime.UtcNow }
         };
 
-        _commentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId, true)).ReturnsAsync(comments);
+        var ticket = new Ticket
+        {
+            Id = ticketId,
+            ReferenceNumber = "TKT-000001",
+            Title = "Test",
+            CategoryId = 1,
+            PriorityId = 1,
+            StatusId = 1,
+            CreatedByUserId = ticketCreatorUserId,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 1, Name = "Open" }
+        };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _assignmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(new List<TicketAssignment>());
+        _commentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId, viewerUserId, "Employee", ticketCreatorUserId, It.IsAny<HashSet<Guid>>())).ReturnsAsync(comments);
 
         // Act
-        var result = await _sut.GetCommentsAsync(ticketId, includeInternal: true);
+        var result = await _sut.GetCommentsAsync(ticketId, viewerUserId, "Employee");
 
         // Assert
         result.Should().HaveCount(2);
         result[0].Content.Should().Be("Public comment");
-        result[0].IsInternal.Should().BeFalse();
-        result[1].Content.Should().Be("Internal note");
-        result[1].IsInternal.Should().BeTrue();
+        result[0].IsPrivate.Should().BeFalse();
+        result[1].Content.Should().Be("Private note");
+        result[1].IsPrivate.Should().BeTrue();
     }
 
     [Fact]
-    public async Task GetCommentsAsync_ExcludesInternal_OnlyReturnsPublicComments()
+    public async Task GetCommentsAsync_PrivateComment_OnlyVisibleToPermittedRoles()
     {
         // Arrange
         var ticketId = Guid.NewGuid();
+        var viewerUserId = Guid.NewGuid();
+        var ticketCreatorUserId = Guid.NewGuid();
         var publicComments = new List<TicketComment>
         {
-            new() { Id = Guid.NewGuid(), TicketId = ticketId, AuthorUserId = Guid.NewGuid(), Content = "Public comment", IsInternal = false, CreatedAt = DateTime.UtcNow }
+            new() { Id = Guid.NewGuid(), TicketId = ticketId, AuthorUserId = Guid.NewGuid(), Content = "Public comment", IsPrivate = false, CreatedAt = DateTime.UtcNow }
         };
 
-        _commentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId, false)).ReturnsAsync(publicComments);
+        var ticket = new Ticket
+        {
+            Id = ticketId,
+            ReferenceNumber = "TKT-000001",
+            Title = "Test",
+            CategoryId = 1,
+            PriorityId = 1,
+            StatusId = 1,
+            CreatedByUserId = ticketCreatorUserId,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 1, Name = "Open" }
+        };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _assignmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(new List<TicketAssignment>());
+        _commentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId, viewerUserId, "Employee", ticketCreatorUserId, It.IsAny<HashSet<Guid>>())).ReturnsAsync(publicComments);
 
         // Act
-        var result = await _sut.GetCommentsAsync(ticketId, includeInternal: false);
+        var result = await _sut.GetCommentsAsync(ticketId, viewerUserId, "Employee");
 
         // Assert
         result.Should().HaveCount(1);
-        result[0].IsInternal.Should().BeFalse();
+        result[0].IsPrivate.Should().BeFalse();
     }
 
     [Fact]

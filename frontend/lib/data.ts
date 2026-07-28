@@ -159,14 +159,14 @@ export const tickets: Ticket[] = [
         authorId: "u-2",
         body: "Hi Sarah, thanks for reporting. Can you tell me which Outlook version you are on? Help > Office Account.",
         createdAt: daysAgo(0, 2),
-        internal: false,
+        isPrivate: false,
       },
       {
         id: "c-2",
         authorId: "u-2",
         body: "Likely the cached mode add-in conflict from the 2408 build. Will try repairing the profile.",
         createdAt: daysAgo(0, 1),
-        internal: true,
+        isPrivate: true,
       },
     ],
     activity: [
@@ -256,7 +256,7 @@ export const tickets: Ticket[] = [
         authorId: "u-3",
         body: "Waiting on final sign-off from the data owner before provisioning. Will update once received.",
         createdAt: daysAgo(0, 5),
-        internal: false,
+        isPrivate: false,
       },
     ],
     activity: [
@@ -298,7 +298,7 @@ export const tickets: Ticket[] = [
         authorId: "u-2",
         body: "Laptop imaged, all software installed, and account configured. Ready for pickup at the IT desk.",
         createdAt: daysAgo(2, 0),
-        internal: false,
+        isPrivate: false,
       },
     ],
     activity: [
@@ -340,7 +340,7 @@ export const tickets: Ticket[] = [
         authorId: "u-4",
         body: "Please try switching the VPN protocol to TCP in the client settings and let me know if it stabilizes.",
         createdAt: daysAgo(0, 8),
-        internal: false,
+        isPrivate: false,
       },
     ],
     activity: [
@@ -402,7 +402,7 @@ export const tickets: Ticket[] = [
         authorId: "u-3",
         body: "Reset link sent to your email and account unlocked. Please update your password within 24 hours.",
         createdAt: daysAgo(5, 0),
-        internal: false,
+        isPrivate: false,
       },
     ],
     activity: [
@@ -599,7 +599,7 @@ export const notifications: NotificationItem[] = [
     id: "n-5",
     type: "mention",
     title: "You were mentioned",
-    body: "Lena Novak mentioned you in an internal note on HLX-4802.",
+    body: "Lena Novak mentioned you in a private note on HLX-4802.",
     ticketRef: "HLX-4802",
     createdAt: daysAgo(1, 0),
     read: true,

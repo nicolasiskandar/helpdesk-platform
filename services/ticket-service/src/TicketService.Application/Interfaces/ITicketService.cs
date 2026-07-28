@@ -20,8 +20,8 @@ public interface ITicketService
     Task<TicketListResponse> GetOpenUnassignedTicketsAsync(int page, int pageSize);
     Task<IReadOnlyList<AgentWorkloadResponse>> GetAgentWorkloadAsync();
 
-    Task<IReadOnlyList<CommentResponse>> GetCommentsAsync(Guid ticketId, bool includeInternal);
-    Task<CommentResponse> AddCommentAsync(Guid ticketId, AddCommentRequest request, Guid authorUserId);
+    Task<IReadOnlyList<CommentResponse>> GetCommentsAsync(Guid ticketId, Guid viewerUserId, string viewerRole);
+    Task<CommentResponse> AddCommentAsync(Guid ticketId, AddCommentRequest request, Guid authorUserId, string authorRole);
 
     Task<IReadOnlyList<AttachmentResponse>> GetAttachmentsAsync(Guid ticketId);
     Task<AttachmentResponse> AddAttachmentAsync(Guid ticketId, string fileName, string fileUrl, Guid uploadedByUserId);

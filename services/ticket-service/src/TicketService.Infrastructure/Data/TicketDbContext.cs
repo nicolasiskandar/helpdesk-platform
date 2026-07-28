@@ -83,6 +83,7 @@ public class TicketDbContext : DbContext
         {
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Content).IsRequired().HasColumnType("nvarchar(max)");
+            entity.Property(e => e.IsPrivate).HasColumnName("IsInternal");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
 
             entity.HasOne(e => e.Ticket)

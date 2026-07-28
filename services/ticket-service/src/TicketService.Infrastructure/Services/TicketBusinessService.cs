@@ -208,7 +208,7 @@ public class TicketBusinessService : ITicketService
         if (requestedByRole != "Admin" && ticket.CreatedByUserId != requestedByUserId)
             throw new UnauthorizedAccessException("Only the ticket creator or an admin can delete this ticket.");
 
-        var comments = await _unitOfWork.TicketComments.GetByTicketIdAsync(id, true);
+        var comments = await _unitOfWork.TicketComments.GetByTicketIdAsync(id, requestedByUserId, "Admin", ticket.CreatedByUserId, new HashSet<Guid>());
         foreach (var comment in comments)
             await _unitOfWork.TicketComments.DeleteAsync(comment);
 
@@ -507,16 +507,42 @@ public class TicketBusinessService : ITicketService
             .ToList();
     }
 
-    public async Task<IReadOnlyList<CommentResponse>> GetCommentsAsync(Guid ticketId, bool includeInternal)
-    {
-        var comments = await _unitOfWork.TicketComments.GetByTicketIdAsync(ticketId, includeInternal);
-        return comments.Select(MapCommentToResponse).ToList();
-    }
-
-    public async Task<CommentResponse> AddCommentAsync(Guid ticketId, AddCommentRequest request, Guid authorUserId)
+    public async Task<IReadOnlyList<CommentResponse>> GetCommentsAsync(Guid ticketId, Guid viewerUserId, string viewerRole)
     {
         var ticket = await _unitOfWork.Tickets.GetByIdAsync(ticketId)
             ?? throw new KeyNotFoundException("Ticket not found.");
+
+        var assignments = await _unitOfWork.TicketAssignments.GetByTicketIdAsync(ticketId);
+        var assignedAgentIds = assignments
+            .Where(a => a.UnassignedAt == null)
+            .Select(a => a.AgentUserId)
+            .ToHashSet();
+
+        var comments = await _unitOfWork.TicketComments.GetByTicketIdAsync(
+            ticketId, viewerUserId, viewerRole, ticket.CreatedByUserId, assignedAgentIds);
+        return comments.Select(MapCommentToResponse).ToList();
+    }
+
+    public async Task<CommentResponse> AddCommentAsync(Guid ticketId, AddCommentRequest request, Guid authorUserId, string authorRole)
+    {
+        var ticket = await _unitOfWork.Tickets.GetByIdAsync(ticketId)
+            ?? throw new KeyNotFoundException("Ticket not found.");
+
+        if (request.IsPrivate)
+        {
+            var assignments = await _unitOfWork.TicketAssignments.GetByTicketIdAsync(ticketId);
+            var assignedAgentIds = assignments
+                .Where(a => a.UnassignedAt == null)
+                .Select(a => a.AgentUserId)
+                .ToHashSet();
+
+            var isPermitted = authorRole == "Admin"
+                || ticket.CreatedByUserId == authorUserId
+                || assignedAgentIds.Contains(authorUserId);
+
+            if (!isPermitted)
+                throw new InvalidOperationException("You do not have permission to create private comments.");
+        }
 
         var comment = new TicketComment
         {
@@ -524,13 +550,13 @@ public class TicketBusinessService : ITicketService
             TicketId = ticketId,
             AuthorUserId = authorUserId,
             Content = request.Content,
-            IsInternal = request.IsInternal,
+            IsPrivate = request.IsPrivate,
             CreatedAt = DateTime.UtcNow
         };
 
         await _unitOfWork.TicketComments.AddAsync(comment);
 
-        var auditLog = CreateAuditEntry(ticketId, authorUserId, "Comment", null, request.IsInternal ? "Internal comment added" : "Comment added");
+        var auditLog = CreateAuditEntry(ticketId, authorUserId, "Comment", null, request.IsPrivate ? "Private comment added" : "Comment added");
         await _unitOfWork.TicketAuditLogs.AddAsync(auditLog);
 
         await _unitOfWork.SaveChangesAsync();
@@ -654,7 +680,7 @@ public class TicketBusinessService : ITicketService
             comment.Id,
             comment.AuthorUserId,
             comment.Content,
-            comment.IsInternal,
+            comment.IsPrivate,
             comment.CreatedAt
         );
     }

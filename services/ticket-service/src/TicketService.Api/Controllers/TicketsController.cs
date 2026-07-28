@@ -217,9 +217,11 @@ public class TicketsController : ControllerBase
     /// </summary>
     [HttpGet("{ticketId:guid}/comments")]
     [ProducesResponseType(typeof(IReadOnlyList<CommentResponse>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetComments(Guid ticketId, [FromQuery] bool includeInternal = false)
+    public async Task<IActionResult> GetComments(Guid ticketId)
     {
-        var comments = await _ticketService.GetCommentsAsync(ticketId, includeInternal);
+        var userId = GetUserIdFromClaims();
+        var role = GetUserRoleFromClaims();
+        var comments = await _ticketService.GetCommentsAsync(ticketId, userId, role);
         return Ok(comments);
     }
 
@@ -232,7 +234,8 @@ public class TicketsController : ControllerBase
     public async Task<IActionResult> AddComment(Guid ticketId, [FromBody] AddCommentRequest request)
     {
         var userId = GetUserIdFromClaims();
-        var comment = await _ticketService.AddCommentAsync(ticketId, request, userId);
+        var role = GetUserRoleFromClaims();
+        var comment = await _ticketService.AddCommentAsync(ticketId, request, userId, role);
         return CreatedAtAction(nameof(GetComments), new { ticketId }, comment);
     }
 

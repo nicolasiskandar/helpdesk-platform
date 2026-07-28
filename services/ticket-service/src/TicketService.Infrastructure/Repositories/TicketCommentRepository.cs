@@ -14,16 +14,21 @@ public class TicketCommentRepository : ITicketCommentRepository
         _context = context;
     }
 
-    public async Task<IReadOnlyList<TicketComment>> GetByTicketIdAsync(Guid ticketId, bool includeInternal)
+    public async Task<IReadOnlyList<TicketComment>> GetByTicketIdAsync(
+        Guid ticketId,
+        Guid viewerUserId,
+        string viewerRole,
+        Guid ticketCreatorUserId,
+        HashSet<Guid> assignedAgentUserIds)
     {
-        var query = _context.TicketComments.Where(c => c.TicketId == ticketId);
-
-        if (!includeInternal)
-        {
-            query = query.Where(c => !c.IsInternal);
-        }
-
-        return await query.OrderBy(c => c.CreatedAt).ToListAsync();
+        return await _context.TicketComments
+            .Where(c => c.TicketId == ticketId)
+            .Where(c => !c.IsPrivate
+                || viewerUserId == ticketCreatorUserId
+                || assignedAgentUserIds.Contains(viewerUserId)
+                || viewerRole == "Admin")
+            .OrderBy(c => c.CreatedAt)
+            .ToListAsync();
     }
 
     public async Task AddAsync(TicketComment comment)

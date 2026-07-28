@@ -2,13 +2,13 @@ namespace TicketService.Application.DTOs;
 
 public record AddCommentRequest(
     string Content,
-    bool IsInternal
+    bool IsPrivate
 );
 
 public record CommentResponse(
     Guid Id,
     Guid AuthorUserId,
     string Content,
-    bool IsInternal,
+    bool IsPrivate,
     DateTime CreatedAt
 );

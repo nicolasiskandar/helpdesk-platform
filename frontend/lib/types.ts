@@ -33,7 +33,7 @@ export interface Comment {
   authorId: string
   body: string
   createdAt: string
-  internal: boolean
+  isPrivate: boolean
 }
 
 export interface ActivityEntry {

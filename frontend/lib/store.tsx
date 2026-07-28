@@ -55,7 +55,7 @@ interface StoreValue {
   unreadCount: number
   createTicket: (input: NewTicketInput) => Promise<Ticket>
   updateTicket: (id: string, patch: Partial<Ticket>, activity?: string, detail?: string) => Promise<void>
-  addComment: (ticketId: string, body: string, internal: boolean) => Promise<void>
+  addComment: (ticketId: string, body: string, isPrivate: boolean) => Promise<void>
   assignTicket: (ticketId: string, assigneeId: string | null) => Promise<void>
   claimTicket: (ticketId: string) => Promise<void>
   deleteTicket: (id: string) => Promise<void>
@@ -258,8 +258,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   )
 
   const addComment = React.useCallback(
-    async (ticketId: string, body: string, internal: boolean) => {
-      await apiAddComment(ticketId, body, internal)
+    async (ticketId: string, body: string, isPrivate: boolean) => {
+      await apiAddComment(ticketId, body, isPrivate)
     },
     []
   )
@@ -385,7 +385,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             authorId: c.authorUserId,
             body: c.content,
             createdAt: c.createdAt,
-            internal: c.isInternal,
+            isPrivate: c.isPrivate,
           }))
         } catch { /* ignore */ }
         // Load audit log
@@ -413,13 +413,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const loadComments = React.useCallback(
     async (ticketId: string): Promise<Comment[]> => {
-      const comments = await apiGetComments(ticketId, true)
+      const comments = await apiGetComments(ticketId)
       return comments.map((c) => ({
         id: c.id,
         authorId: c.authorUserId,
         body: c.content,
         createdAt: c.createdAt,
-        internal: c.isInternal,
+        isPrivate: c.isPrivate,
       }))
     },
     []
