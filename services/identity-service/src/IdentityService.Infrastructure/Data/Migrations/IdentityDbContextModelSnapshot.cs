@@ -20,6 +20,44 @@ namespace IdentityService.Infrastructure.Data.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("IdentityService.Domain.Entities.SystemSetting", b =>
+            {
+                b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("int");
+
+                SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                b.Property<string>("Description")
+                    .HasMaxLength(500)
+                    .HasColumnType("nvarchar(500)");
+
+                b.Property<string>("Key")
+                    .IsRequired()
+                    .HasMaxLength(100)
+                    .HasColumnType("nvarchar(100)");
+
+                b.Property<DateTime>("UpdatedAt")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("datetime2")
+                    .HasDefaultValueSql("GETUTCDATE()");
+
+                b.Property<Guid?>("UpdatedByUserId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<string>("Value")
+                    .IsRequired()
+                    .HasMaxLength(500)
+                    .HasColumnType("nvarchar(500)");
+
+                b.HasKey("Id");
+
+                b.HasIndex("Key")
+                    .IsUnique();
+
+                b.ToTable("SystemSettings", (string)null);
+            });
+
             modelBuilder.Entity("IdentityService.Domain.Entities.Role", b =>
             {
                 b.Property<int>("Id")

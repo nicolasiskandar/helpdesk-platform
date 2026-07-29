@@ -16,12 +16,14 @@ public class UnitOfWork : IUnitOfWork
         Roles = new RoleRepository(context);
         RefreshTokens = new RefreshTokenRepository(context);
         ActivityLogs = new ActivityLogRepository(context);
+        SystemSettings = new SystemSettingRepository(context);
     }
 
     public IUserRepository Users { get; }
     public IRoleRepository Roles { get; }
     public IRefreshTokenRepository RefreshTokens { get; }
     public IActivityLogRepository ActivityLogs { get; }
+    public ISystemSettingRepository SystemSettings { get; }
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {

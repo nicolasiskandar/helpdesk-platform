@@ -25,4 +25,6 @@ Thumbs.db
 *.sln.DotSettings.user
 docs/
 TestResults/
+
+.opencode
 AGENTS.md

@@ -672,3 +672,29 @@ export async function apiUpdateNotificationPreferences(request: Partial<Preferen
   })
   return handleResponse<void>(res)
 }
+
+// ---------- Settings API ----------
+
+export interface SettingResponse {
+  key: string
+  value: string
+  description: string | null
+}
+
+export async function apiGetSettings(): Promise<SettingResponse[]> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/settings`, {
+    headers: authHeaders(token),
+  })
+  return handleResponse<SettingResponse[]>(res)
+}
+
+export async function apiUpdateSettings(settings: { key: string; value: string }[]): Promise<void> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/settings`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify({ settings }),
+  })
+  return handleResponse<void>(res)
+}
