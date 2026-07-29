@@ -11,4 +11,6 @@ public interface IAuthService
     Task<UserResponse> GetCurrentUserAsync(Guid userId);
     Task<UserResponse> UpdateProfileAsync(Guid userId, UpdateProfileRequest request);
     Task ChangePasswordAsync(Guid userId, ChangePasswordRequest request);
+    Task ForgotPasswordAsync(ForgotPasswordRequest request);
+    Task ResetPasswordAsync(ResetPasswordRequest request);
 }

@@ -195,6 +195,27 @@ export async function apiChangePassword(request: {
   return handleResponse<void>(res)
 }
 
+export async function apiForgotPassword(email: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/auth/forgot-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  })
+  return handleResponse<void>(res)
+}
+
+export async function apiResetPassword(
+  token: string,
+  newPassword: string
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/auth/reset-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, newPassword }),
+  })
+  return handleResponse<void>(res)
+}
+
 // ---------- Ticket API ----------
 
 export function getAccessToken(): string {

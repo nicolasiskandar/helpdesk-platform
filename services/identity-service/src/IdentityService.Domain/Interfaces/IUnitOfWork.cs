@@ -7,5 +7,6 @@ public interface IUnitOfWork : IDisposable
     IRefreshTokenRepository RefreshTokens { get; }
     IActivityLogRepository ActivityLogs { get; }
     ISystemSettingRepository SystemSettings { get; }
+    IPasswordResetTokenRepository PasswordResetTokens { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

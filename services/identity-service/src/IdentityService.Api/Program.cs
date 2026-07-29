@@ -158,6 +158,12 @@ try
 
     builder.Services.AddInfrastructure(builder.Configuration);
 
+    builder.Services.AddHttpClient("NotificationService", client =>
+    {
+        client.BaseAddress = new Uri("http://notification-service:8080");
+        client.Timeout = TimeSpan.FromSeconds(10);
+    });
+
     builder.Services.AddAuthentication(options =>
     {
         options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;

@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using IdentityService.Domain.Entities;
@@ -5,6 +6,7 @@ using IdentityService.Domain.Interfaces;
 using IdentityService.Application.DTOs;
 using IdentityService.Application.Interfaces;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace IdentityService.Infrastructure.Services;
 
@@ -13,17 +15,23 @@ public class AuthService : IAuthService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IJwtTokenService _jwtTokenService;
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILogger<AuthService> _logger;
     private readonly int _refreshTokenExpiryDays;
 
     public AuthService(
         IUnitOfWork unitOfWork,
         IPasswordHasher passwordHasher,
         IJwtTokenService jwtTokenService,
+        IHttpClientFactory httpClientFactory,
+        ILogger<AuthService> logger,
         IConfiguration configuration)
     {
         _unitOfWork = unitOfWork;
         _passwordHasher = passwordHasher;
         _jwtTokenService = jwtTokenService;
+        _httpClientFactory = httpClientFactory;
+        _logger = logger;
 
         if (!int.TryParse(configuration["Jwt:RefreshTokenExpiryDays"], out _refreshTokenExpiryDays))
             _refreshTokenExpiryDays = 7;
@@ -190,6 +198,76 @@ public class AuthService : IAuthService
 
         user.PasswordHash = _passwordHasher.HashPassword(request.NewPassword);
         await _unitOfWork.Users.UpdateAsync(user);
+        await _unitOfWork.SaveChangesAsync();
+    }
+
+    public async Task ForgotPasswordAsync(ForgotPasswordRequest request)
+    {
+        var user = await _unitOfWork.Users.GetByEmailAsync(request.Email);
+        if (user == null)
+        {
+            // Don't reveal whether the email exists
+            return;
+        }
+
+        var rawToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(64));
+        var tokenHash = ComputeSha256Hash(rawToken);
+
+        var resetToken = new PasswordResetToken
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            TokenHash = tokenHash,
+            ExpiresAt = DateTime.UtcNow.AddMinutes(15),
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await _unitOfWork.PasswordResetTokens.AddAsync(resetToken);
+        await _unitOfWork.SaveChangesAsync();
+
+        try
+        {
+            var frontendUrl = "http://localhost:3000";
+            var resetLink = $"{frontendUrl}/reset-password?token={rawToken}";
+            var htmlBody = $"""
+            <p>Hello {user.FullName},</p>
+            <p>A password reset was requested for your account.</p>
+            <p><a href="{resetLink}">Reset your password</a></p>
+            <p>This link expires in 15 minutes.</p>
+            <p>If you did not request this, please ignore this email.</p>
+            """;
+
+            var emailRequest = new
+            {
+                toEmail = user.Email,
+                subject = "Password Reset Request",
+                htmlBody
+            };
+
+            var client = _httpClientFactory.CreateClient("NotificationService");
+            var response = await client.PostAsJsonAsync("/api/email/send", emailRequest);
+            response.EnsureSuccessStatusCode();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send password reset email to {Email}", user.Email);
+        }
+    }
+
+    public async Task ResetPasswordAsync(ResetPasswordRequest request)
+    {
+        var tokenHash = ComputeSha256Hash(request.Token);
+        var storedToken = await _unitOfWork.PasswordResetTokens.GetByTokenHashAsync(tokenHash)
+            ?? throw new InvalidOperationException("Invalid or expired reset token.");
+
+        if (!storedToken.IsValid)
+            throw new InvalidOperationException("Invalid or expired reset token.");
+
+        var user = storedToken.User;
+        user.PasswordHash = _passwordHasher.HashPassword(request.NewPassword);
+        await _unitOfWork.Users.UpdateAsync(user);
+        await _unitOfWork.PasswordResetTokens.MarkAsUsedAsync(storedToken);
+        await _unitOfWork.RefreshTokens.RevokeAllUserTokensAsync(user.Id);
         await _unitOfWork.SaveChangesAsync();
     }
 

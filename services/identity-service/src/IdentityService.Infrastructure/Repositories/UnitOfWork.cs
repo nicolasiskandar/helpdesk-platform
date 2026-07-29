@@ -17,6 +17,7 @@ public class UnitOfWork : IUnitOfWork
         RefreshTokens = new RefreshTokenRepository(context);
         ActivityLogs = new ActivityLogRepository(context);
         SystemSettings = new SystemSettingRepository(context);
+        PasswordResetTokens = new PasswordResetTokenRepository(context);
     }
 
     public IUserRepository Users { get; }
@@ -24,6 +25,7 @@ public class UnitOfWork : IUnitOfWork
     public IRefreshTokenRepository RefreshTokens { get; }
     public IActivityLogRepository ActivityLogs { get; }
     public ISystemSettingRepository SystemSettings { get; }
+    public IPasswordResetTokenRepository PasswordResetTokens { get; }
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {

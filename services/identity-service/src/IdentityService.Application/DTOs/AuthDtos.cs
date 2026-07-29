@@ -47,6 +47,15 @@ public record ChangePasswordRequest(
     string NewPassword
 );
 
+public record ForgotPasswordRequest(
+    [EmailAddress] string Email
+);
+
+public record ResetPasswordRequest(
+    string Token,
+    string NewPassword
+);
+
 public record ErrorResponse(
     string Message,
     IDictionary<string, string[]>? Errors = null

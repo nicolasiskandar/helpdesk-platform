@@ -58,6 +58,41 @@ namespace IdentityService.Infrastructure.Data.Migrations
                 b.ToTable("SystemSettings", (string)null);
             });
 
+            modelBuilder.Entity("IdentityService.Domain.Entities.PasswordResetToken", b =>
+            {
+                b.Property<Guid>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<DateTime>("CreatedAt")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("datetime2")
+                    .HasDefaultValueSql("GETUTCDATE()");
+
+                b.Property<DateTime>("ExpiresAt")
+                    .HasColumnType("datetime2");
+
+                b.Property<string>("TokenHash")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)");
+
+                b.Property<DateTime?>("UsedAt")
+                    .HasColumnType("datetime2");
+
+                b.Property<Guid>("UserId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.HasKey("Id");
+
+                b.HasIndex("TokenHash")
+                    .IsUnique();
+
+                b.HasIndex("UserId");
+
+                b.ToTable("PasswordResetTokens", (string)null);
+            });
+
             modelBuilder.Entity("IdentityService.Domain.Entities.Role", b =>
             {
                 b.Property<int>("Id")
@@ -234,6 +269,17 @@ namespace IdentityService.Infrastructure.Data.Migrations
             {
                 b.HasOne("IdentityService.Domain.Entities.User", "User")
                     .WithMany("RefreshTokens")
+                    .HasForeignKey("UserId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+
+                b.Navigation("User");
+            });
+
+            modelBuilder.Entity("IdentityService.Domain.Entities.PasswordResetToken", b =>
+            {
+                b.HasOne("IdentityService.Domain.Entities.User", "User")
+                    .WithMany()
                     .HasForeignKey("UserId")
                     .OnDelete(DeleteBehavior.Cascade)
                     .IsRequired();
