@@ -33,6 +33,8 @@ export interface Comment {
   body: string
   createdAt: string
   isPrivate: boolean
+  parentId?: string
+  recipientIds: string[]
 }
 
 export interface ActivityEntry {

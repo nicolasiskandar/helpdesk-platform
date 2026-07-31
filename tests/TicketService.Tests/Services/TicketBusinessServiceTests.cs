@@ -1,6 +1,10 @@
+using System.Text.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http;
 using Moq;
 using TicketService.Application.DTOs;
+using TicketService.Application.Events;
+using TicketService.Application.Interfaces;
 using TicketService.Domain.Entities;
 using TicketService.Domain.Interfaces;
 using TicketService.Infrastructure.Services;
@@ -24,6 +28,7 @@ public class TicketBusinessServiceTests
     private readonly Mock<ITicketAttachmentRepository> _attachmentRepoMock = new();
     private readonly Mock<ITicketAuditLogRepository> _auditLogRepoMock = new();
     private readonly Mock<IOutboxRepository> _outboxRepoMock = new();
+    private readonly Mock<IUserLookupService> _userLookupMock = new();
 
     public TicketBusinessServiceTests()
     {
@@ -37,7 +42,21 @@ public class TicketBusinessServiceTests
         _unitOfWorkMock.Setup(u => u.TicketAuditLogs).Returns(_auditLogRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Outbox).Returns(_outboxRepoMock.Object);
 
-        _sut = new TicketBusinessService(_unitOfWorkMock.Object, _referenceNumberGeneratorMock.Object, _fileStorageMock.Object);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers["Authorization"] = "Bearer test-token";
+        var httpContextAccessorMock = new Mock<IHttpContextAccessor>();
+        httpContextAccessorMock.Setup(a => a.HttpContext).Returns(httpContext);
+
+        _userLookupMock
+            .Setup(l => l.GetRolesByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<string>()))
+            .ReturnsAsync(new Dictionary<Guid, string>());
+
+        _sut = new TicketBusinessService(
+            _unitOfWorkMock.Object,
+            _referenceNumberGeneratorMock.Object,
+            _fileStorageMock.Object,
+            _userLookupMock.Object,
+            httpContextAccessorMock.Object);
     }
 
     [Fact]
@@ -144,6 +163,136 @@ public class TicketBusinessServiceTests
         // Assert
         await act.Should().ThrowAsync<KeyNotFoundException>()
             .WithMessage("*Ticket not found*");
+    }
+
+    private static Ticket BuildTicket(Guid ticketId, string statusName, Guid createdByUserId)
+    {
+        return new Ticket
+        {
+            Id = ticketId,
+            ReferenceNumber = "TKT-000001",
+            Title = "Test",
+            CategoryId = 1,
+            PriorityId = 1,
+            StatusId = 1,
+            CreatedByUserId = createdByUserId,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 1, Name = statusName }
+        };
+    }
+
+    [Fact]
+    public async Task EnsureTicketAccessAsync_PendingTicket_AdminAllowed()
+    {
+        var ticket = BuildTicket(Guid.NewGuid(), "Resolved - Pending Confirmation", Guid.NewGuid());
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticket.Id)).ReturnsAsync(ticket);
+
+        var act = () => _sut.EnsureTicketAccessAsync(ticket.Id, Guid.NewGuid(), "Admin");
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task EnsureTicketAccessAsync_PendingTicket_ManagerAllowed()
+    {
+        var ticket = BuildTicket(Guid.NewGuid(), "Resolved - Pending Confirmation", Guid.NewGuid());
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticket.Id)).ReturnsAsync(ticket);
+
+        var act = () => _sut.EnsureTicketAccessAsync(ticket.Id, Guid.NewGuid(), "Manager");
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task EnsureTicketAccessAsync_PendingTicket_CreatorAllowed()
+    {
+        var createdBy = Guid.NewGuid();
+        var ticket = BuildTicket(Guid.NewGuid(), "In Progress", createdBy);
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticket.Id)).ReturnsAsync(ticket);
+
+        var act = () => _sut.EnsureTicketAccessAsync(ticket.Id, createdBy, "Employee");
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task EnsureTicketAccessAsync_PendingTicket_AssignedAgentAllowed()
+    {
+        var agentId = Guid.NewGuid();
+        var ticket = BuildTicket(Guid.NewGuid(), "In Progress", Guid.NewGuid());
+        ticket.Assignments.Add(new TicketAssignment { Id = Guid.NewGuid(), TicketId = ticket.Id, AgentUserId = agentId, AssignedAt = DateTime.UtcNow });
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticket.Id)).ReturnsAsync(ticket);
+
+        var act = () => _sut.EnsureTicketAccessAsync(ticket.Id, agentId, "IT Support Agent");
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task EnsureTicketAccessAsync_PendingTicket_UnassignedAgentDenied()
+    {
+        var agentId = Guid.NewGuid();
+        var ticket = BuildTicket(Guid.NewGuid(), "In Progress", Guid.NewGuid());
+        ticket.Assignments.Add(new TicketAssignment
+        {
+            Id = Guid.NewGuid(),
+            TicketId = ticket.Id,
+            AgentUserId = agentId,
+            AssignedAt = DateTime.UtcNow,
+            UnassignedAt = DateTime.UtcNow
+        });
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticket.Id)).ReturnsAsync(ticket);
+
+        var act = () => _sut.EnsureTicketAccessAsync(ticket.Id, agentId, "IT Support Agent");
+
+        await act.Should().ThrowAsync<UnauthorizedAccessException>()
+            .WithMessage("*do not have access*");
+    }
+
+    [Fact]
+    public async Task EnsureTicketAccessAsync_PendingTicket_UnrelatedUserDenied()
+    {
+        var ticket = BuildTicket(Guid.NewGuid(), "Resolved - Pending Confirmation", Guid.NewGuid());
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticket.Id)).ReturnsAsync(ticket);
+
+        var act = () => _sut.EnsureTicketAccessAsync(ticket.Id, Guid.NewGuid(), "Employee");
+
+        await act.Should().ThrowAsync<UnauthorizedAccessException>()
+            .WithMessage("*do not have access*");
+    }
+
+    [Fact]
+    public async Task EnsureTicketAccessAsync_OpenTicket_AnyUserAllowed()
+    {
+        var ticket = BuildTicket(Guid.NewGuid(), "Open", Guid.NewGuid());
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticket.Id)).ReturnsAsync(ticket);
+
+        var act = () => _sut.EnsureTicketAccessAsync(ticket.Id, Guid.NewGuid(), "Employee");
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task EnsureTicketAccessAsync_ClosedTicket_AnyUserAllowed()
+    {
+        var ticket = BuildTicket(Guid.NewGuid(), "Closed", Guid.NewGuid());
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticket.Id)).ReturnsAsync(ticket);
+
+        var act = () => _sut.EnsureTicketAccessAsync(ticket.Id, Guid.NewGuid(), "Employee");
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task EnsureTicketAccessAsync_TicketNotFound_ReturnsSilently()
+    {
+        var ticketId = Guid.NewGuid();
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync((Ticket?)null);
+
+        var act = () => _sut.EnsureTicketAccessAsync(ticketId, Guid.NewGuid(), "Employee");
+
+        await act.Should().NotThrowAsync();
     }
 
     [Fact]
@@ -305,9 +454,10 @@ public class TicketBusinessServiceTests
         };
 
         _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _assignmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(new List<TicketAssignment>());
 
         // Act
-        var result = await _sut.AddCommentAsync(ticketId, new AddCommentRequest("Test comment", false), authorUserId, "Employee");
+        var result = await _sut.AddCommentAsync(ticketId, new AddCommentRequest("Test comment", false), authorUserId, "Employee", "Test User");
 
         // Assert
         result.Content.Should().Be("Test comment");
@@ -1224,7 +1374,7 @@ public class TicketBusinessServiceTests
         _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync((Ticket?)null);
 
         // Act
-        var act = () => _sut.AddCommentAsync(ticketId, new AddCommentRequest("Comment", false), Guid.NewGuid(), "Employee");
+        var act = () => _sut.AddCommentAsync(ticketId, new AddCommentRequest("Comment", false), Guid.NewGuid(), "Employee", "Test User");
 
         // Assert
         await act.Should().ThrowAsync<KeyNotFoundException>()
@@ -1257,11 +1407,604 @@ public class TicketBusinessServiceTests
         _assignmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(new List<TicketAssignment>());
 
         // Act - Employee who is not creator and not assigned tries to create private comment
-        var act = () => _sut.AddCommentAsync(ticketId, new AddCommentRequest("Private comment", true), authorUserId, "Employee");
+        var act = () => _sut.AddCommentAsync(ticketId, new AddCommentRequest("Private comment", true), authorUserId, "Employee", "Test User");
 
         // Assert
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*permission*");
+    }
+
+    [Fact]
+    public async Task AddCommentAsync_ReplyToComment_NotifiesParentAuthorWithoutRestrictingVisibility()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var ticketCreatorUserId = Guid.NewGuid();
+        var parentAuthorId = Guid.NewGuid();
+
+        var ticket = new Ticket
+        {
+            Id = ticketId,
+            ReferenceNumber = "TKT-000001",
+            Title = "Test",
+            CategoryId = 1,
+            PriorityId = 1,
+            StatusId = 1,
+            CreatedByUserId = ticketCreatorUserId,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 1, Name = "Open" }
+        };
+
+        var parentComment = new TicketComment
+        {
+            Id = Guid.NewGuid(),
+            TicketId = ticketId,
+            AuthorUserId = parentAuthorId,
+            Content = "Parent",
+            IsPrivate = false
+        };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _assignmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(new List<TicketAssignment>());
+        _commentRepoMock.Setup(r => r.GetByIdAsync(parentComment.Id)).ReturnsAsync(parentComment);
+
+        // Act
+        var result = await _sut.AddCommentAsync(
+            ticketId,
+            new AddCommentRequest("Reply", false, ParentCommentId: parentComment.Id),
+            ticketCreatorUserId,
+            "Employee",
+            "Creator Name");
+
+        // Assert - reply stays public, parent author is notified but visibility is not restricted
+        result.ParentCommentId.Should().Be(parentComment.Id);
+        result.IsPrivate.Should().BeFalse();
+        result.RecipientUserIds.Should().BeEmpty();
+
+        _outboxRepoMock.Verify(r => r.AddAsync(It.Is<OutboxMessage>(m =>
+            m.EventType == "ticket.commented" &&
+            JsonSerializer.Deserialize<TicketCommentedEvent>(m.Payload, (JsonSerializerOptions?)null)!.RecipientUserIds!.Contains(parentAuthorId)
+        )), Times.Once);
+    }
+
+    [Fact]
+    public async Task AddCommentAsync_TargetedComment_StoresRecipientsAndPublishesEvent()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var ticketCreatorUserId = Guid.NewGuid();
+        var recipient1 = Guid.NewGuid();
+        var recipient2 = Guid.NewGuid();
+
+        var ticket = new Ticket
+        {
+            Id = ticketId,
+            ReferenceNumber = "TKT-000001",
+            Title = "Test",
+            CategoryId = 1,
+            PriorityId = 1,
+            StatusId = 1,
+            CreatedByUserId = ticketCreatorUserId,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 1, Name = "Open" }
+        };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _assignmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(new List<TicketAssignment>());
+        _userLookupMock
+            .Setup(l => l.GetRolesByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<string>()))
+            .ReturnsAsync(new Dictionary<Guid, string>
+            {
+                [recipient1] = "IT Support Agent",
+                [recipient2] = "Manager"
+            });
+
+        // Act
+        var result = await _sut.AddCommentAsync(
+            ticketId,
+            new AddCommentRequest("Targeted", false, RecipientUserIds: new[] { recipient1, recipient2 }),
+            ticketCreatorUserId,
+            "Employee",
+            "Creator Name");
+
+        // Assert - targeted comments are private and visible only to the chosen recipients
+        result.IsPrivate.Should().BeTrue();
+        result.RecipientUserIds.Should().BeEquivalentTo(new[] { recipient1, recipient2 });
+
+        _outboxRepoMock.Verify(r => r.AddAsync(It.Is<OutboxMessage>(m =>
+            m.EventType == "ticket.commented" &&
+            JsonSerializer.Deserialize<TicketCommentedEvent>(m.Payload, (JsonSerializerOptions?)null)!.RecipientUserIds!.OrderBy(x => x)
+                .SequenceEqual(new[] { recipient1, recipient2 }.OrderBy(x => x))
+        )), Times.Once);
+    }
+
+    [Fact]
+    public async Task AddCommentAsync_TargetedRecipient_Creator_Allowed()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var creatorId = Guid.NewGuid();
+        var adminId = Guid.NewGuid();
+
+        var ticket = BuildTicket(ticketId, "Open", creatorId);
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _assignmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(new List<TicketAssignment>());
+        _userLookupMock
+            .Setup(l => l.GetRolesByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<string>()))
+            .ReturnsAsync(new Dictionary<Guid, string> { [creatorId] = "Employee" });
+
+        // Act - admin targets the ticket creator (an employee, but always a valid recipient)
+        var result = await _sut.AddCommentAsync(
+            ticketId,
+            new AddCommentRequest("To creator", false, RecipientUserIds: new[] { creatorId }),
+            adminId,
+            "Admin",
+            "Admin Name");
+
+        // Assert
+        result.IsPrivate.Should().BeTrue();
+        result.RecipientUserIds.Should().BeEquivalentTo(new[] { creatorId });
+    }
+
+    [Fact]
+    public async Task AddCommentAsync_TargetedRecipient_Agent_Allowed()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var creatorId = Guid.NewGuid();
+        var adminId = Guid.NewGuid();
+        var agentId = Guid.NewGuid();
+
+        var ticket = BuildTicket(ticketId, "Open", creatorId);
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _assignmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(new List<TicketAssignment>());
+        _userLookupMock
+            .Setup(l => l.GetRolesByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<string>()))
+            .ReturnsAsync(new Dictionary<Guid, string> { [agentId] = "IT Support Agent" });
+
+        // Act
+        var result = await _sut.AddCommentAsync(
+            ticketId,
+            new AddCommentRequest("To agent", false, RecipientUserIds: new[] { agentId }),
+            adminId,
+            "Admin",
+            "Admin Name");
+
+        // Assert
+        result.RecipientUserIds.Should().BeEquivalentTo(new[] { agentId });
+    }
+
+    [Fact]
+    public async Task AddCommentAsync_TargetedRecipient_Employee_Denied()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var creatorId = Guid.NewGuid();
+        var adminId = Guid.NewGuid();
+        var employeeId = Guid.NewGuid();
+
+        var ticket = BuildTicket(ticketId, "Open", creatorId);
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _assignmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(new List<TicketAssignment>());
+        _userLookupMock
+            .Setup(l => l.GetRolesByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<string>()))
+            .ReturnsAsync(new Dictionary<Guid, string> { [employeeId] = "Employee" });
+
+        // Act - targeting a plain employee (not the creator) is rejected
+        var act = () => _sut.AddCommentAsync(
+            ticketId,
+            new AddCommentRequest("To employee", false, RecipientUserIds: new[] { employeeId }),
+            adminId,
+            "Admin",
+            "Admin Name");
+
+        // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*agents, managers, or the ticket creator*");
+    }
+
+    [Fact]
+    public async Task AddCommentAsync_TargetedRecipient_Admin_Denied()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var creatorId = Guid.NewGuid();
+        var adminAuthorId = Guid.NewGuid();
+        var adminRecipientId = Guid.NewGuid();
+
+        var ticket = BuildTicket(ticketId, "Open", creatorId);
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _assignmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(new List<TicketAssignment>());
+        _userLookupMock
+            .Setup(l => l.GetRolesByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<string>()))
+            .ReturnsAsync(new Dictionary<Guid, string> { [adminRecipientId] = "Admin" });
+
+        // Act - admins see everything already, so targeting one is rejected
+        var act = () => _sut.AddCommentAsync(
+            ticketId,
+            new AddCommentRequest("To admin", false, RecipientUserIds: new[] { adminRecipientId }),
+            adminAuthorId,
+            "Admin",
+            "Admin Name");
+
+        // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*agents, managers, or the ticket creator*");
+    }
+
+    [Fact]
+    public async Task AddCommentAsync_ReplyToTargeted_NewEmployeeRecipient_Denied()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var creatorId = Guid.NewGuid();
+        var adminId = Guid.NewGuid();
+        var inheritedId = Guid.NewGuid();
+        var employeeId = Guid.NewGuid();
+
+        var ticket = BuildTicket(ticketId, "Open", creatorId);
+
+        var parentComment = new TicketComment
+        {
+            Id = Guid.NewGuid(),
+            TicketId = ticketId,
+            AuthorUserId = Guid.NewGuid(),
+            Content = "Targeted parent",
+            IsPrivate = true,
+            Recipients =
+            {
+                new TicketCommentRecipient { CommentId = ticketId, RecipientUserId = inheritedId }
+            }
+        };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _assignmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(new List<TicketAssignment>());
+        _commentRepoMock.Setup(r => r.GetByIdAsync(parentComment.Id)).ReturnsAsync(parentComment);
+        _userLookupMock
+            .Setup(l => l.GetRolesByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<string>()))
+            .ReturnsAsync(new Dictionary<Guid, string> { [employeeId] = "Employee" });
+
+        // Act - reply keeps the inherited recipient but adds someone not on the parent
+        var act = () => _sut.AddCommentAsync(
+            ticketId,
+            new AddCommentRequest("Reply", false, ParentCommentId: parentComment.Id,
+                RecipientUserIds: new[] { inheritedId, employeeId }),
+            adminId,
+            "Admin",
+            "Admin Name");
+
+        // Assert - the new recipient is rejected by the subset rule; role lookup is never hit
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*subset of the parent comment's recipients*");
+        _userLookupMock.Verify(
+            l => l.GetRolesByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<string>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task AddCommentAsync_ReplyToTargeted_NewAgentRecipient_Denied()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var creatorId = Guid.NewGuid();
+        var adminId = Guid.NewGuid();
+        var inheritedId = Guid.NewGuid();
+        var newAgentId = Guid.NewGuid();
+
+        var ticket = BuildTicket(ticketId, "Open", creatorId);
+
+        var parentComment = new TicketComment
+        {
+            Id = Guid.NewGuid(),
+            TicketId = ticketId,
+            AuthorUserId = Guid.NewGuid(),
+            Content = "Targeted parent",
+            IsPrivate = true,
+            Recipients =
+            {
+                new TicketCommentRecipient { CommentId = ticketId, RecipientUserId = inheritedId }
+            }
+        };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _assignmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(new List<TicketAssignment>());
+        _commentRepoMock.Setup(r => r.GetByIdAsync(parentComment.Id)).ReturnsAsync(parentComment);
+        _userLookupMock
+            .Setup(l => l.GetRolesByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<string>()))
+            .ReturnsAsync(new Dictionary<Guid, string> { [newAgentId] = "IT Support Agent" });
+
+        // Act - reply keeps the inherited recipient but adds a legit agent not on the parent
+        var act = () => _sut.AddCommentAsync(
+            ticketId,
+            new AddCommentRequest("Reply", false, ParentCommentId: parentComment.Id,
+                RecipientUserIds: new[] { inheritedId, newAgentId }),
+            adminId,
+            "Admin",
+            "Admin Name");
+
+        // Assert - even valid agents can't be added to a reply; only the parent's set may be used
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*subset of the parent comment's recipients*");
+        _userLookupMock.Verify(
+            l => l.GetRolesByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<string>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task AddCommentAsync_ReplyToTargeted_FullParentSet_Allowed()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var creatorId = Guid.NewGuid();
+        var adminId = Guid.NewGuid();
+        var recipientA = Guid.NewGuid();
+        var recipientB = Guid.NewGuid();
+
+        var ticket = BuildTicket(ticketId, "Open", creatorId);
+
+        var parentComment = new TicketComment
+        {
+            Id = Guid.NewGuid(),
+            TicketId = ticketId,
+            AuthorUserId = Guid.NewGuid(),
+            Content = "Targeted parent",
+            IsPrivate = true,
+            Recipients =
+            {
+                new TicketCommentRecipient { CommentId = ticketId, RecipientUserId = recipientA },
+                new TicketCommentRecipient { CommentId = ticketId, RecipientUserId = recipientB }
+            }
+        };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _assignmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(new List<TicketAssignment>());
+        _commentRepoMock.Setup(r => r.GetByIdAsync(parentComment.Id)).ReturnsAsync(parentComment);
+        _commentRepoMock.Setup(r => r.AddAsync(It.IsAny<TicketComment>())).Returns(Task.CompletedTask);
+
+        // Act - reply keeps exactly the parent's recipients
+        var result = await _sut.AddCommentAsync(
+            ticketId,
+            new AddCommentRequest("Reply", false, ParentCommentId: parentComment.Id,
+                RecipientUserIds: new[] { recipientA, recipientB }),
+            adminId,
+            "Admin",
+            "Admin Name");
+
+        // Assert
+        result.RecipientUserIds.Should().BeEquivalentTo(new[] { recipientA, recipientB });
+    }
+
+    [Fact]
+    public async Task AddCommentAsync_ReplyOmittedRecipients_InheritsWithoutValidation()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var creatorId = Guid.NewGuid();
+        var adminId = Guid.NewGuid();
+        var inheritedId = Guid.NewGuid();
+
+        var ticket = BuildTicket(ticketId, "Open", creatorId);
+
+        var parentComment = new TicketComment
+        {
+            Id = Guid.NewGuid(),
+            TicketId = ticketId,
+            AuthorUserId = Guid.NewGuid(),
+            Content = "Targeted parent",
+            IsPrivate = true,
+            Recipients =
+            {
+                new TicketCommentRecipient { CommentId = ticketId, RecipientUserId = inheritedId }
+            }
+        };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _assignmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(new List<TicketAssignment>());
+        _commentRepoMock.Setup(r => r.GetByIdAsync(parentComment.Id)).ReturnsAsync(parentComment);
+
+        // Act - recipients omitted entirely; the default lookup (no roles) must not be consulted
+        var result = await _sut.AddCommentAsync(
+            ticketId,
+            new AddCommentRequest("Reply", false, ParentCommentId: parentComment.Id),
+            adminId,
+            "Admin",
+            "Admin Name");
+
+        // Assert
+        result.RecipientUserIds.Should().BeEquivalentTo(new[] { inheritedId });
+        _userLookupMock.Verify(l => l.GetRolesByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task AddCommentAsync_ReplyToPrivateComment_InheritsPrivateAudience()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var ticketCreatorUserId = Guid.NewGuid();
+        var agentId = Guid.NewGuid();
+        var parentAuthorId = Guid.NewGuid();
+
+        var ticket = new Ticket
+        {
+            Id = ticketId,
+            ReferenceNumber = "TKT-000001",
+            Title = "Test",
+            CategoryId = 1,
+            PriorityId = 1,
+            StatusId = 1,
+            CreatedByUserId = ticketCreatorUserId,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 1, Name = "Open" }
+        };
+
+        var parentComment = new TicketComment
+        {
+            Id = Guid.NewGuid(),
+            TicketId = ticketId,
+            AuthorUserId = parentAuthorId,
+            Content = "Private parent",
+            IsPrivate = true
+        };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _assignmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(new List<TicketAssignment>
+        {
+            new() { Id = Guid.NewGuid(), TicketId = ticketId, AgentUserId = agentId, AssignedAt = DateTime.UtcNow }
+        });
+        _commentRepoMock.Setup(r => r.GetByIdAsync(parentComment.Id)).ReturnsAsync(parentComment);
+
+        // Act - creator replies to a private comment
+        var result = await _sut.AddCommentAsync(
+            ticketId,
+            new AddCommentRequest("Private reply", false, ParentCommentId: parentComment.Id),
+            ticketCreatorUserId,
+            "Employee",
+            "Creator Name");
+
+        // Assert - reply inherits the private audience (assigned agent + parent author; creator is the author)
+        result.IsPrivate.Should().BeTrue();
+        result.RecipientUserIds.Should().BeEquivalentTo(new[] { agentId });
+
+        _outboxRepoMock.Verify(r => r.AddAsync(It.Is<OutboxMessage>(m =>
+            m.EventType == "ticket.commented" &&
+            JsonSerializer.Deserialize<TicketCommentedEvent>(m.Payload, (JsonSerializerOptions?)null)!.RecipientUserIds!.OrderBy(x => x)
+                .SequenceEqual(new[] { agentId, parentAuthorId }.OrderBy(x => x))
+        )), Times.Once);
+    }
+
+    [Fact]
+    public async Task AddCommentAsync_ReplyToTargetedComment_ExplicitFewerRecipients_IsRespected()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var ticketCreatorUserId = Guid.NewGuid();
+        var parentRecipient1 = Guid.NewGuid();
+        var parentRecipient2 = Guid.NewGuid();
+
+        var ticket = BuildTicket(ticketId, "Open", ticketCreatorUserId);
+
+        var parentComment = new TicketComment
+        {
+            Id = Guid.NewGuid(),
+            TicketId = ticketId,
+            AuthorUserId = Guid.NewGuid(),
+            Content = "Targeted parent",
+            IsPrivate = true,
+            Recipients =
+            {
+                new TicketCommentRecipient { CommentId = ticketId, RecipientUserId = parentRecipient1 },
+                new TicketCommentRecipient { CommentId = ticketId, RecipientUserId = parentRecipient2 }
+            }
+        };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _assignmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(new List<TicketAssignment>());
+        _commentRepoMock.Setup(r => r.GetByIdAsync(parentComment.Id)).ReturnsAsync(parentComment);
+
+        // Act - creator replies but explicitly selects only one of the two parent recipients
+        var result = await _sut.AddCommentAsync(
+            ticketId,
+            new AddCommentRequest("Reply to fewer", false, ParentCommentId: parentComment.Id, RecipientUserIds: new[] { parentRecipient1 }),
+            ticketCreatorUserId,
+            "Employee",
+            "Creator Name");
+
+        // Assert - the explicit list is respected instead of inheriting all parent recipients
+        result.IsPrivate.Should().BeTrue();
+        result.RecipientUserIds.Should().BeEquivalentTo(new[] { parentRecipient1 });
+    }
+
+    [Fact]
+    public async Task AddCommentAsync_ReplyToTargetedComment_ExplicitEmptyRecipients_BecomesPublic()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var ticketCreatorUserId = Guid.NewGuid();
+        var parentRecipient1 = Guid.NewGuid();
+        var parentRecipient2 = Guid.NewGuid();
+
+        var ticket = BuildTicket(ticketId, "Open", ticketCreatorUserId);
+
+        var parentComment = new TicketComment
+        {
+            Id = Guid.NewGuid(),
+            TicketId = ticketId,
+            AuthorUserId = Guid.NewGuid(),
+            Content = "Targeted parent",
+            IsPrivate = true,
+            Recipients =
+            {
+                new TicketCommentRecipient { CommentId = ticketId, RecipientUserId = parentRecipient1 },
+                new TicketCommentRecipient { CommentId = ticketId, RecipientUserId = parentRecipient2 }
+            }
+        };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _assignmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(new List<TicketAssignment>());
+        _commentRepoMock.Setup(r => r.GetByIdAsync(parentComment.Id)).ReturnsAsync(parentComment);
+
+        // Act - creator replies with all recipients deselected
+        var result = await _sut.AddCommentAsync(
+            ticketId,
+            new AddCommentRequest("Reply with no recipients", false, ParentCommentId: parentComment.Id, RecipientUserIds: Array.Empty<Guid>()),
+            ticketCreatorUserId,
+            "Employee",
+            "Creator Name");
+
+        // Assert - explicit empty list means no inherited recipients and the reply is public
+        result.IsPrivate.Should().BeFalse();
+        result.RecipientUserIds.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task AddCommentAsync_PlainComment_NotifiesCreatorAndAssignedAgents()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var ticketCreatorUserId = Guid.NewGuid();
+        var agentId = Guid.NewGuid();
+        var authorUserId = Guid.NewGuid();
+
+        var ticket = new Ticket
+        {
+            Id = ticketId,
+            ReferenceNumber = "TKT-000001",
+            Title = "Test",
+            CategoryId = 1,
+            PriorityId = 1,
+            StatusId = 1,
+            CreatedByUserId = ticketCreatorUserId,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 1, Name = "Open" }
+        };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _assignmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(new List<TicketAssignment>
+        {
+            new() { Id = Guid.NewGuid(), TicketId = ticketId, AgentUserId = agentId, AssignedAt = DateTime.UtcNow }
+        });
+
+        // Act - unrelated employee posts a public comment
+        var result = await _sut.AddCommentAsync(
+            ticketId,
+            new AddCommentRequest("Hello", false),
+            authorUserId,
+            "Employee",
+            "Author Name");
+
+        // Assert - public comment, creator + assigned agent notified, author excluded
+        result.IsPrivate.Should().BeFalse();
+        result.RecipientUserIds.Should().BeEmpty();
+
+        _outboxRepoMock.Verify(r => r.AddAsync(It.Is<OutboxMessage>(m =>
+            m.EventType == "ticket.commented" &&
+            JsonSerializer.Deserialize<TicketCommentedEvent>(m.Payload, (JsonSerializerOptions?)null)!.RecipientUserIds!.OrderBy(x => x)
+                .SequenceEqual(new[] { ticketCreatorUserId, agentId }.OrderBy(x => x))
+        )), Times.Once);
     }
 
     [Fact]

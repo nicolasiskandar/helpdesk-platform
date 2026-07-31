@@ -68,6 +68,7 @@ public class TicketsController : ControllerBase
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetTicketById(Guid id)
     {
+        await EnsureTicketAccessAsync(id);
         var ticket = await _ticketService.GetTicketByIdAsync(id);
         return Ok(ticket);
     }
@@ -81,6 +82,7 @@ public class TicketsController : ControllerBase
     public async Task<IActionResult> GetTicketByReferenceNumber(string referenceNumber)
     {
         var ticket = await _ticketService.GetTicketByReferenceNumberAsync(referenceNumber);
+        await EnsureTicketAccessAsync(ticket.Id);
         return Ok(ticket);
     }
 
@@ -124,6 +126,7 @@ public class TicketsController : ControllerBase
     {
         var userId = GetUserIdFromClaims();
         var role = GetUserRoleFromClaims();
+        await EnsureTicketAccessAsync(id, userId, role);
         var ticket = await _ticketService.UpdateTicketAsync(id, request, userId, role);
         return Ok(ticket);
     }
@@ -138,6 +141,8 @@ public class TicketsController : ControllerBase
     public async Task<IActionResult> ChangeStatus(Guid id, [FromBody] ChangeStatusRequest request)
     {
         var userId = GetUserIdFromClaims();
+        var role = GetUserRoleFromClaims();
+        await EnsureTicketAccessAsync(id, userId, role);
         var ticket = await _ticketService.ChangeStatusAsync(id, request, userId);
         return Ok(ticket);
     }
@@ -153,6 +158,7 @@ public class TicketsController : ControllerBase
     {
         var userId = GetUserIdFromClaims();
         var role = GetUserRoleFromClaims();
+        await EnsureTicketAccessAsync(id, userId, role);
         await _ticketService.DeleteTicketAsync(id, userId, role);
         return NoContent();
     }
@@ -164,6 +170,7 @@ public class TicketsController : ControllerBase
     [ProducesResponseType(typeof(IReadOnlyList<AssignmentResponse>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAssignments(Guid ticketId)
     {
+        await EnsureTicketAccessAsync(ticketId);
         var assignments = await _ticketService.GetAssignmentsAsync(ticketId);
         return Ok(assignments);
     }
@@ -179,6 +186,7 @@ public class TicketsController : ControllerBase
     {
         var userId = GetUserIdFromClaims();
         var userName = GetUserNameFromClaims();
+        await EnsureTicketAccessAsync(ticketId, userId, GetUserRoleFromClaims());
         var assignment = await _ticketService.AssignAgentAsync(ticketId, request, userId, userName);
         return CreatedAtAction(nameof(GetAssignments), new { ticketId }, assignment);
     }
@@ -194,6 +202,7 @@ public class TicketsController : ControllerBase
     {
         var userId = GetUserIdFromClaims();
         var userName = GetUserNameFromClaims();
+        await EnsureTicketAccessAsync(ticketId, userId, GetUserRoleFromClaims());
         await _ticketService.UnassignAgentAsync(ticketId, new UnassignAgentRequest(agentUserId), userId, userName);
         return NoContent();
     }
@@ -210,6 +219,7 @@ public class TicketsController : ControllerBase
     {
         var userId = GetUserIdFromClaims();
         var userName = GetUserNameFromClaims();
+        await EnsureTicketAccessAsync(ticketId, userId, GetUserRoleFromClaims());
         var assignment = await _ticketService.ClaimTicketAsync(ticketId, userId, userName);
         return CreatedAtAction(nameof(GetAssignments), new { ticketId }, assignment);
     }
@@ -226,6 +236,7 @@ public class TicketsController : ControllerBase
     {
         var userId = GetUserIdFromClaims();
         var userName = GetUserNameFromClaims();
+        await EnsureTicketAccessAsync(ticketId, userId, GetUserRoleFromClaims());
         var ticket = await _ticketService.EscalateTicketAsync(ticketId, userId, userName, request.Reason);
         return Ok(ticket);
     }
@@ -239,6 +250,7 @@ public class TicketsController : ControllerBase
     {
         var userId = GetUserIdFromClaims();
         var role = GetUserRoleFromClaims();
+        await EnsureTicketAccessAsync(ticketId, userId, role);
         var comments = await _ticketService.GetCommentsAsync(ticketId, userId, role);
         return Ok(comments);
     }
@@ -253,7 +265,9 @@ public class TicketsController : ControllerBase
     {
         var userId = GetUserIdFromClaims();
         var role = GetUserRoleFromClaims();
-        var comment = await _ticketService.AddCommentAsync(ticketId, request, userId, role);
+        var userName = GetUserNameFromClaims();
+        await EnsureTicketAccessAsync(ticketId, userId, role);
+        var comment = await _ticketService.AddCommentAsync(ticketId, request, userId, role, userName);
         return CreatedAtAction(nameof(GetComments), new { ticketId }, comment);
     }
 
@@ -264,6 +278,7 @@ public class TicketsController : ControllerBase
     [ProducesResponseType(typeof(IReadOnlyList<AttachmentResponse>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAttachments(Guid ticketId)
     {
+        await EnsureTicketAccessAsync(ticketId);
         var attachments = await _ticketService.GetAttachmentsAsync(ticketId);
         return Ok(attachments);
     }
@@ -283,6 +298,7 @@ public class TicketsController : ControllerBase
             return BadRequest(new ErrorResponse("File is empty.", null));
 
         var userId = GetUserIdFromClaims();
+        await EnsureTicketAccessAsync(ticketId, userId, GetUserRoleFromClaims());
         var attachment = await _ticketService.UploadAttachmentAsync(ticketId, file.OpenReadStream(), file.FileName, userId);
 
         _logger.LogInformation("UploadAttachment completed for ticket {TicketId}, attachmentId: {AttachmentId}", ticketId, attachment.Id);
@@ -298,6 +314,7 @@ public class TicketsController : ControllerBase
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DownloadAttachment(Guid ticketId, Guid attachmentId)
     {
+        await EnsureTicketAccessAsync(ticketId);
         var attachments = await _ticketService.GetAttachmentsAsync(ticketId);
         var attachment = attachments.FirstOrDefault(a => a.Id == attachmentId);
         if (attachment is null)
@@ -338,6 +355,7 @@ public class TicketsController : ControllerBase
     [ProducesResponseType(typeof(AuditLogListResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAuditLog(Guid ticketId, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
+        await EnsureTicketAccessAsync(ticketId);
         var result = await _ticketService.GetAuditLogAsync(ticketId, page, pageSize);
         return Ok(result);
     }
@@ -395,6 +413,18 @@ public class TicketsController : ControllerBase
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
             ?? throw new UnauthorizedAccessException("User ID not found in token.");
         return Guid.Parse(userIdClaim);
+    }
+
+    private async Task EnsureTicketAccessAsync(Guid ticketId)
+    {
+        var userId = GetUserIdFromClaims();
+        var role = GetUserRoleFromClaims();
+        await _ticketService.EnsureTicketAccessAsync(ticketId, userId, role);
+    }
+
+    private async Task EnsureTicketAccessAsync(Guid ticketId, Guid userId, string role)
+    {
+        await _ticketService.EnsureTicketAccessAsync(ticketId, userId, role);
     }
 
     private string GetUserRoleFromClaims()

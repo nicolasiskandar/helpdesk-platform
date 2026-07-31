@@ -22,13 +22,23 @@ public class TicketCommentRepository : ITicketCommentRepository
         HashSet<Guid> assignedAgentUserIds)
     {
         return await _context.TicketComments
+            .Include(c => c.Recipients)
             .Where(c => c.TicketId == ticketId)
-            .Where(c => !c.IsPrivate
-                || viewerUserId == ticketCreatorUserId
-                || assignedAgentUserIds.Contains(viewerUserId)
-                || viewerRole == "Admin")
+            .Where(c => !c.IsPrivate && !c.Recipients.Any()
+                || viewerRole == "Admin"
+                || c.AuthorUserId == viewerUserId
+                || c.IsPrivate && !c.Recipients.Any()
+                    && (viewerUserId == ticketCreatorUserId || assignedAgentUserIds.Contains(viewerUserId))
+                || c.Recipients.Any(r => r.RecipientUserId == viewerUserId))
             .OrderBy(c => c.CreatedAt)
             .ToListAsync();
+    }
+
+    public Task<TicketComment?> GetByIdAsync(Guid commentId)
+    {
+        return _context.TicketComments
+            .Include(c => c.Recipients)
+            .FirstOrDefaultAsync(c => c.Id == commentId);
     }
 
     public async Task AddAsync(TicketComment comment)

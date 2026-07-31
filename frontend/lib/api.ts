@@ -57,6 +57,8 @@ export interface CommentResponse {
   authorUserId: string
   content: string
   isPrivate: boolean
+  parentCommentId: string | null
+  recipientUserIds: string[]
   createdAt: string
 }
 
@@ -110,7 +112,7 @@ async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let parsed: any
     try { parsed = JSON.parse(text) } catch { /* empty/error body */ }
-    throw parsed || { message: `Request failed with status ${res.status}` }
+    throw Object.assign(parsed || { message: `Request failed with status ${res.status}` }, { status: res.status })
   }
   if (!text) return undefined as T
   return JSON.parse(text) as T
@@ -419,13 +421,14 @@ export async function apiGetComments(
 export async function apiAddComment(
   ticketId: string,
   content: string,
-  isPrivate: boolean
+  parentCommentId?: string,
+  recipientUserIds?: string[]
 ): Promise<CommentResponse> {
   const token = getAccessToken()
   const res = await fetch(`${API_BASE}/api/tickets/${ticketId}/comments`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
-    body: JSON.stringify({ content, isPrivate }),
+    body: JSON.stringify({ content, parentCommentId, recipientUserIds }),
   })
   return handleResponse<CommentResponse>(res)
 }

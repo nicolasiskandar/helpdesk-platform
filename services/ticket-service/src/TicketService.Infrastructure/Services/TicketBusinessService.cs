@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.Http;
 using TicketService.Application.DTOs;
 using TicketService.Application.Events;
 using TicketService.Application.Interfaces;
@@ -12,12 +13,21 @@ public class TicketBusinessService : ITicketService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IReferenceNumberGenerator _referenceNumberGenerator;
     private readonly IFileStorageService _fileStorage;
+    private readonly IUserLookupService _userLookupService;
+    private readonly IHttpContextAccessor _httpContextAccessor;
 
-    public TicketBusinessService(IUnitOfWork unitOfWork, IReferenceNumberGenerator referenceNumberGenerator, IFileStorageService fileStorage)
+    public TicketBusinessService(
+        IUnitOfWork unitOfWork,
+        IReferenceNumberGenerator referenceNumberGenerator,
+        IFileStorageService fileStorage,
+        IUserLookupService userLookupService,
+        IHttpContextAccessor httpContextAccessor)
     {
         _unitOfWork = unitOfWork;
         _referenceNumberGenerator = referenceNumberGenerator;
         _fileStorage = fileStorage;
+        _userLookupService = userLookupService;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     public async Task<TicketResponse> CreateTicketAsync(CreateTicketRequest request, Guid createdByUserId)
@@ -84,6 +94,29 @@ public class TicketBusinessService : ITicketService
         await _unitOfWork.SaveChangesAsync();
 
         return MapToResponse(ticket, category, priority, openStatus);
+    }
+
+    public async Task EnsureTicketAccessAsync(Guid ticketId, Guid viewerUserId, string viewerRole)
+    {
+        var ticket = await _unitOfWork.Tickets.GetByIdAsync(ticketId);
+        if (ticket is null)
+            return;
+
+        EnsureCanViewTicket(ticket, viewerUserId, viewerRole);
+    }
+
+    private static void EnsureCanViewTicket(Ticket ticket, Guid viewerUserId, string viewerRole)
+    {
+        if (ticket.Status.Name == "Open" || ticket.Status.Name == "Closed")
+            return;
+
+        var allowed = viewerRole == "Admin"
+            || viewerRole == "Manager"
+            || ticket.CreatedByUserId == viewerUserId
+            || ticket.Assignments.Any(a => a.AgentUserId == viewerUserId && a.UnassignedAt == null);
+
+        if (!allowed)
+            throw new UnauthorizedAccessException("You do not have access to this ticket.");
     }
 
     public async Task<TicketResponse> GetTicketByIdAsync(Guid id)
@@ -612,22 +645,71 @@ public class TicketBusinessService : ITicketService
         return comments.Select(MapCommentToResponse).ToList();
     }
 
-    public async Task<CommentResponse> AddCommentAsync(Guid ticketId, AddCommentRequest request, Guid authorUserId, string authorRole)
+    public async Task<CommentResponse> AddCommentAsync(Guid ticketId, AddCommentRequest request, Guid authorUserId, string authorRole, string authorName)
     {
         var ticket = await _unitOfWork.Tickets.GetByIdAsync(ticketId)
             ?? throw new KeyNotFoundException("Ticket not found.");
 
-        if (request.IsPrivate)
-        {
-            var assignments = await _unitOfWork.TicketAssignments.GetByTicketIdAsync(ticketId);
-            var assignedAgentIds = assignments
-                .Where(a => a.UnassignedAt == null)
-                .Select(a => a.AgentUserId)
-                .ToHashSet();
+        var assignments = await _unitOfWork.TicketAssignments.GetByTicketIdAsync(ticketId);
+        var assignedAgentIds = assignments
+            .Where(a => a.UnassignedAt == null)
+            .Select(a => a.AgentUserId)
+            .ToHashSet();
 
+        TicketComment? parentComment = null;
+        if (request.ParentCommentId.HasValue)
+        {
+            parentComment = await _unitOfWork.TicketComments.GetByIdAsync(request.ParentCommentId.Value)
+                ?? throw new InvalidOperationException("Parent comment not found.");
+
+            if (parentComment.TicketId != ticketId)
+                throw new InvalidOperationException("Parent comment does not belong to this ticket.");
+        }
+
+        var isReply = parentComment != null;
+        var inheritsPrivateAudience = isReply && parentComment!.IsPrivate && parentComment.Recipients.Count == 0;
+
+        var recipientsSpecified = request.RecipientUserIds != null;
+        var targetedRecipients = recipientsSpecified
+            ? new HashSet<Guid>(request.RecipientUserIds ?? Enumerable.Empty<Guid>())
+            : new HashSet<Guid>();
+        if (isReply && !recipientsSpecified)
+        {
+            if (parentComment!.Recipients.Count > 0)
+            {
+                targetedRecipients.UnionWith(parentComment.Recipients.Select(r => r.RecipientUserId));
+            }
+            else if (parentComment.IsPrivate)
+            {
+                targetedRecipients.Add(ticket.CreatedByUserId);
+                targetedRecipients.UnionWith(assignedAgentIds);
+            }
+        }
+        targetedRecipients.Remove(authorUserId);
+
+        if (isReply && request.RecipientUserIds != null)
+        {
+            var parentRecipientIds = parentComment!.Recipients.Select(r => r.RecipientUserId).ToHashSet();
+            var invalidReplyRecipients = request.RecipientUserIds
+                .Where(id => id != authorUserId && !parentRecipientIds.Contains(id))
+                .Distinct()
+                .ToList();
+            if (invalidReplyRecipients.Count > 0)
+                throw new InvalidOperationException("Reply recipients must be a subset of the parent comment's recipients.");
+        }
+
+        await ValidateRecipientRolesAsync(request, parentComment, ticket, isReply);
+
+        var isTargeted = targetedRecipients.Count > 0;
+        var isPrivate = request.IsPrivate || isTargeted || inheritsPrivateAudience;
+
+        if (isPrivate)
+        {
             var isPermitted = authorRole == "Admin"
                 || ticket.CreatedByUserId == authorUserId
-                || assignedAgentIds.Contains(authorUserId);
+                || assignedAgentIds.Contains(authorUserId)
+                || isReply && (parentComment!.AuthorUserId == authorUserId
+                    || parentComment.Recipients.Any(r => r.RecipientUserId == authorUserId));
 
             if (!isPermitted)
                 throw new InvalidOperationException("You do not have permission to create private comments.");
@@ -639,18 +721,107 @@ public class TicketBusinessService : ITicketService
             TicketId = ticketId,
             AuthorUserId = authorUserId,
             Content = request.Content,
-            IsPrivate = request.IsPrivate,
+            IsPrivate = isPrivate,
+            ParentCommentId = parentComment?.Id,
             CreatedAt = DateTime.UtcNow
         };
 
+        foreach (var recipientId in targetedRecipients)
+        {
+            comment.Recipients.Add(new TicketCommentRecipient
+            {
+                CommentId = comment.Id,
+                RecipientUserId = recipientId
+            });
+        }
+
         await _unitOfWork.TicketComments.AddAsync(comment);
 
-        var auditLog = CreateAuditEntry(ticketId, authorUserId, "Comment", null, request.IsPrivate ? "Private comment added" : "Comment added");
+        var auditMessage = isTargeted
+            ? $"Targeted comment added ({targetedRecipients.Count} recipient{(targetedRecipients.Count == 1 ? "" : "s")})"
+            : isPrivate ? "Private comment added" : "Comment added";
+        var auditLog = CreateAuditEntry(ticketId, authorUserId, "Comment", null, auditMessage);
         await _unitOfWork.TicketAuditLogs.AddAsync(auditLog);
+
+        var notificationRecipients = BuildNotificationRecipients(ticket, assignedAgentIds, parentComment, targetedRecipients, authorUserId);
+
+        var outboxMessage = new OutboxMessage
+        {
+            Id = Guid.NewGuid(),
+            EventType = "ticket.commented",
+            Payload = JsonSerializer.Serialize(new TicketCommentedEvent(
+                ticketId,
+                ticket.ReferenceNumber,
+                authorUserId,
+                authorName,
+                request.Content,
+                isPrivate,
+                parentComment?.Id,
+                notificationRecipients,
+                DateTime.UtcNow
+            )),
+            CreatedAt = DateTime.UtcNow
+        };
+        await _unitOfWork.Outbox.AddAsync(outboxMessage);
 
         await _unitOfWork.SaveChangesAsync();
 
         return MapCommentToResponse(comment);
+    }
+
+    private async Task ValidateRecipientRolesAsync(AddCommentRequest request, TicketComment? parentComment, Ticket ticket, bool isReply)
+    {
+        if (request.RecipientUserIds == null)
+            return;
+
+        var inheritedRecipientIds = isReply && parentComment != null
+            ? parentComment.Recipients.Select(r => r.RecipientUserId).ToHashSet()
+            : new HashSet<Guid>();
+
+        var newlySelectedIds = request.RecipientUserIds
+            .Where(id => !inheritedRecipientIds.Contains(id))
+            .Distinct()
+            .ToList();
+
+        if (newlySelectedIds.Count == 0)
+            return;
+
+        var accessToken = _httpContextAccessor.HttpContext?.Request.Headers["Authorization"].ToString();
+        if (string.IsNullOrEmpty(accessToken))
+            throw new InvalidOperationException("Unable to verify comment recipients. Please try again.");
+
+        var rolesById = await _userLookupService.GetRolesByIdsAsync(newlySelectedIds, accessToken);
+
+        var invalidRecipientIds = newlySelectedIds.Where(id =>
+            id != ticket.CreatedByUserId &&
+            !(rolesById.TryGetValue(id, out var role) && role is "Manager" or "IT Support Agent"))
+            .ToList();
+
+        if (invalidRecipientIds.Count > 0)
+            throw new InvalidOperationException("Comment recipients must be agents, managers, or the ticket creator.");
+    }
+
+    private static List<Guid> BuildNotificationRecipients(
+        Ticket ticket,
+        HashSet<Guid> assignedAgentIds,
+        TicketComment? parentComment,
+        HashSet<Guid> targetedRecipients,
+        Guid authorUserId)
+    {
+        var recipients = new HashSet<Guid>(targetedRecipients);
+
+        if (parentComment != null)
+        {
+            recipients.Add(parentComment.AuthorUserId);
+        }
+        else if (!targetedRecipients.Any())
+        {
+            recipients.Add(ticket.CreatedByUserId);
+            recipients.UnionWith(assignedAgentIds);
+        }
+
+        recipients.Remove(authorUserId);
+        return recipients.ToList();
     }
 
     public async Task<IReadOnlyList<AttachmentResponse>> GetAttachmentsAsync(Guid ticketId)
@@ -770,6 +941,8 @@ public class TicketBusinessService : ITicketService
             comment.AuthorUserId,
             comment.Content,
             comment.IsPrivate,
+            comment.ParentCommentId,
+            comment.Recipients.Select(r => r.RecipientUserId).ToList(),
             comment.CreatedAt
         );
     }

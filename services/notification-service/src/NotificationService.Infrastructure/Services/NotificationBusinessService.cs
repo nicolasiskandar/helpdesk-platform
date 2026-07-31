@@ -106,6 +106,9 @@ public class NotificationBusinessService : INotificationService
                 case "ticket.status_changed":
                     await HandleTicketStatusChangedAsync(payload);
                     break;
+                case "ticket.commented":
+                    await HandleTicketCommentedAsync(payload);
+                    break;
             }
         }
         catch (JsonException ex)
@@ -156,6 +159,27 @@ public class NotificationBusinessService : INotificationService
             await CreateAndDeliverAsync(recipientId, "status_changed",
                 $"Ticket status updated: {evt.ReferenceNumber}",
                 $"Ticket {evt.ReferenceNumber} status changed from {evt.OldStatus} to {evt.NewStatus}.",
+                evt.TicketId, evt.ReferenceNumber);
+        }
+    }
+
+    private async Task HandleTicketCommentedAsync(string payload)
+    {
+        var evt = JsonSerializer.Deserialize<TicketCommentedEvent>(payload,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        if (evt == null) return;
+
+        var recipientIds = evt.RecipientUserIds?.Count > 0
+            ? evt.RecipientUserIds
+            : await _unitOfWork.GetTicketRecipientIdsAsync(evt.TicketId);
+
+        foreach (var recipientId in recipientIds.Distinct())
+        {
+            if (recipientId == evt.AuthorUserId) continue;
+
+            await CreateAndDeliverAsync(recipientId, "comment",
+                $"{evt.AuthorName} commented on {evt.ReferenceNumber}",
+                $"{(evt.IsPrivate ? "Private comment" : "Comment")} on ticket {evt.ReferenceNumber}: \"{evt.Content}\"",
                 evt.TicketId, evt.ReferenceNumber);
         }
     }

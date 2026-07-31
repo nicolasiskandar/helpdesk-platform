@@ -60,7 +60,7 @@ interface StoreValue {
   unreadCount: number
   createTicket: (input: NewTicketInput) => Promise<Ticket>
   updateTicket: (id: string, patch: Partial<Ticket>, activity?: string, detail?: string) => Promise<void>
-  addComment: (ticketId: string, body: string, isPrivate: boolean) => Promise<void>
+  addComment: (ticketId: string, body: string, parentCommentId?: string, recipientUserIds?: string[]) => Promise<void>
   assignTicket: (ticketId: string, assigneeId: string | null) => Promise<void>
   claimTicket: (ticketId: string) => Promise<void>
   deleteTicket: (id: string) => Promise<void>
@@ -285,8 +285,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   )
 
   const addComment = React.useCallback(
-    async (ticketId: string, body: string, isPrivate: boolean) => {
-      await apiAddComment(ticketId, body, isPrivate)
+    async (ticketId: string, body: string, parentCommentId?: string, recipientUserIds?: string[]) => {
+      await apiAddComment(ticketId, body, parentCommentId, recipientUserIds)
     },
     []
   )
@@ -406,13 +406,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         } catch { /* ignore */ }
         // Load comments
         try {
-          const comments = await apiGetComments(id, true)
+          const comments = await apiGetComments(id)
           ticket.comments = comments.map((c) => ({
             id: c.id,
             authorId: c.authorUserId,
             body: c.content,
             createdAt: c.createdAt,
             isPrivate: c.isPrivate,
+            parentId: c.parentCommentId ?? undefined,
+            recipientIds: c.recipientUserIds ?? [],
           }))
         } catch { /* ignore */ }
         // Load audit log
@@ -431,7 +433,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           }))
         } catch { /* ignore */ }
         return ticket
-      } catch {
+      } catch (err: any) {
+        if (err?.status === 403) throw err
         return null
       }
     },
@@ -447,6 +450,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         body: c.content,
         createdAt: c.createdAt,
         isPrivate: c.isPrivate,
+        parentId: c.parentCommentId ?? undefined,
+        recipientIds: c.recipientUserIds ?? [],
       }))
     },
     []

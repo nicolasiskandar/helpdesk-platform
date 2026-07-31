@@ -264,6 +264,42 @@ public class NotificationBusinessServiceTests
     }
 
     [Fact]
+    public async Task ProcessTicketEventAsync_CommentedEvent_NotifiesRecipientsExceptAuthor()
+    {
+        var authorId = Guid.NewGuid();
+        var recipient1 = Guid.NewGuid();
+        var recipient2 = Guid.NewGuid();
+        var ticketId = Guid.NewGuid();
+
+        _preferenceRepo.Setup(r => r.GetOrCreateByUserIdAsync(recipient1)).ReturnsAsync(DefaultPreference(recipient1));
+        _preferenceRepo.Setup(r => r.GetOrCreateByUserIdAsync(recipient2)).ReturnsAsync(DefaultPreference(recipient2));
+        _notificationRepo.Setup(r => r.AddAsync(It.IsAny<Notification>())).Returns(Task.CompletedTask);
+        _unitOfWork.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
+
+        var evt = new TicketCommentedEvent(
+            ticketId,
+            "TKT-0005",
+            authorId,
+            "Jane Doe",
+            "Please look into this",
+            false,
+            null,
+            new List<Guid> { recipient1, recipient2, authorId },
+            DateTime.UtcNow);
+
+        var sut = CreateSut();
+        await sut.ProcessTicketEventAsync("ticket.commented", JsonSerializer.Serialize(evt));
+
+        _notificationRepo.Verify(r => r.AddAsync(It.Is<Notification>(n =>
+            n.RecipientUserId == recipient1 && n.Type == "comment")), Times.Once);
+        _notificationRepo.Verify(r => r.AddAsync(It.Is<Notification>(n =>
+            n.RecipientUserId == recipient2 && n.Type == "comment")), Times.Once);
+        // Author should not receive a notification
+        _notificationRepo.Verify(r => r.AddAsync(It.Is<Notification>(n =>
+            n.RecipientUserId == authorId)), Times.Never);
+    }
+
+    [Fact]
     public async Task ProcessTicketEventAsync_PreferencesDisabled_DoesNotNotify()
     {
         var agentId = Guid.NewGuid();

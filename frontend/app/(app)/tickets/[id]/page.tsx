@@ -14,6 +14,8 @@ import {
   TrashIcon,
   HandIcon,
   XIcon,
+  ReplyIcon,
+  ChevronDownIcon,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -24,6 +26,12 @@ import { Label } from "@/components/ui/label"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Select,
@@ -111,9 +119,13 @@ export default function TicketDetailPage() {
   const [auditLog, setAuditLog] = React.useState<AuditLogEntryResponse[]>([])
   const [attachments, setAttachments] = React.useState<AttachmentResponse[]>([])
   const [loading, setLoading] = React.useState(true)
+  const [accessDenied, setAccessDenied] = React.useState(false)
   const [commentText, setCommentText] = React.useState("")
-  const [isPrivate, setIsPrivate] = React.useState(false)
   const [submittingComment, setSubmittingComment] = React.useState(false)
+  const [replyTo, setReplyTo] = React.useState<string | null>(null)
+  const [recipientIds, setRecipientIds] = React.useState<string[]>([])
+  const [replyCandidateIds, setReplyCandidateIds] = React.useState<string[]>([])
+  const [recipientOpen, setRecipientOpen] = React.useState(false)
 
   const [editOpen, setEditOpen] = React.useState(false)
   const [editTitle, setEditTitle] = React.useState("")
@@ -151,43 +163,55 @@ export default function TicketDetailPage() {
   const [escalateReason, setEscalateReason] = React.useState("")
   const [escalating, setEscalating] = React.useState(false)
   const [agents, setAgents] = React.useState<UserResponse[]>([])
+  const [users, setUsers] = React.useState<UserResponse[]>([])
 
   React.useEffect(() => {
     let cancelled = false
     async function load() {
       setLoading(true)
-      // Try loading by ID first; if it fails and param looks like a reference, try by reference
-      let t = await loadTicketDetail(paramId)
-      if (!t && !paramId.match(/^[0-9a-f-]{36}$/i)) {
-        try {
-          const res = await apiGetTicketByReference(paramId)
-          t = await loadTicketDetail(res.id)
-        } catch { /* ignore */ }
+      setAccessDenied(false)
+      try {
+        // Try loading by ID first; if it fails and param looks like a reference, try by reference
+        let t = await loadTicketDetail(paramId)
+        if (!t && !paramId.match(/^[0-9a-f-]{36}$/i)) {
+          try {
+            const res = await apiGetTicketByReference(paramId)
+            t = await loadTicketDetail(res.id)
+          } catch (err: any) {
+            if (err?.status === 403) throw err
+          }
+        }
+        if (cancelled) return
+        if (t) {
+          setTicket(t)
+          // Load related data using the ticket ID
+          try {
+            const c = await loadComments(t.id)
+            if (!cancelled) setComments(c)
+          } catch { /* ignore */ }
+          try {
+            const a = await loadAuditLog(t.id)
+            if (!cancelled) setAuditLog(a)
+          } catch { /* ignore */ }
+          try {
+            const att = await loadAttachments(t.id)
+            if (!cancelled) setAttachments(att)
+          } catch { /* ignore */ }
+        }
+      } catch (err: any) {
+        if (!cancelled && err?.status === 403) setAccessDenied(true)
+      } finally {
+        if (!cancelled) setLoading(false)
       }
-      if (cancelled) return
-      if (t) {
-        setTicket(t)
-        // Load related data using the ticket ID
-        try {
-          const c = await loadComments(t.id)
-          if (!cancelled) setComments(c)
-        } catch { /* ignore */ }
-        try {
-          const a = await loadAuditLog(t.id)
-          if (!cancelled) setAuditLog(a)
-        } catch { /* ignore */ }
-        try {
-          const att = await loadAttachments(t.id)
-          if (!cancelled) setAttachments(att)
-        } catch { /* ignore */ }
-      }
-      setLoading(false)
     }
     load()
     apiGetCategories().then(setCategories).catch(() => {})
     apiGetPriorities().then(setPriorities).catch(() => {})
-    apiGetUsers(undefined, undefined, true, 1, 200).then((res) => {
-      if (!cancelled) setAgents(res.users.filter((u) => u.role === "IT Support Agent"))
+    apiGetUsers(undefined, undefined, true, 1, 500).then((res) => {
+      if (!cancelled) {
+        setAgents(res.users.filter((u) => u.role === "IT Support Agent"))
+        setUsers(res.users)
+      }
     }).catch(() => {})
     return () => { cancelled = true }
   }, [paramId, loadTicketDetail, loadComments, loadAuditLog, loadAttachments])
@@ -196,9 +220,22 @@ export default function TicketDetailPage() {
     if (!ticket || !commentText.trim() || submittingComment) return
     setSubmittingComment(true)
     try {
-      await addComment(ticket.id, commentText.trim(), isPrivate)
+      const parent = replyTo ? comments.find((c) => c.id === replyTo) : undefined
+      const nothingSelected = recipientIds.length === 0
+      // Replying to a private comment that had no recipients: omit the field so the backend
+      // inherits the private audience (creator + assigned agents) instead of sending [].
+      const omitRecipients =
+        replyTo && replyCandidateIds.length === 0 && nothingSelected && parent?.isPrivate
+      await addComment(
+        ticket.id,
+        commentText.trim(),
+        replyTo ?? undefined,
+        omitRecipients ? undefined : recipientIds
+      )
       setCommentText("")
-      setIsPrivate(false)
+      setReplyTo(null)
+      setRecipientIds([])
+      setReplyCandidateIds([])
       // Reload comments
       const c = await loadComments(ticket.id)
       setComments(c)
@@ -330,8 +367,10 @@ export default function TicketDetailPage() {
       })
     } catch {
       toast.error("Failed to claim ticket")
-      const refreshed = await loadTicketDetail(ticket.id)
-      if (refreshed) setTicket(refreshed)
+      try {
+        const refreshed = await loadTicketDetail(ticket.id)
+        if (refreshed) setTicket(refreshed)
+      } catch { /* ignore */ }
     } finally {
       setClaiming(false)
     }
@@ -411,6 +450,25 @@ export default function TicketDetailPage() {
     )
   }
 
+  if (accessDenied) {
+    return (
+      <div className="flex flex-col gap-6">
+        <Button variant="ghost" onClick={() => router.back()}>
+          <ArrowLeftIcon data-icon="inline-start" /> Back
+        </Button>
+        <Empty className="py-10">
+          <EmptyHeader>
+            <EmptyTitle>Access denied</EmptyTitle>
+            <EmptyDescription>
+              You don&apos;t have access to this ticket. It&apos;s only visible to its creator,
+              assigned agents, managers, and admins until it is closed.
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      </div>
+    )
+  }
+
   if (!ticket) {
     return (
       <div className="flex flex-col gap-6">
@@ -443,7 +501,81 @@ export default function TicketDetailPage() {
       : []
   const assignableAgents = agents.filter((agent) => !activeAssigneeIds.includes(agent.id))
   const isAssignedAgent = activeAssigneeIds.includes(currentUserId)
-  const canSeePrivate = isCreator || isAssignedAgent || isAdmin
+
+  // Comment recipients may only be agents, managers, or the ticket creator
+  // (admins are excluded — they can see everything regardless)
+  const selectableUsers = users.filter(
+    (u) =>
+      u.id !== currentUserId &&
+      u.isActive &&
+      (u.role === "IT Support Agent" || u.role === "Manager" || u.id === ticket.requesterId)
+  )
+  const isReplying = replyTo != null
+  // Reply recipients are limited to the parent comment's recipients — the reply can keep
+  // all or fewer of them, but can never reference anyone new.
+  const replyCandidateUsers = replyCandidateIds
+    .filter((id) => id !== currentUserId)
+    .map((id) => users.find((u) => u.id === id))
+    .filter((u): u is NonNullable<typeof u> => u != null)
+  const replyCandidateUnknown = replyCandidateIds.filter(
+    (id) => id !== currentUserId && !users.some((u) => u.id === id)
+  )
+
+  const commentName = (comment: Comment) =>
+    comment.authorId === currentUserId
+      ? "You"
+      : (userMap[comment.authorId] || comment.authorId.slice(0, 8))
+
+  const renderComment = (comment: Comment) => {
+    const replies = comments.filter((c) => c.parentId === comment.id)
+    const isReplyTarget = replyTo === comment.id
+    return (
+      <Card key={comment.id} className={comment.parentId ? "border-l-2 border-l-primary/20" : ""}>
+        <CardContent className="flex gap-3 p-4">
+          <Avatar className="size-8">
+            <AvatarFallback className="bg-muted text-[10px]">
+              {(userMap[comment.authorId] || comment.authorId).slice(0, 2).toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">
+                {commentName(comment)}
+              </span>
+              {comment.recipientIds.length > 0 && (
+                <Badge variant="secondary" className="text-[10px]">
+                  Targeted
+                </Badge>
+              )}
+              <span className="text-xs text-muted-foreground">
+                {formatRelative(comment.createdAt)}
+              </span>
+            </div>
+            <p className="mt-1 whitespace-pre-wrap text-sm">
+              {comment.body}
+            </p>
+            <button
+              type="button"
+              className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+              onClick={() => {
+                setReplyTo(isReplyTarget ? null : comment.id)
+                setReplyCandidateIds(isReplyTarget ? [] : [...comment.recipientIds])
+                setRecipientIds(isReplyTarget ? [] : [...comment.recipientIds])
+              }}
+            >
+              <ReplyIcon className="size-3" />
+              {isReplyTarget ? "Cancel reply" : "Reply"}
+            </button>
+          </div>
+        </CardContent>
+        {replies.length > 0 && (
+          <div className="flex flex-col gap-3 px-4 pb-4">
+            {replies.map(renderComment)}
+          </div>
+        )}
+      </Card>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -505,33 +637,139 @@ export default function TicketDetailPage() {
             <TabsContent value="comments" className="flex flex-col gap-4">
               <Card>
                 <CardContent className="flex flex-col gap-3 pt-4">
+                  {replyTo && (
+                    <div className="flex items-center justify-between rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1.5">
+                        <ReplyIcon className="size-3" />
+                        Replying to {commentName(comments.find((c) => c.id === replyTo)!)}
+                      </span>
+                      <button
+                        type="button"
+                        className="text-muted-foreground hover:text-foreground"
+                        onClick={() => { setReplyTo(null); setRecipientIds([]); setReplyCandidateIds([]) }}
+                      >
+                        <XIcon className="size-3.5" />
+                      </button>
+                    </div>
+                  )}
                   <Textarea
-                    placeholder="Add a comment..."
+                    placeholder={replyTo ? "Write a reply..." : "Add a comment..."}
                     value={commentText}
                     onChange={(e) => setCommentText(e.target.value)}
                     rows={3}
                   />
-                  <div className="flex items-center justify-between">
-                    {canSeePrivate && (
-                      <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <input
-                          type="checkbox"
-                          checked={isPrivate}
-                          onChange={(e) => setIsPrivate(e.target.checked)}
-                          className="accent-primary"
-                        />
-                        Private
-                      </label>
-                    )}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-3">
+                      <Popover open={recipientOpen} onOpenChange={setRecipientOpen}>
+                        <PopoverTrigger render={<Button type="button" variant="outline" size="sm" />}>
+                          <span className="flex items-center gap-1.5 text-xs">
+                            {recipientIds.length > 0 ? `Select Recipient (${recipientIds.length})` : "Select Recipient"}
+                            <ChevronDownIcon className="size-3" />
+                          </span>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-64 p-2">
+                          <div className="max-h-56 overflow-y-auto">
+                            {isReplying ? (
+                              replyCandidateUsers.length === 0 && replyCandidateUnknown.length === 0 ? (
+                                <p className="px-2 py-1 text-xs text-muted-foreground">
+                                  This comment had no recipients.
+                                </p>
+                              ) : (
+                                <>
+                                  {replyCandidateUsers.map((u) => {
+                                    const checked = recipientIds.includes(u.id)
+                                    return (
+                                      <label
+                                        key={u.id}
+                                        className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted"
+                                      >
+                                        <Checkbox
+                                          checked={checked}
+                                          onCheckedChange={() =>
+                                            setRecipientIds((prev) =>
+                                              checked ? prev.filter((id) => id !== u.id) : [...prev, u.id]
+                                            )
+                                          }
+                                        />
+                                        <span className="flex-1 truncate">{u.fullName}</span>
+                                        <span className="text-[10px] text-muted-foreground">
+                                          {u.role === "IT Support Agent" ? "Agent" : u.role}
+                                        </span>
+                                      </label>
+                                    )
+                                  })}
+                                  {replyCandidateUnknown.map((id) => {
+                                    const checked = recipientIds.includes(id)
+                                    return (
+                                      <label
+                                        key={id}
+                                        className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted"
+                                      >
+                                        <Checkbox
+                                          checked={checked}
+                                          onCheckedChange={() =>
+                                            setRecipientIds((prev) =>
+                                              checked ? prev.filter((x) => x !== id) : [...prev, id]
+                                            )
+                                          }
+                                        />
+                                        <span className="flex-1 truncate">{userMap[id] || id.slice(0, 8)}</span>
+                                      </label>
+                                    )
+                                  })}
+                                </>
+                              )
+                            ) : selectableUsers.length === 0 ? (
+                              <p className="px-2 py-1 text-xs text-muted-foreground">
+                                No eligible recipients.
+                              </p>
+                            ) : (
+                              selectableUsers.map((u) => {
+                                const checked = recipientIds.includes(u.id)
+                                return (
+                                  <label
+                                    key={u.id}
+                                    className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted"
+                                  >
+                                    <Checkbox
+                                      checked={checked}
+                                      onCheckedChange={() =>
+                                        setRecipientIds((prev) =>
+                                          checked ? prev.filter((id) => id !== u.id) : [...prev, u.id]
+                                        )
+                                      }
+                                    />
+                                    <span className="flex-1 truncate">{u.fullName}</span>
+                                    <span className="text-[10px] text-muted-foreground">
+                                      {u.role === "IT Support Agent" ? "Agent" : u.role}
+                                    </span>
+                                  </label>
+                                )
+                              })
+                            )}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    </div>
                     <Button
                       size="sm"
                       onClick={handleAddComment}
                       disabled={!commentText.trim() || submittingComment}
                     >
-                      {submittingComment ? "Posting..." : "Post Comment"}
+                      {submittingComment ? "Posting..." : replyTo ? "Post Reply" : "Post Comment"}
                       {!submittingComment && <SendIcon data-icon="inline-end" />}
                     </Button>
                   </div>
+                  {isReplying && replyCandidateIds.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Reply recipients are limited to the people selected on the parent comment.
+                    </p>
+                  )}
+                  {recipientIds.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Targeted comments are visible only to the selected recipient(s).
+                    </p>
+                  )}
                 </CardContent>
               </Card>
 
@@ -540,35 +778,9 @@ export default function TicketDetailPage() {
                   No comments yet.
                 </p>
               ) : (
-                comments.map((c) => (
-                  <Card key={c.id}>
-                    <CardContent className="flex gap-3 p-4">
-                      <Avatar className="size-8">
-                        <AvatarFallback className="bg-muted text-[10px]">
-                          {(userMap[c.authorId] || c.authorId).slice(0, 2).toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">
-                            {c.authorId === currentUserId ? "You" : (userMap[c.authorId] || c.authorId.slice(0, 8))}
-                          </span>
-                          {c.isPrivate && (
-                            <Badge variant="outline" className="text-[10px]">
-                              Private
-                            </Badge>
-                          )}
-                          <span className="text-xs text-muted-foreground">
-                            {formatRelative(c.createdAt)}
-                          </span>
-                        </div>
-                        <p className="mt-1 whitespace-pre-wrap text-sm">
-                          {c.body}
-                        </p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))
+                <div className="flex flex-col gap-3">
+                  {comments.filter((c) => !c.parentId).map(renderComment)}
+                </div>
               )}
             </TabsContent>
 

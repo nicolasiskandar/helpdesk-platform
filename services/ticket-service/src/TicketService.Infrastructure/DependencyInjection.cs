@@ -24,6 +24,14 @@ public static class DependencyInjection
         services.AddScoped<IEventPublisher, RabbitMQPublisher>();
         services.AddScoped<ITicketService, TicketBusinessService>();
 
+        services.AddHttpContextAccessor();
+        var identityBaseUrl = configuration["IdentityService:BaseUrl"] ?? "http://identity-service:8080";
+        services.AddHttpClient<IUserLookupService, IdentityUserLookupService>(client =>
+        {
+            client.BaseAddress = new Uri(identityBaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(10);
+        });
+
         services.AddHostedService<OutboxService>();
 
         return services;

@@ -394,14 +394,34 @@ namespace TicketService.Infrastructure.Data.Migrations
                     b.Property<bool>("IsInternal")
                         .HasColumnType("bit");
 
+                    b.Property<Guid?>("ParentCommentId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid>("TicketId")
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ParentCommentId");
+
                     b.HasIndex("TicketId");
 
                     b.ToTable("TicketComments");
+                });
+
+            modelBuilder.Entity("TicketService.Domain.Entities.TicketCommentRecipient", b =>
+                {
+                    b.Property<Guid>("CommentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("RecipientUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("CommentId", "RecipientUserId");
+
+                    b.HasIndex("CommentId");
+
+                    b.ToTable("TicketCommentRecipients");
                 });
 
             modelBuilder.Entity("TicketService.Domain.Entities.Ticket", b =>
@@ -466,13 +486,35 @@ namespace TicketService.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("TicketService.Domain.Entities.TicketComment", b =>
                 {
+                    b.HasOne("TicketService.Domain.Entities.TicketComment", "ParentComment")
+                        .WithMany("Replies")
+                        .HasForeignKey("ParentCommentId")
+                        .OnDelete(DeleteBehavior.ClientCascade);
+
                     b.HasOne("TicketService.Domain.Entities.Ticket", "Ticket")
                         .WithMany("Comments")
                         .HasForeignKey("TicketId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.Navigation("ParentComment");
+
+                    b.Navigation("Recipients");
+
+                    b.Navigation("Replies");
+
                     b.Navigation("Ticket");
+                });
+
+            modelBuilder.Entity("TicketService.Domain.Entities.TicketCommentRecipient", b =>
+                {
+                    b.HasOne("TicketService.Domain.Entities.TicketComment", "Comment")
+                        .WithMany("Recipients")
+                        .HasForeignKey("CommentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Comment");
                 });
 
             modelBuilder.Entity("TicketService.Domain.Entities.Category", b =>

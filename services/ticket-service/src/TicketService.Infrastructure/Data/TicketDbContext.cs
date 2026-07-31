@@ -90,6 +90,26 @@ public class TicketDbContext : DbContext
                 .WithMany(t => t.Comments)
                 .HasForeignKey(e => e.TicketId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.ParentComment)
+                .WithMany(e => e.Replies)
+                .HasForeignKey(e => e.ParentCommentId)
+                .OnDelete(DeleteBehavior.ClientCascade);
+
+            entity.HasIndex(e => e.ParentCommentId);
+        });
+
+        modelBuilder.Entity<TicketCommentRecipient>(entity =>
+        {
+            entity.ToTable("TicketCommentRecipients");
+            entity.HasKey(e => new { e.CommentId, e.RecipientUserId });
+
+            entity.HasOne(e => e.Comment)
+                .WithMany(c => c.Recipients)
+                .HasForeignKey(e => e.CommentId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => e.CommentId);
         });
 
         modelBuilder.Entity<TicketAttachment>(entity =>

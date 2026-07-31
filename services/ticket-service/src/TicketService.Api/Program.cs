@@ -168,7 +168,7 @@ try
 
         using var scope = app.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<TicketDbContext>();
-        dbContext.Database.EnsureCreated();
+        await dbContext.Database.MigrateAsync();
 
         using var seqConn = dbContext.Database.GetDbConnection();
         await seqConn.OpenAsync();

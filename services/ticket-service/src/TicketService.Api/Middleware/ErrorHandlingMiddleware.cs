@@ -40,7 +40,7 @@ public class ErrorHandlingMiddleware
                 (HttpStatusCode.BadRequest, ex.Message, (IDictionary<string, string[]>?)null),
 
             UnauthorizedAccessException ex =>
-                (HttpStatusCode.Unauthorized, ex.Message, (IDictionary<string, string[]>?)null),
+                (HttpStatusCode.Forbidden, ex.Message, (IDictionary<string, string[]>?)null),
 
             KeyNotFoundException ex =>
                 (HttpStatusCode.NotFound, ex.Message, (IDictionary<string, string[]>?)null),

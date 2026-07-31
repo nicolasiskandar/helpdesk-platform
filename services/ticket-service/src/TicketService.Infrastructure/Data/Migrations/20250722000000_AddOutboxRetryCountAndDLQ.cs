@@ -1,9 +1,14 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using TicketService.Infrastructure.Data;
 
 #nullable disable
 
 namespace TicketService.Infrastructure.Data.Migrations
 {
+    [DbContext(typeof(TicketDbContext))]
+    [Migration("20250722000000_AddOutboxRetryCountAndDLQ")]
     /// <inheritdoc />
     public partial class AddOutboxRetryCountAndDLQ : Migration
     {

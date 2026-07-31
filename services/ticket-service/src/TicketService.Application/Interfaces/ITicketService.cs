@@ -5,6 +5,7 @@ namespace TicketService.Application.Interfaces;
 public interface ITicketService
 {
     Task<TicketResponse> CreateTicketAsync(CreateTicketRequest request, Guid createdByUserId);
+    Task EnsureTicketAccessAsync(Guid ticketId, Guid viewerUserId, string viewerRole);
     Task<TicketResponse> GetTicketByIdAsync(Guid id);
     Task<TicketResponse> GetTicketByReferenceNumberAsync(string referenceNumber);
     Task<TicketListResponse> GetTicketsAsync(int page, int pageSize, DateTime? createdFrom = null, DateTime? createdTo = null, Guid? agentUserId = null);
@@ -22,7 +23,7 @@ public interface ITicketService
     Task<IReadOnlyList<AgentWorkloadResponse>> GetAgentWorkloadAsync();
 
     Task<IReadOnlyList<CommentResponse>> GetCommentsAsync(Guid ticketId, Guid viewerUserId, string viewerRole);
-    Task<CommentResponse> AddCommentAsync(Guid ticketId, AddCommentRequest request, Guid authorUserId, string authorRole);
+    Task<CommentResponse> AddCommentAsync(Guid ticketId, AddCommentRequest request, Guid authorUserId, string authorRole, string authorName);
 
     Task<IReadOnlyList<AttachmentResponse>> GetAttachmentsAsync(Guid ticketId);
     Task<AttachmentResponse> AddAttachmentAsync(Guid ticketId, string fileName, string fileUrl, Guid uploadedByUserId);
