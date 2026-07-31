@@ -215,6 +215,22 @@ public class TicketsController : ControllerBase
     }
 
     /// <summary>
+    /// Returns an in-progress ticket to the open queue when the assigned agent cannot resolve it.
+    /// </summary>
+    [HttpPost("{ticketId:guid}/escalate")]
+    [Authorize(Roles = "IT Support Agent")]
+    [ProducesResponseType(typeof(TicketResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> EscalateTicket(Guid ticketId, [FromBody] EscalateTicketRequest request)
+    {
+        var userId = GetUserIdFromClaims();
+        var userName = GetUserNameFromClaims();
+        var ticket = await _ticketService.EscalateTicketAsync(ticketId, userId, userName, request.Reason);
+        return Ok(ticket);
+    }
+
+    /// <summary>
     /// Gets comments for a ticket.
     /// </summary>
     [HttpGet("{ticketId:guid}/comments")]

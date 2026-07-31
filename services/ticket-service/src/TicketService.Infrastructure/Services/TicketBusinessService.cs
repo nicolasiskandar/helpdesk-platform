@@ -423,6 +423,78 @@ public class TicketBusinessService : ITicketService
         await _unitOfWork.SaveChangesAsync();
     }
 
+    public async Task<TicketResponse> EscalateTicketAsync(Guid ticketId, Guid userId, string userName, string? reason)
+    {
+        var ticket = await _unitOfWork.Tickets.GetByIdAsync(ticketId)
+            ?? throw new KeyNotFoundException("Ticket not found.");
+
+        var inProgressStatus = await _unitOfWork.Statuses.GetByNameAsync("In Progress")
+            ?? throw new InvalidOperationException("In Progress status not found.");
+
+        if (ticket.StatusId != inProgressStatus.Id)
+            throw new InvalidOperationException("Only tickets in progress can be escalated.");
+
+        var assignment = await _unitOfWork.TicketAssignments.GetActiveAssignmentAsync(ticketId, userId)
+            ?? throw new InvalidOperationException("You are not assigned to this ticket.");
+
+        assignment.UnassignedAt = DateTime.UtcNow;
+        await _unitOfWork.TicketAssignments.UpdateAsync(assignment);
+
+        var allAssignments = await _unitOfWork.TicketAssignments.GetByTicketIdAsync(ticketId);
+        var hasRemaining = allAssignments.Any(a => a.Id != assignment.Id && a.UnassignedAt == null);
+        var mappedStatus = ticket.Status;
+
+        if (!hasRemaining)
+        {
+            var openStatus = await _unitOfWork.Statuses.GetByNameAsync("Open")
+                ?? throw new InvalidOperationException("Open status not found.");
+
+            var oldStatusName = ticket.Status.Name;
+            ticket.StatusId = openStatus.Id;
+            ticket.UpdatedAt = DateTime.UtcNow;
+            await _unitOfWork.Tickets.UpdateAsync(ticket);
+            mappedStatus = openStatus;
+
+            var statusAudit = CreateAuditEntry(ticketId, userId, "Status", oldStatusName, "Open");
+            await _unitOfWork.TicketAuditLogs.AddAsync(statusAudit);
+
+            var statusOutbox = new OutboxMessage
+            {
+                Id = Guid.NewGuid(),
+                EventType = "ticket.status_changed",
+                Payload = JsonSerializer.Serialize(new TicketStatusChangedEvent(
+                    ticketId, ticket.ReferenceNumber, oldStatusName, "Open",
+                    userId, "User", DateTime.UtcNow)),
+                CreatedAt = DateTime.UtcNow
+            };
+            await _unitOfWork.Outbox.AddAsync(statusOutbox);
+        }
+
+        var escalationNote = string.IsNullOrWhiteSpace(reason) ? "Escalated" : $"Escalated: {reason}";
+        var auditLog = CreateAuditEntry(ticketId, userId, "Assignment", $"Assigned to {userName}", escalationNote);
+        await _unitOfWork.TicketAuditLogs.AddAsync(auditLog);
+
+        var outboxMessage = new OutboxMessage
+        {
+            Id = Guid.NewGuid(),
+            EventType = "ticket.unassigned",
+            Payload = JsonSerializer.Serialize(new TicketAssignedEvent(
+                ticketId,
+                ticket.ReferenceNumber,
+                userId,
+                userId,
+                assignment.UnassignedAt.Value
+            )),
+            CreatedAt = DateTime.UtcNow
+        };
+        await _unitOfWork.Outbox.AddAsync(outboxMessage);
+
+        await _unitOfWork.SaveChangesAsync();
+
+        var updatedTicket = await _unitOfWork.Tickets.GetByIdAsync(ticketId);
+        return MapToResponse(updatedTicket!, updatedTicket!.Category, updatedTicket.Priority, mappedStatus);
+    }
+
     public async Task<AssignmentResponse> ClaimTicketAsync(Guid ticketId, Guid userId, string userName)
     {
         var ticket = await _unitOfWork.Tickets.GetByIdAsync(ticketId)

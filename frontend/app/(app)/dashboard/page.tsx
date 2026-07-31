@@ -10,6 +10,7 @@ import {
   UserPlus,
   ArrowRight,
   Activity,
+  Hand,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -140,7 +141,11 @@ export default function DashboardPage() {
             <Card>
               <CardContent className="flex items-center gap-3 p-4">
                 <div className="flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                  <UserPlus className="size-5" />
+                  {role === "agent" ? (
+                    <Hand className="size-5" />
+                  ) : (
+                    <UserPlus className="size-5" />
+                  )}
                 </div>
                 <div className="flex-1">
                   <p className="text-sm font-medium">
@@ -148,13 +153,17 @@ export default function DashboardPage() {
                     {stats.unassigned === 1 ? "" : "s"}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Assign to an available agent
+                    {role === "agent" ? "Pick up tickets" : "Assign to an available agent"}
                   </p>
                 </div>
                 <Button
                   size="sm"
                   variant="outline"
-                  render={<Link href="/tickets">Assign</Link>}
+                  render={
+                    <Link href={role === "agent" ? "/tickets/queue" : "/tickets"}>
+                      {role === "agent" ? "Pick up" : "Assign"}
+                    </Link>
+                  }
                 />
               </CardContent>
             </Card>

@@ -52,7 +52,7 @@ import { useStore } from "@/lib/store"
 import { formatRelative, formatDateTime } from "@/lib/analytics"
 import type { Ticket, Comment, TicketStatus, TicketCategory, TicketPriority } from "@/lib/types"
 import type { AuditLogEntryResponse, AttachmentResponse, CategoryResponse, PriorityResponse, UserResponse } from "@/lib/api"
-import { apiGetTicketByReference, apiGetCategories, apiGetPriorities, apiAttachmentDownloadUrl, apiGetUsers, apiUnassignAgent, apiUploadAttachment } from "@/lib/api"
+import { apiGetTicketByReference, apiGetCategories, apiGetPriorities, apiAttachmentDownloadUrl, apiGetUsers, apiUnassignAgent, apiUploadAttachment, apiEscalateTicket } from "@/lib/api"
 
 function initials(name: string) {
   return name
@@ -147,6 +147,9 @@ export default function TicketDetailPage() {
   const [claiming, setClaiming] = React.useState(false)
   const [assigning, setAssigning] = React.useState(false)
   const [unassigningId, setUnassigningId] = React.useState<string | null>(null)
+  const [escalateOpen, setEscalateOpen] = React.useState(false)
+  const [escalateReason, setEscalateReason] = React.useState("")
+  const [escalating, setEscalating] = React.useState(false)
   const [agents, setAgents] = React.useState<UserResponse[]>([])
 
   React.useEffect(() => {
@@ -372,6 +375,30 @@ export default function TicketDetailPage() {
       toast.error("Failed to unassign agent")
     } finally {
       setUnassigningId(null)
+    }
+  }
+
+  async function handleEscalate() {
+    if (!ticket || escalating) return
+    setEscalating(true)
+    try {
+      await apiEscalateTicket(ticket.id, escalateReason.trim() || undefined)
+      const assigneeIds = ticket.assigneeIds.filter((id) => id !== currentUserId)
+      setTicket({
+        ...ticket,
+        assigneeId: assigneeIds[0] ?? null,
+        assigneeIds,
+        status: "Open",
+      })
+      setEscalateReason("")
+      setEscalateOpen(false)
+      toast.success("Ticket returned to the queue", {
+        description: `${ticket.reference} is open for another agent to pick up.`,
+      })
+    } catch {
+      toast.error("Failed to escalate ticket")
+    } finally {
+      setEscalating(false)
     }
   }
 
@@ -652,14 +679,25 @@ export default function TicketDetailPage() {
                 </Button>
               )}
               {canChangeStatus && ticket.status === "In Progress" && (
-                <Button
-                  size="sm"
-                  variant="default"
-                  onClick={handleResolve}
-                  className="w-full"
-                >
-                  Resolve Ticket
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onClick={handleResolve}
+                    className="flex-1"
+                  >
+                    Resolve Ticket
+                  </Button>
+                  {role === "agent" && isAssignedAgent && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setEscalateOpen(true)}
+                    >
+                      Escalate
+                    </Button>
+                  )}
+                </div>
               )}
               {canChangeStatus && ticket.status === "Pending Resolution" && role === "admin" && (
                 <div className="flex gap-2">
@@ -957,6 +995,36 @@ export default function TicketDetailPage() {
               disabled={deleting}
             >
               {deleting ? "Deleting..." : "Delete Ticket"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={escalateOpen} onOpenChange={setEscalateOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Escalate Ticket</DialogTitle>
+            <DialogDescription>
+              Return <span className="font-medium text-foreground">{ticket.reference}</span> to the open queue.
+              You will be unassigned and the ticket will be available for another agent.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="escalate-reason">Reason (optional)</Label>
+            <Textarea
+              id="escalate-reason"
+              value={escalateReason}
+              onChange={(e) => setEscalateReason(e.target.value)}
+              placeholder="e.g. Out of scope, needs specialist access, cannot reproduce..."
+              rows={3}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEscalateOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleEscalate} disabled={escalating}>
+              {escalating ? "Escalating..." : "Escalate Ticket"}
             </Button>
           </DialogFooter>
         </DialogContent>

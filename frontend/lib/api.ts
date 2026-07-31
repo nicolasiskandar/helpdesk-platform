@@ -343,6 +343,19 @@ export async function apiClaimTicket(
   return handleResponse<AssignmentResponse>(res)
 }
 
+export async function apiEscalateTicket(
+  ticketId: string,
+  reason?: string
+): Promise<TicketResponse> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/tickets/${ticketId}/escalate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify({ reason }),
+  })
+  return handleResponse<TicketResponse>(res)
+}
+
 export async function apiChangeStatus(
   id: string,
   statusId: number,

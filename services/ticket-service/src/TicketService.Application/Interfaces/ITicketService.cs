@@ -12,6 +12,7 @@ public interface ITicketService
     Task<TicketResponse> UpdateTicketAsync(Guid id, UpdateTicketRequest request, Guid changedByUserId, string requestedByRole);
     Task<TicketResponse> ChangeStatusAsync(Guid id, ChangeStatusRequest request, Guid changedByUserId, string changedByType = "User");
     Task DeleteTicketAsync(Guid id, Guid requestedByUserId, string requestedByRole);
+    Task<TicketResponse> EscalateTicketAsync(Guid ticketId, Guid userId, string userName, string? reason);
 
     Task<IReadOnlyList<AssignmentResponse>> GetAssignmentsAsync(Guid ticketId);
     Task<AssignmentResponse> AssignAgentAsync(Guid ticketId, AssignAgentRequest request, Guid assignedByUserId, string assignedByName);

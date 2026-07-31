@@ -19,6 +19,10 @@ public record ChangeStatusRequest(
     string? Comment
 );
 
+public record EscalateTicketRequest(
+    string? Reason
+);
+
 public record TicketResponse(
     Guid Id,
     string ReferenceNumber,

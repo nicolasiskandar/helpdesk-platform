@@ -739,6 +739,191 @@ public class TicketBusinessServiceTests
     }
 
     [Fact]
+    public async Task EscalateTicketAsync_Success_UnassignsAgentAndReturnsToOpen()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var agentUserId = Guid.NewGuid();
+
+        var ticket = new Ticket
+        {
+            Id = ticketId,
+            ReferenceNumber = "TKT-000001",
+            Title = "Test",
+            CategoryId = 1,
+            PriorityId = 1,
+            StatusId = 2,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 2, Name = "In Progress" }
+        };
+
+        var assignment = new TicketAssignment
+        {
+            Id = Guid.NewGuid(),
+            TicketId = ticketId,
+            AgentUserId = agentUserId,
+            AssignedByUserId = Guid.NewGuid(),
+            AssignedAt = DateTime.UtcNow
+        };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _statusRepoMock.Setup(r => r.GetByNameAsync("In Progress")).ReturnsAsync(new Status { Id = 2, Name = "In Progress" });
+        _statusRepoMock.Setup(r => r.GetByNameAsync("Open")).ReturnsAsync(new Status { Id = 1, Name = "Open" });
+        _assignmentRepoMock.Setup(r => r.GetActiveAssignmentAsync(ticketId, agentUserId)).ReturnsAsync(assignment);
+        _assignmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(new List<TicketAssignment> { assignment });
+
+        // Act
+        var result = await _sut.EscalateTicketAsync(ticketId, agentUserId, "Agent User", "Cannot reproduce issue");
+
+        // Assert
+        result.StatusName.Should().Be("Open");
+        assignment.UnassignedAt.Should().NotBeNull();
+
+        _assignmentRepoMock.Verify(r => r.UpdateAsync(assignment), Times.Once);
+
+        _auditLogRepoMock.Verify(r => r.AddAsync(It.Is<TicketAuditLogEntry>(a =>
+            a.FieldChanged == "Assignment" && a.NewValue == "Escalated: Cannot reproduce issue"
+        )), Times.Once);
+
+        _auditLogRepoMock.Verify(r => r.AddAsync(It.Is<TicketAuditLogEntry>(a =>
+            a.FieldChanged == "Status" && a.OldValue == "In Progress" && a.NewValue == "Open"
+        )), Times.Once);
+
+        _outboxRepoMock.Verify(r => r.AddAsync(It.Is<OutboxMessage>(m =>
+            m.EventType == "ticket.unassigned"
+        )), Times.Once);
+
+        _outboxRepoMock.Verify(r => r.AddAsync(It.Is<OutboxMessage>(m =>
+            m.EventType == "ticket.status_changed"
+        )), Times.Once);
+
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task EscalateTicketAsync_NoReason_UsesDefaultAuditMessage()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var agentUserId = Guid.NewGuid();
+
+        var ticket = new Ticket
+        {
+            Id = ticketId,
+            ReferenceNumber = "TKT-000001",
+            Title = "Test",
+            CategoryId = 1,
+            PriorityId = 1,
+            StatusId = 2,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 2, Name = "In Progress" }
+        };
+
+        var assignment = new TicketAssignment
+        {
+            Id = Guid.NewGuid(),
+            TicketId = ticketId,
+            AgentUserId = agentUserId,
+            AssignedByUserId = Guid.NewGuid(),
+            AssignedAt = DateTime.UtcNow
+        };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _statusRepoMock.Setup(r => r.GetByNameAsync("In Progress")).ReturnsAsync(new Status { Id = 2, Name = "In Progress" });
+        _statusRepoMock.Setup(r => r.GetByNameAsync("Open")).ReturnsAsync(new Status { Id = 1, Name = "Open" });
+        _assignmentRepoMock.Setup(r => r.GetActiveAssignmentAsync(ticketId, agentUserId)).ReturnsAsync(assignment);
+        _assignmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(new List<TicketAssignment> { assignment });
+
+        // Act
+        await _sut.EscalateTicketAsync(ticketId, agentUserId, "Agent User", null);
+
+        // Assert
+        _auditLogRepoMock.Verify(r => r.AddAsync(It.Is<TicketAuditLogEntry>(a =>
+            a.FieldChanged == "Assignment" && a.NewValue == "Escalated"
+        )), Times.Once);
+    }
+
+    [Fact]
+    public async Task EscalateTicketAsync_TicketNotFound_ThrowsKeyNotFoundException()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync((Ticket?)null);
+
+        // Act
+        var act = () => _sut.EscalateTicketAsync(ticketId, Guid.NewGuid(), "Agent User", null);
+
+        // Assert
+        await act.Should().ThrowAsync<KeyNotFoundException>()
+            .WithMessage("*Ticket not found*");
+    }
+
+    [Fact]
+    public async Task EscalateTicketAsync_NotInProgress_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var agentUserId = Guid.NewGuid();
+
+        var ticket = new Ticket
+        {
+            Id = ticketId,
+            ReferenceNumber = "TKT-000001",
+            Title = "Test",
+            CategoryId = 1,
+            PriorityId = 1,
+            StatusId = 4,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 4, Name = "Closed" }
+        };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _statusRepoMock.Setup(r => r.GetByNameAsync("In Progress")).ReturnsAsync(new Status { Id = 2, Name = "In Progress" });
+
+        // Act
+        var act = () => _sut.EscalateTicketAsync(ticketId, agentUserId, "Agent User", null);
+
+        // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*Only tickets in progress can be escalated*");
+    }
+
+    [Fact]
+    public async Task EscalateTicketAsync_NotAssigned_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var agentUserId = Guid.NewGuid();
+
+        var ticket = new Ticket
+        {
+            Id = ticketId,
+            ReferenceNumber = "TKT-000001",
+            Title = "Test",
+            CategoryId = 1,
+            PriorityId = 1,
+            StatusId = 2,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 2, Name = "In Progress" }
+        };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _statusRepoMock.Setup(r => r.GetByNameAsync("In Progress")).ReturnsAsync(new Status { Id = 2, Name = "In Progress" });
+        _assignmentRepoMock.Setup(r => r.GetActiveAssignmentAsync(ticketId, agentUserId)).ReturnsAsync((TicketAssignment?)null);
+
+        // Act
+        var act = () => _sut.EscalateTicketAsync(ticketId, agentUserId, "Agent User", null);
+
+        // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*not assigned*");
+    }
+
+    [Fact]
     public async Task AddAttachmentAsync_Success_CreatesAttachment()
     {
         // Arrange
