@@ -270,6 +270,7 @@ public class NotificationBusinessServiceTests
         var recipient1 = Guid.NewGuid();
         var recipient2 = Guid.NewGuid();
         var ticketId = Guid.NewGuid();
+        var commentId = Guid.NewGuid();
 
         _preferenceRepo.Setup(r => r.GetOrCreateByUserIdAsync(recipient1)).ReturnsAsync(DefaultPreference(recipient1));
         _preferenceRepo.Setup(r => r.GetOrCreateByUserIdAsync(recipient2)).ReturnsAsync(DefaultPreference(recipient2));
@@ -283,6 +284,7 @@ public class NotificationBusinessServiceTests
             "Jane Doe",
             "Please look into this",
             false,
+            commentId,
             null,
             new List<Guid> { recipient1, recipient2, authorId },
             DateTime.UtcNow);
@@ -294,6 +296,9 @@ public class NotificationBusinessServiceTests
             n.RecipientUserId == recipient1 && n.Type == "comment")), Times.Once);
         _notificationRepo.Verify(r => r.AddAsync(It.Is<Notification>(n =>
             n.RecipientUserId == recipient2 && n.Type == "comment")), Times.Once);
+        // Comment id is stored on the notification so the UI can deep-link to the comment
+        _notificationRepo.Verify(r => r.AddAsync(It.Is<Notification>(n =>
+            n.CommentId == commentId)), Times.AtLeastOnce);
         // Author should not receive a notification
         _notificationRepo.Verify(r => r.AddAsync(It.Is<Notification>(n =>
             n.RecipientUserId == authorId)), Times.Never);

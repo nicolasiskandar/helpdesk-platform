@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import {
   ArrowLeftIcon,
@@ -98,6 +98,7 @@ const PRIORITY_IDS: Record<TicketPriority, number> = {
 export default function TicketDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const {
     loadTicketDetail,
     loadComments,
@@ -124,6 +125,8 @@ export default function TicketDetailPage() {
   const [submittingComment, setSubmittingComment] = React.useState(false)
   const [replyTo, setReplyTo] = React.useState<string | null>(null)
   const [recipientIds, setRecipientIds] = React.useState<string[]>([])
+  const [highlightCommentId, setHighlightCommentId] = React.useState<string | null>(null)
+  const scrolledKeyRef = React.useRef<string | null>(null)
   const [replyCandidateIds, setReplyCandidateIds] = React.useState<string[]>([])
   const [recipientOpen, setRecipientOpen] = React.useState(false)
 
@@ -215,6 +218,23 @@ export default function TicketDetailPage() {
     }).catch(() => {})
     return () => { cancelled = true }
   }, [paramId, loadTicketDetail, loadComments, loadAuditLog, loadAttachments])
+
+  const commentParam = searchParams.get("comment")
+  React.useEffect(() => {
+    if (!commentParam) return
+    const key = `${ticket?.id ?? paramId}:${commentParam}`
+    if (scrolledKeyRef.current === key) return
+    const target = document.getElementById(`comment-${commentParam}`)
+    if (target) {
+      scrolledKeyRef.current = key
+      setHighlightCommentId(commentParam)
+      target.scrollIntoView({ behavior: "smooth", block: "center" })
+      const t = setTimeout(() => setHighlightCommentId(null), 2500)
+      return () => clearTimeout(t)
+    }
+    // Comments are loaded but the target isn't visible (private/restricted) — don't retry
+    if (ticket && !loading) scrolledKeyRef.current = key
+  }, [commentParam, comments, ticket, loading, paramId])
 
   async function handleAddComment() {
     if (!ticket || !commentText.trim() || submittingComment) return
@@ -530,7 +550,13 @@ export default function TicketDetailPage() {
     const replies = comments.filter((c) => c.parentId === comment.id)
     const isReplyTarget = replyTo === comment.id
     return (
-      <Card key={comment.id} className={comment.parentId ? "border-l-2 border-l-primary/20" : ""}>
+      <Card
+        key={comment.id}
+        id={`comment-${comment.id}`}
+        className={`scroll-mt-24 ${comment.parentId ? "border-l-2 border-l-primary/20" : ""} ${
+          highlightCommentId === comment.id ? "ring-2 ring-primary" : ""
+        }`}
+      >
         <CardContent className="flex gap-3 p-4">
           <Avatar className="size-8">
             <AvatarFallback className="bg-muted text-[10px]">

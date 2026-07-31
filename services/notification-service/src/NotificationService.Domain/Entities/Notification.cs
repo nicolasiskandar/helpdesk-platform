@@ -9,6 +9,7 @@ public class Notification
     public string Message { get; set; } = string.Empty;
     public Guid? TicketId { get; set; }
     public string? TicketReferenceNumber { get; set; }
+    public Guid? CommentId { get; set; }
     public bool IsRead { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

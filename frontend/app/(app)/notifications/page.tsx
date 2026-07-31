@@ -2,6 +2,8 @@
 
 import * as React from "react"
 import { CheckCheck, Settings } from "lucide-react"
+import { useRouter } from "next/navigation"
+import Link from "next/link"
 import { useStore } from "@/lib/store"
 import { useSignalR, type RealtimeNotification } from "@/lib/signalr"
 import { Badge } from "@/components/ui/badge"
@@ -9,7 +11,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
-import Link from "next/link"
 
 const NOTIF_ICONS: Record<string, string> = {
   assignment: "\u{1F4CB}",
@@ -38,6 +39,7 @@ export default function NotificationsPage() {
     markAllNotificationsRead,
     refreshNotifications,
   } = useStore()
+  const router = useRouter()
   const [loading, setLoading] = React.useState(true)
 
   React.useEffect(() => {
@@ -45,16 +47,7 @@ export default function NotificationsPage() {
   }, [refreshNotifications])
 
   const handleRealtimeNotification = React.useCallback(
-    (n: RealtimeNotification) => {
-      const mapped = {
-        id: n.id,
-        type: n.type as any,
-        title: n.title,
-        body: n.message,
-        ticketRef: n.ticketReferenceNumber ?? undefined,
-        createdAt: n.createdAt,
-        read: false,
-      }
+    (_n: RealtimeNotification) => {
       refreshNotifications()
     },
     [refreshNotifications]
@@ -118,6 +111,11 @@ export default function NotificationsPage() {
                     key={n.id}
                     onClick={() => {
                       if (!n.read) markNotificationRead(n.id)
+                      if (n.commentId && n.ticketId) {
+                        router.push(`/tickets/${n.ticketId}?comment=${n.commentId}`)
+                      } else if (n.ticketId) {
+                        router.push(`/tickets/${n.ticketId}`)
+                      }
                     }}
                     className={`flex w-full items-start gap-3 p-4 text-left transition-colors hover:bg-muted/50 ${
                       !n.read ? "bg-primary/5" : ""
@@ -137,12 +135,9 @@ export default function NotificationsPage() {
                       </div>
                       <p className="text-sm text-muted-foreground line-clamp-1">{n.body}</p>
                       {n.ticketRef && (
-                        <Link
-                          href={`/tickets?search=${encodeURIComponent(n.ticketRef)}`}
-                          className="mt-1 inline-block text-xs font-medium text-primary hover:underline"
-                        >
+                        <span className="mt-1 inline-block text-xs font-medium text-primary">
                           {n.ticketRef}
-                        </Link>
+                        </span>
                       )}
                     </div>
                     <span className="shrink-0 text-xs text-muted-foreground whitespace-nowrap">

@@ -13,6 +13,7 @@ export interface RealtimeNotification {
   message: string
   ticketId: string | null
   ticketReferenceNumber: string | null
+  commentId: string | null
   isRead: boolean
   createdAt: string
 }

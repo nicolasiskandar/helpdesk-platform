@@ -78,6 +78,8 @@ export interface NotificationItem {
   type: "assignment" | "comment" | "status" | "mention" | "sla"
   title: string
   body: string
+  ticketId?: string
+  commentId?: string
   ticketRef?: string
   createdAt: string
   read: boolean

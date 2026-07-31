@@ -145,6 +145,8 @@ function mapNotification(res: NotificationResponse): NotificationItem {
     type: NOTIF_TYPE_MAP[res.type] || "status",
     title: res.title,
     body: res.message,
+    ticketId: res.ticketId ?? undefined,
+    commentId: res.commentId ?? undefined,
     ticketRef: res.ticketReferenceNumber ?? undefined,
     createdAt: res.createdAt,
     read: res.isRead,

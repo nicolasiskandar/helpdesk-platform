@@ -756,6 +756,7 @@ public class TicketBusinessService : ITicketService
                 authorName,
                 request.Content,
                 isPrivate,
+                comment.Id,
                 parentComment?.Id,
                 notificationRecipients,
                 DateTime.UtcNow

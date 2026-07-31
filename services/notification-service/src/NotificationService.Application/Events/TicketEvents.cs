@@ -36,6 +36,7 @@ public record TicketCommentedEvent(
     string AuthorName,
     string Content,
     bool IsPrivate,
+    Guid CommentId,
     Guid? ParentCommentId,
     IReadOnlyList<Guid> RecipientUserIds,
     DateTime CreatedAt

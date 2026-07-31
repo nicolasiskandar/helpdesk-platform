@@ -180,11 +180,11 @@ public class NotificationBusinessService : INotificationService
             await CreateAndDeliverAsync(recipientId, "comment",
                 $"{evt.AuthorName} commented on {evt.ReferenceNumber}",
                 $"{(evt.IsPrivate ? "Private comment" : "Comment")} on ticket {evt.ReferenceNumber}: \"{evt.Content}\"",
-                evt.TicketId, evt.ReferenceNumber);
+                evt.TicketId, evt.ReferenceNumber, evt.CommentId);
         }
     }
 
-    private async Task CreateAndDeliverAsync(Guid recipientUserId, string type, string title, string message, Guid? ticketId, string? ticketRef)
+    private async Task CreateAndDeliverAsync(Guid recipientUserId, string type, string title, string message, Guid? ticketId, string? ticketRef, Guid? commentId = null)
     {
         var preference = await _preferenceRepo.GetOrCreateByUserIdAsync(recipientUserId);
         var (inAppEnabled, emailEnabled) = GetPreferenceForType(preference, type);
@@ -200,6 +200,7 @@ public class NotificationBusinessService : INotificationService
             Message = message,
             TicketId = ticketId,
             TicketReferenceNumber = ticketRef,
+            CommentId = commentId,
             IsRead = false,
             CreatedAt = DateTime.UtcNow
         };
@@ -312,7 +313,7 @@ public class NotificationBusinessService : INotificationService
     private static NotificationResponse MapToResponse(Notification n) => new(
         n.Id, n.Type, n.Title, n.Message,
         n.TicketId, n.TicketReferenceNumber,
-        n.IsRead, n.CreatedAt);
+        n.CommentId, n.IsRead, n.CreatedAt);
 
     private static PreferenceResponse MapPreferenceToResponse(NotificationPreference p) => new(
         p.TicketCreatedInApp, p.TicketCreatedEmail,

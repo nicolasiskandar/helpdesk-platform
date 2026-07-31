@@ -7,6 +7,7 @@ public record NotificationResponse(
     string Message,
     Guid? TicketId,
     string? TicketReferenceNumber,
+    Guid? CommentId,
     bool IsRead,
     DateTime CreatedAt
 );
