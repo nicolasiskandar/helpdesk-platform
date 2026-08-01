@@ -35,6 +35,8 @@ export interface TicketResponse {
   createdAt: string
   updatedAt: string
   assigneeUserId?: string
+  timeWorkedMinutes?: number | null
+  timeToCloseMinutes?: number | null
 }
 
 export interface TicketListResponse {

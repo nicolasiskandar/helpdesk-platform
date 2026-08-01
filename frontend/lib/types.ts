@@ -71,6 +71,8 @@ export interface Ticket {
   activity: ActivityEntry[]
   attachments: Attachment[]
   slaHours: number
+  timeWorkedMinutes?: number | null
+  timeToCloseMinutes?: number | null
 }
 
 export interface NotificationItem {

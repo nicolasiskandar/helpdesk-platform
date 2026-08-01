@@ -34,7 +34,9 @@ public record TicketResponse(
     Guid CreatedByUserId,
     DateTime CreatedAt,
     DateTime UpdatedAt,
-    Guid? AssigneeUserId = null
+    Guid? AssigneeUserId = null,
+    long? TimeWorkedMinutes = null,
+    long? TimeToCloseMinutes = null
 );
 
 public record TicketListResponse(

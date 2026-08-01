@@ -57,7 +57,7 @@ import {
 } from "@/components/ui/dialog"
 import { StatusBadge, PriorityIndicator } from "@/components/ticket-badges"
 import { useStore } from "@/lib/store"
-import { formatRelative, formatDateTime } from "@/lib/analytics"
+import { formatRelative, formatDateTime, formatDuration } from "@/lib/analytics"
 import type { Ticket, Comment, TicketStatus, TicketCategory, TicketPriority } from "@/lib/types"
 import type { AuditLogEntryResponse, AttachmentResponse, CategoryResponse, PriorityResponse, UserResponse } from "@/lib/api"
 import { apiGetTicketByReference, apiGetCategories, apiGetPriorities, apiAttachmentDownloadUrl, apiGetUsers, apiUnassignAgent, apiUploadAttachment, apiEscalateTicket } from "@/lib/api"
@@ -999,6 +999,14 @@ export default function TicketDetailPage() {
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">SLA</span>
                 <span>{ticket.slaHours}h</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Time worked</span>
+                <span>{formatDuration(ticket.timeWorkedMinutes)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Time to close</span>
+                <span>{formatDuration(ticket.timeToCloseMinutes)}</span>
               </div>
             </CardContent>
           </Card>

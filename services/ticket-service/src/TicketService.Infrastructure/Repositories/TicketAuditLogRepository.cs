@@ -24,6 +24,14 @@ public class TicketAuditLogRepository : ITicketAuditLogRepository
             .ToListAsync();
     }
 
+    public async Task<IReadOnlyList<TicketAuditLogEntry>> GetStatusTransitionsAsync(Guid ticketId)
+    {
+        return await _context.TicketAuditLogs
+            .Where(a => a.TicketId == ticketId && a.FieldChanged == "Status")
+            .OrderBy(a => a.ChangedAt)
+            .ToListAsync();
+    }
+
     public async Task<int> GetCountByTicketIdAsync(Guid ticketId)
     {
         return await _context.TicketAuditLogs.CountAsync(a => a.TicketId == ticketId);

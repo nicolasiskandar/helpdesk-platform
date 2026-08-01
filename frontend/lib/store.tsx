@@ -125,6 +125,8 @@ function mapTicket(res: TicketResponse, userMap: Record<string, string> = {}): T
     updatedAt: res.updatedAt,
     resolvedAt: null,
     slaHours: SLA_HOURS[PRIORITY_MAP[res.priorityName] || "Medium"],
+    timeWorkedMinutes: res.timeWorkedMinutes ?? null,
+    timeToCloseMinutes: res.timeToCloseMinutes ?? null,
     comments: [],
     activity: [],
     attachments: [],

@@ -165,6 +165,121 @@ public class TicketBusinessServiceTests
             .WithMessage("*Ticket not found*");
     }
 
+    [Fact]
+    public async Task GetTicketByIdAsync_ResolvedTicket_ReturnsTimeWorkedMinutes()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var createdBy = Guid.NewGuid();
+        var assignedAt = new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc);
+        var resolvedAt = assignedAt.AddHours(2);
+
+        var ticket = BuildTicket(ticketId, "Resolved - Pending Confirmation", createdBy);
+        ticket.CreatedAt = assignedAt;
+        ticket.Assignments = new List<TicketAssignment>
+        {
+            new() { Id = Guid.NewGuid(), TicketId = ticketId, AgentUserId = Guid.NewGuid(), AssignedByUserId = Guid.NewGuid(), AssignedAt = assignedAt, UnassignedAt = null }
+        };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _auditLogRepoMock.Setup(r => r.GetStatusTransitionsAsync(ticketId)).ReturnsAsync(new List<TicketAuditLogEntry>
+        {
+            new() { Id = Guid.NewGuid(), TicketId = ticketId, FieldChanged = "Status", OldValue = "In Progress", NewValue = "Resolved - Pending Confirmation", ChangedAt = resolvedAt }
+        });
+
+        // Act
+        var result = await _sut.GetTicketByIdAsync(ticketId);
+
+        // Assert
+        result.TimeWorkedMinutes.Should().Be(120);
+        result.TimeToCloseMinutes.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetTicketByIdAsync_ReassignedTicket_SumsActiveAssignmentTime()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var createdBy = Guid.NewGuid();
+        var assignedAt = new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc);
+        var resolvedAt = assignedAt.AddHours(4);
+
+        var ticket = BuildTicket(ticketId, "Resolved - Pending Confirmation", createdBy);
+        ticket.Assignments = new List<TicketAssignment>
+        {
+            new() { Id = Guid.NewGuid(), TicketId = ticketId, AgentUserId = Guid.NewGuid(), AssignedByUserId = Guid.NewGuid(), AssignedAt = assignedAt, UnassignedAt = assignedAt.AddHours(1) },
+            new() { Id = Guid.NewGuid(), TicketId = ticketId, AgentUserId = Guid.NewGuid(), AssignedByUserId = Guid.NewGuid(), AssignedAt = assignedAt.AddHours(3), UnassignedAt = null }
+        };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _auditLogRepoMock.Setup(r => r.GetStatusTransitionsAsync(ticketId)).ReturnsAsync(new List<TicketAuditLogEntry>
+        {
+            new() { Id = Guid.NewGuid(), TicketId = ticketId, FieldChanged = "Status", OldValue = "In Progress", NewValue = "Resolved - Pending Confirmation", ChangedAt = resolvedAt }
+        });
+
+        // Act
+        var result = await _sut.GetTicketByIdAsync(ticketId);
+
+        // Assert
+        result.TimeWorkedMinutes.Should().Be(120);
+    }
+
+    [Fact]
+    public async Task GetTicketByIdAsync_ClosedTicket_ReturnsTimeWorkedAndTimeToClose()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var createdBy = Guid.NewGuid();
+        var createdAt = new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc);
+        var resolvedAt = createdAt.AddHours(2);
+        var closedAt = createdAt.AddHours(5);
+
+        var ticket = BuildTicket(ticketId, "Closed", createdBy);
+        ticket.CreatedAt = createdAt;
+        ticket.Assignments = new List<TicketAssignment>
+        {
+            new() { Id = Guid.NewGuid(), TicketId = ticketId, AgentUserId = Guid.NewGuid(), AssignedByUserId = Guid.NewGuid(), AssignedAt = createdAt, UnassignedAt = null }
+        };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _auditLogRepoMock.Setup(r => r.GetStatusTransitionsAsync(ticketId)).ReturnsAsync(new List<TicketAuditLogEntry>
+        {
+            new() { Id = Guid.NewGuid(), TicketId = ticketId, FieldChanged = "Status", OldValue = "In Progress", NewValue = "Resolved - Pending Confirmation", ChangedAt = resolvedAt },
+            new() { Id = Guid.NewGuid(), TicketId = ticketId, FieldChanged = "Status", OldValue = "Resolved - Pending Confirmation", NewValue = "Closed", ChangedAt = closedAt }
+        });
+
+        // Act
+        var result = await _sut.GetTicketByIdAsync(ticketId);
+
+        // Assert
+        result.TimeWorkedMinutes.Should().Be(120);
+        result.TimeToCloseMinutes.Should().Be(300);
+    }
+
+    [Fact]
+    public async Task GetTicketByIdAsync_UnresolvedTicket_ReturnsNullMetrics()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var createdBy = Guid.NewGuid();
+
+        var ticket = BuildTicket(ticketId, "In Progress", createdBy);
+        ticket.Assignments = new List<TicketAssignment>
+        {
+            new() { Id = Guid.NewGuid(), TicketId = ticketId, AgentUserId = Guid.NewGuid(), AssignedByUserId = Guid.NewGuid(), AssignedAt = DateTime.UtcNow, UnassignedAt = null }
+        };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _auditLogRepoMock.Setup(r => r.GetStatusTransitionsAsync(ticketId)).ReturnsAsync(new List<TicketAuditLogEntry>());
+
+        // Act
+        var result = await _sut.GetTicketByIdAsync(ticketId);
+
+        // Assert
+        result.TimeWorkedMinutes.Should().BeNull();
+        result.TimeToCloseMinutes.Should().BeNull();
+    }
+
     private static Ticket BuildTicket(Guid ticketId, string statusName, Guid createdByUserId)
     {
         return new Ticket

@@ -124,7 +124,8 @@ public class TicketBusinessService : ITicketService
         var ticket = await _unitOfWork.Tickets.GetByIdAsync(id)
             ?? throw new KeyNotFoundException("Ticket not found.");
 
-        return MapToResponse(ticket, ticket.Category, ticket.Priority, ticket.Status);
+        var (timeWorkedMinutes, timeToCloseMinutes) = await ComputeTicketMetricsAsync(ticket);
+        return MapToResponse(ticket, ticket.Category, ticket.Priority, ticket.Status, timeWorkedMinutes, timeToCloseMinutes);
     }
 
     public async Task<TicketResponse> GetTicketByReferenceNumberAsync(string referenceNumber)
@@ -132,7 +133,8 @@ public class TicketBusinessService : ITicketService
         var ticket = await _unitOfWork.Tickets.GetByReferenceNumberAsync(referenceNumber)
             ?? throw new KeyNotFoundException("Ticket not found.");
 
-        return MapToResponse(ticket, ticket.Category, ticket.Priority, ticket.Status);
+        var (timeWorkedMinutes, timeToCloseMinutes) = await ComputeTicketMetricsAsync(ticket);
+        return MapToResponse(ticket, ticket.Category, ticket.Priority, ticket.Status, timeWorkedMinutes, timeToCloseMinutes);
     }
 
     public async Task<TicketListResponse> GetTicketsAsync(int page, int pageSize, DateTime? createdFrom = null, DateTime? createdTo = null, Guid? agentUserId = null)
@@ -902,7 +904,7 @@ public class TicketBusinessService : ITicketService
         return statuses.Select(s => new StatusResponse(s.Id, s.Name)).ToList();
     }
 
-    private static TicketResponse MapToResponse(Ticket ticket, Category category, Priority priority, Status status)
+    private static TicketResponse MapToResponse(Ticket ticket, Category category, Priority priority, Status status, long? timeWorkedMinutes = null, long? timeToCloseMinutes = null)
     {
         var activeAssignee = ticket.Assignments?
             .Where(a => a.UnassignedAt == null)
@@ -920,8 +922,49 @@ public class TicketBusinessService : ITicketService
             ticket.CreatedByUserId,
             ticket.CreatedAt,
             ticket.UpdatedAt,
-            activeAssignee?.AgentUserId
+            activeAssignee?.AgentUserId,
+            timeWorkedMinutes,
+            timeToCloseMinutes
         );
+    }
+
+    private async Task<(long? TimeWorkedMinutes, long? TimeToCloseMinutes)> ComputeTicketMetricsAsync(Ticket ticket)
+    {
+        var transitions = (await _unitOfWork.TicketAuditLogs.GetStatusTransitionsAsync(ticket.Id)) ?? Array.Empty<TicketAuditLogEntry>();
+
+        DateTime? resolvedAt = transitions
+            .Where(e => e.NewValue == "Resolved - Pending Confirmation")
+            .Select(e => (DateTime?)e.ChangedAt)
+            .OrderBy(t => t)
+            .FirstOrDefault();
+
+        DateTime? closedAt = transitions
+            .Where(e => e.NewValue == "Closed")
+            .Select(e => (DateTime?)e.ChangedAt)
+            .OrderBy(t => t)
+            .FirstOrDefault();
+
+        long? timeWorkedMinutes = null;
+        if (resolvedAt.HasValue && ticket.Assignments is { Count: > 0 })
+        {
+            var total = 0.0;
+            foreach (var assignment in ticket.Assignments)
+            {
+                var end = assignment.UnassignedAt ?? resolvedAt.Value;
+                if (end > resolvedAt.Value)
+                    end = resolvedAt.Value;
+                if (end <= assignment.AssignedAt)
+                    continue;
+                total += (end - assignment.AssignedAt).TotalMinutes;
+            }
+            timeWorkedMinutes = (long)Math.Round(total);
+        }
+
+        long? timeToCloseMinutes = closedAt.HasValue
+            ? (long)Math.Round((closedAt.Value - ticket.CreatedAt).TotalMinutes)
+            : null;
+
+        return (timeWorkedMinutes, timeToCloseMinutes);
     }
 
     private static AssignmentResponse MapAssignmentToResponse(TicketAssignment assignment)
