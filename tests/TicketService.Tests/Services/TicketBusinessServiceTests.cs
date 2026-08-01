@@ -849,6 +849,87 @@ public class TicketBusinessServiceTests
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    [Theory]
+    [InlineData(2, "In Progress")]
+    [InlineData(3, "Resolved - Pending Confirmation")]
+    [InlineData(4, "Closed")]
+    [InlineData(5, "Resolved by AI")]
+    public async Task UpdateTicketAsync_NonOpenStatus_ThrowsInvalidOperationException(int statusId, string statusName)
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var ticket = new Ticket
+        {
+            Id = ticketId,
+            ReferenceNumber = "TKT-000001",
+            Title = "Title",
+            Description = "Description",
+            CategoryId = 1,
+            PriorityId = 1,
+            StatusId = statusId,
+            CreatedByUserId = Guid.NewGuid(),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = statusId, Name = statusName }
+        };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _statusRepoMock.Setup(r => r.GetByNameAsync("Open")).ReturnsAsync(new Status { Id = 1, Name = "Open" });
+
+        var request = new UpdateTicketRequest("New Title", null, null, null);
+
+        // Act
+        var act = () => _sut.UpdateTicketAsync(ticketId, request, Guid.NewGuid(), "Admin");
+
+        // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*Only open tickets can be edited*");
+
+        _auditLogRepoMock.Verify(r => r.AddAsync(It.IsAny<TicketAuditLogEntry>()), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateTicketAsync_OpenTicket_CreatorCanEdit()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var ticket = new Ticket
+        {
+            Id = ticketId,
+            ReferenceNumber = "TKT-000001",
+            Title = "Title",
+            Description = "Description",
+            CategoryId = 1,
+            PriorityId = 1,
+            StatusId = 1,
+            CreatedByUserId = userId,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 1, Name = "Open" }
+        };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _statusRepoMock.Setup(r => r.GetByNameAsync("Open")).ReturnsAsync(new Status { Id = 1, Name = "Open" });
+
+        var request = new UpdateTicketRequest("Updated Title", null, null, null);
+
+        // Act
+        var result = await _sut.UpdateTicketAsync(ticketId, request, userId, "Employee");
+
+        // Assert
+        result.Title.Should().Be("Updated Title");
+        _auditLogRepoMock.Verify(r => r.AddAsync(It.Is<TicketAuditLogEntry>(e =>
+            e.FieldChanged == "Title" &&
+            e.NewValue == "Updated Title"
+        )), Times.Once);
+    }
+
     [Fact]
     public async Task UnassignAgentAsync_Success_UpdatesUnassignedAt()
     {

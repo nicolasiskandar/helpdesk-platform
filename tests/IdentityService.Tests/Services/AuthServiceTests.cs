@@ -4,6 +4,7 @@ using IdentityService.Domain.Entities;
 using IdentityService.Domain.Interfaces;
 using IdentityService.Infrastructure.Services;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 
@@ -17,6 +18,8 @@ public class AuthServiceTests
     private readonly Mock<IConfiguration> _configMock = new();
     private readonly Mock<IActivityLogRepository> _activityLogRepoMock = new();
     private readonly Mock<IRefreshTokenRepository> _refreshTokenRepoMock = new();
+    private readonly Mock<IHttpClientFactory> _httpClientFactoryMock = new();
+    private readonly Mock<ILogger<AuthService>> _loggerMock = new();
     private readonly AuthService _sut;
 
     public AuthServiceTests()
@@ -30,6 +33,8 @@ public class AuthServiceTests
             _unitOfWorkMock.Object,
             _passwordHasherMock.Object,
             _jwtTokenServiceMock.Object,
+            _httpClientFactoryMock.Object,
+            _loggerMock.Object,
             _configMock.Object);
     }
 
