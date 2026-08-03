@@ -17,6 +17,7 @@ Commands:
   test-ticket            Run Ticket Service tests only
   coverage               Run tests and show code coverage
   clean                  Remove test results and build artifacts
+  jenkins                Start the Jenkins CI/CD controller (Docker-in-Docker)
   help                   Show this help
 EOF
 }
@@ -109,6 +110,14 @@ cmd_clean() {
   echo "Cleaned."
 }
 
+cmd_jenkins() {
+  docker compose -f infra/jenkins/docker-compose.yml up --build -d
+  echo ""
+  echo "Jenkins starting:"
+  echo "  Jenkins UI:     http://localhost:8080"
+  echo "  Setup guide:    infra/jenkins/README.md"
+}
+
 case "${1:-help}" in
   setup)            cmd_setup ;;
   up)               cmd_up ;;
@@ -121,5 +130,6 @@ case "${1:-help}" in
   test-ticket)      cmd_test_ticket ;;
   coverage)         cmd_coverage ;;
   clean)            cmd_clean ;;
+  jenkins)          cmd_jenkins ;;
   help|*)           usage ;;
 esac

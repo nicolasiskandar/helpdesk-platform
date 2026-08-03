@@ -1,0 +1,65 @@
+name: helpdesk-jenkins
+
+services:
+  # ---------------------------------------------------------------------------
+  # Jenkins controller
+  #  - Host docker socket is mounted so the Deploy stage can run `docker compose`
+  #    against the host daemon.
+  #  - /opt/helpdesk-deploy is the deploy workspace, mounted at the SAME path
+  #    inside the controller. The deploy runs compose against the host daemon,
+  #    which resolves ./infra/... bind sources relative to the project dir — so
+  #    the host-visible path must equal the controller-visible path or the daemon
+  #    mounts empty auto-created dirs instead of the real config files.
+  #  - Build/test stages talk to the dind sidecar via DOCKER_HOST.
+  # ---------------------------------------------------------------------------
+  jenkins:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jenkins
+    user: root
+    restart: unless-stopped
+    ports:
+      - "8080:8080"   # Jenkins UI
+      - "50000:50000" # inbound agents (optional)
+    environment:
+      DOCKER_HOST: tcp://docker:2375
+      JAVA_OPTS: -Xmx2048m -Duser.timezone=UTC -Dorg.jenkinsci.plugins.durabletask.BourneShellScript.HEARTBEAT_CHECK_INTERVAL=86400
+    volumes:
+      - jenkins-data:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/helpdesk-deploy:/opt/helpdesk-deploy
+    depends_on:
+      - docker
+    networks:
+      - jenkins-network
+
+  # ---------------------------------------------------------------------------
+  # DinD sidecar — isolated CI daemon. Shares jenkins-data so the controller's
+  # workspace (/var/jenkins_home/workspace) is visible to the daemon, which is
+  # what makes ephemeral build/test agents + `docker build` work. /var/lib/docker
+  # is on a named volume so pulled images + build/test caches (nuget-cache,
+  # pnpm-store, corepack-cache) survive daemon restarts.
+  # ---------------------------------------------------------------------------
+  docker:
+    image: docker:dind
+    container_name: jenkins-docker
+    privileged: true
+    restart: unless-stopped
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+    volumes:
+      - jenkins-data:/var/jenkins_home
+      - jenkins-dind-certs:/certs
+      - jenkins-dind-storage:/var/lib/docker
+    networks:
+      - jenkins-network
+
+volumes:
+  jenkins-data:
+  jenkins-dind-certs:
+  jenkins-dind-storage:
+
+networks:
+  jenkins-network:
+    driver: bridge

@@ -400,6 +400,39 @@ Log format:
 [14:32:01 INF] HTTP GET /api/tickets responded 200 in 45ms [abc123] TraceId=00-abc123...
 ```
 
+## CI/CD (Jenkins)
+
+A declarative `Jenkinsfile` drives the CI/CD pipeline. Jenkins runs in Docker
+(`infra/jenkins/`) with a `docker:dind` sidecar — see
+[`infra/jenkins/README.md`](infra/jenkins/README.md) for the full setup guide.
+
+```bash
+./scripts.sh jenkins   # Start the Jenkins controller (UI at http://localhost:8080)
+```
+
+Every branch/PR gets: backend build (gateway + identity + ticket + notification),
+all 3 xUnit test suites, and a frontend build. `main` and version tags
+additionally build & push the 5 Docker images to GHCR
+(`ghcr.io/nicolasiskandar/helpdesk-platform-*`; `main` → `latest`, version tags → tag
+name) and deploy the stack on the host.
+
+Deployment specifics:
+
+- **Two daemons**: an isolated `docker:dind` sidecar handles build/test and image
+  build/push; the **host Docker socket** (`unix:///var/run/docker.sock`) is used only
+  for the deploy step.
+- The controller mounts `/opt/helpdesk-deploy:/opt/helpdesk-deploy` at the **same
+  path** on host and controller so the host daemon resolves compose's `./infra/...`
+  bind sources correctly.
+- The repo is synced to the deploy workspace via `git archive` (committed tree only),
+  and the `.env` is restored from the **base64-encoded** `helpdesk-env` secret
+  (Jenkins' secret-text field is single-line). `remote-deploy.sh` validates the 6
+  required keys, generates missing RSA certs, and runs `up --no-build`.
+- Backend build/test stages run **sequentially** because they share a `nuget-cache`
+  volume that isn't concurrency-safe; the frontend stage still runs in parallel.
+
+See [`infra/jenkins/README.md`](infra/jenkins/README.md) for the full setup guide.
+
 ## Database Tables
 
 ### Identity Service
@@ -431,11 +464,18 @@ Log format:
 ```
 helpdesk-platform/
 ├── compose.yaml
+├── Jenkinsfile                   # CI/CD pipeline (Jenkins)
 ├── .env
 ├── docs/ARCHITECTURE.md
 ├── infra/
 │   ├── .env.example
 │   ├── certs/                    # RSA keys (gitignored)
+│   ├── jenkins/                  # Jenkins controller (Docker-in-Docker)
+│   │   ├── Dockerfile
+│   │   ├── plugins.txt
+│   │   ├── docker-compose.yml
+│   │   ├── README.md
+│   │   └── deploy/               # Image-only compose override + remote-deploy.sh
 │   ├── jaeger/
 │   │   └── jaeger.yml            # Jaeger v2 config (OTLP, in-memory storage)
 │   ├── otel-collector/
@@ -480,6 +520,7 @@ Unit tests use **xUnit**, **Moq**, and **FluentAssertions**.
 ./scripts.sh test             # Run all unit tests (201 tests)
 ./scripts.sh coverage         # Run tests and show code coverage
 ./scripts.sh clean            # Remove test results and build artifacts
+./scripts.sh jenkins          # Start the Jenkins CI/CD controller
 ./scripts.sh help             # Show all available commands
 ```
 

@@ -1,0 +1,25 @@
+# Image-only override for CI/CD deploys.
+#
+# This replaces the `build:` sections in the root compose.yaml with prebuilt
+# images from GHCR. It is NOT meant to be used for local development — only by
+# infra/jenkins/deploy/remote-deploy.sh (which runs `docker compose up --no-build`).
+#
+# Usage:
+#   IMAGE_TAG=1.2.3 docker compose -f compose.yaml \
+#     -f infra/jenkins/deploy/docker-compose.images.yml up -d --no-build
+
+services:
+  gateway:
+    image: ghcr.io/nicolasiskandar/helpdesk-platform-gateway:${IMAGE_TAG:-latest}
+
+  identity-service:
+    image: ghcr.io/nicolasiskandar/helpdesk-platform-identity-service:${IMAGE_TAG:-latest}
+
+  ticket-service:
+    image: ghcr.io/nicolasiskandar/helpdesk-platform-ticket-service:${IMAGE_TAG:-latest}
+
+  notification-service:
+    image: ghcr.io/nicolasiskandar/helpdesk-platform-notification-service:${IMAGE_TAG:-latest}
+
+  frontend:
+    image: ghcr.io/nicolasiskandar/helpdesk-platform-frontend:${IMAGE_TAG:-latest}

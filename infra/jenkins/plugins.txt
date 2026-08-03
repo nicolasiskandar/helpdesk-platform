@@ -1,0 +1,19 @@
+# Core
+workflow-aggregator
+workflow-multibranch
+git
+pipeline-stage-view
+
+# Docker integration (ephemeral agents, registry push)
+docker-workflow
+docker-plugin
+
+# Credentials
+credentials-binding
+plain-credentials
+
+# UX / hygiene
+timestamper
+build-timeout
+ws-cleanup
+ansicolor
