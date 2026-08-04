@@ -99,7 +99,7 @@ const STATUS_MAP: Record<string, TicketStatus> = {
   "In Progress": "In Progress",
   "Resolved - Pending Confirmation": "Pending Resolution",
   Closed: "Closed",
-  "Resolved by AI": "Closed",
+  "Resolved by AI": "Resolved",
 }
 
 const SLA_HOURS: Record<TicketPriority, number> = {
@@ -258,7 +258,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     async (id: string, patch: Partial<Ticket>) => {
       if (patch.status) {
         const STATUS_IDS: Record<TicketStatus, number> = {
-          Open: 1, "In Progress": 2, "Pending Resolution": 3, Closed: 4,
+          Open: 1, "In Progress": 2, "Pending Resolution": 3, Resolved: 5, Closed: 4,
         }
         const updated = await apiChangeStatus(id, STATUS_IDS[patch.status])
         setTickets((prev) =>
@@ -561,6 +561,8 @@ export function statusBadgeClass(status: TicketStatus): string {
       return "bg-primary/10 text-primary border-primary/25"
     case "Pending Resolution":
       return "bg-warning/15 text-warning-foreground border-warning/30"
+    case "Resolved":
+      return "bg-success/10 text-success border-success/25"
     case "Closed":
       return "bg-muted text-muted-foreground border-border"
   }

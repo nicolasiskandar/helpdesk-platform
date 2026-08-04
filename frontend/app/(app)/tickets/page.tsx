@@ -27,6 +27,7 @@ const STATUSES: TicketStatus[] = [
   "Open",
   "In Progress",
   "Pending Resolution",
+  "Resolved",
   "Closed",
 ]
 const PRIORITIES: TicketPriority[] = ["Critical", "High", "Medium", "Low"]
@@ -92,7 +93,7 @@ function getDateRangeBounds(range: string): { from: Date; to: Date } | null {
 export default function TicketsPage() {
   const { tickets, role, ticketsLoading } = useStore()
   const [query, setQuery] = React.useState("")
-  const [status, setStatus] = React.useState<string>("all")
+  const [statuses, setStatuses] = React.useState<string[]>([])
   const [priority, setPriority] = React.useState("")
   const [category, setCategory] = React.useState("")
   const [dateRange, setDateRange] = React.useState("")
@@ -101,7 +102,7 @@ export default function TicketsPage() {
 
   const filtered = React.useMemo(() => {
     return tickets.filter((t) => {
-      if (status !== "all" && t.status !== status) return false
+      if (statuses.length > 0 && !statuses.includes(t.status)) return false
       if (priority !== "" && t.priority !== priority) return false
       if (category !== "" && t.category !== category) return false
 
@@ -133,16 +134,16 @@ export default function TicketsPage() {
       }
       return true
     })
-  }, [tickets, status, priority, category, query, dateRange, customFrom, customTo])
+  }, [tickets, statuses, priority, category, query, dateRange, customFrom, customTo])
 
   const activeFilters =
-    (status !== "all" ? 1 : 0) +
+    (statuses.length > 0 ? 1 : 0) +
     (priority !== "" ? 1 : 0) +
     (category !== "" ? 1 : 0) +
     (dateRange !== "" ? 1 : 0)
 
   function clearFilters() {
-    setStatus("all")
+    setStatuses([])
     setPriority("")
     setCategory("")
     setQuery("")
@@ -176,8 +177,9 @@ export default function TicketsPage() {
 
       {/* Status quick filter */}
       <ToggleGroup
-        value={status === "all" ? [] : [status]}
-        onValueChange={(v: string[]) => setStatus(v[0] ?? "all")}
+        multiple
+        value={statuses}
+        onValueChange={(v: string[]) => setStatuses(v)}
         variant="outline"
         className="flex-wrap justify-start"
       >

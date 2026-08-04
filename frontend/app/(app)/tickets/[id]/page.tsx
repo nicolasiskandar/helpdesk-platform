@@ -79,6 +79,7 @@ const STATUS_IDS: Record<TicketStatus, number> = {
   Open: 1,
   "In Progress": 2,
   "Pending Resolution": 3,
+  Resolved: 5,
   Closed: 4,
 }
 

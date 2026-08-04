@@ -13,6 +13,7 @@ export type TicketStatus =
   | "Open"
   | "In Progress"
   | "Pending Resolution"
+  | "Resolved"
   | "Closed"
 
 export interface User {
