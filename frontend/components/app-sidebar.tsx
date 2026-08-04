@@ -1,5 +1,6 @@
 "use client"
 
+import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
@@ -35,6 +36,7 @@ import {
 } from "@/components/ui/sidebar"
 import { useStore } from "@/lib/store"
 import type { Role } from "@/lib/types"
+import { apiGetStatistics } from "@/lib/api"
 
 interface NavItem {
   title: string
@@ -134,6 +136,22 @@ const adminNav: NavItem[] = [
 export function AppSidebar() {
   const pathname = usePathname()
   const { role, tickets, unreadCount } = useStore()
+  const [slaCompliance, setSlaCompliance] = React.useState<number | null>(null)
+
+  React.useEffect(() => {
+    if (role !== "admin" && role !== "manager") return
+    let cancelled = false
+    apiGetStatistics()
+      .then((data) => {
+        if (!cancelled) setSlaCompliance(data.overview.slaCompliance)
+      })
+      .catch(() => {
+        /* analytics unavailable */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [role])
 
   const openCount = tickets.filter(
     (t) => t.status === "Open" || t.status === "In Progress"
@@ -259,13 +277,17 @@ export function AppSidebar() {
         ) : null}
       </SidebarContent>
       <SidebarFooter>
-        <div className="rounded-lg border border-sidebar-border bg-sidebar-accent/40 p-3">
-          <p className="text-xs font-medium text-sidebar-accent-foreground">
-            SLA Compliance
-          </p>
-          <p className="mt-0.5 text-lg font-semibold tabular-nums">96.4%</p>
-          <p className="text-xs text-muted-foreground">Last 30 days</p>
-        </div>
+        {role === "admin" || role === "manager" ? (
+          <div className="rounded-lg border border-sidebar-border bg-sidebar-accent/40 p-3">
+            <p className="text-xs font-medium text-sidebar-accent-foreground">
+              SLA Compliance
+            </p>
+            <p className="mt-0.5 text-lg font-semibold tabular-nums">
+              {slaCompliance != null ? `${slaCompliance}%` : "—"}
+            </p>
+            <p className="text-xs text-muted-foreground">Last 6 months</p>
+          </div>
+        ) : null}
       </SidebarFooter>
     </Sidebar>
   )

@@ -8,6 +8,7 @@ public class TicketAttachment
     public string FileUrl { get; set; } = string.Empty;
     public Guid UploadedByUserId { get; set; }
     public DateTime UploadedAt { get; set; } = DateTime.UtcNow;
+    public long Size { get; set; }
 
     public Ticket Ticket { get; set; } = null!;
 }

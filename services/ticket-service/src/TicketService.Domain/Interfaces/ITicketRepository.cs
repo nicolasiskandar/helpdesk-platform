@@ -14,6 +14,8 @@ public interface ITicketRepository
     Task<int> GetCountByAgentUserIdAsync(Guid agentUserId, DateTime? createdFrom = null, DateTime? createdTo = null);
     Task<IReadOnlyList<Ticket>> GetOpenUnassignedTicketsAsync(int page, int pageSize);
     Task<int> GetOpenUnassignedTicketsCountAsync();
+    Task<IReadOnlyList<Ticket>> GetForAnalyticsAsync(DateTime from, DateTime to);
+    Task<int> GetUnassignedCountAsync(DateTime from, DateTime to);
     Task AddAsync(Ticket ticket);
     Task UpdateAsync(Ticket ticket);
     Task DeleteAsync(Ticket ticket);

@@ -10,6 +10,7 @@ public interface IUnitOfWork : IDisposable
     ITicketCommentRepository TicketComments { get; }
     ITicketAttachmentRepository TicketAttachments { get; }
     ITicketAuditLogRepository TicketAuditLogs { get; }
+    IKbArticleRepository KbArticles { get; }
     IOutboxRepository Outbox { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

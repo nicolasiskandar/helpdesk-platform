@@ -19,6 +19,7 @@ public class UnitOfWork : IUnitOfWork
         TicketComments = new TicketCommentRepository(context);
         TicketAttachments = new TicketAttachmentRepository(context);
         TicketAuditLogs = new TicketAuditLogRepository(context);
+        KbArticles = new KbArticleRepository(context);
         Outbox = new OutboxRepository(context);
     }
 
@@ -30,6 +31,7 @@ public class UnitOfWork : IUnitOfWork
     public ITicketCommentRepository TicketComments { get; }
     public ITicketAttachmentRepository TicketAttachments { get; }
     public ITicketAuditLogRepository TicketAuditLogs { get; }
+    public IKbArticleRepository KbArticles { get; }
     public IOutboxRepository Outbox { get; }
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)

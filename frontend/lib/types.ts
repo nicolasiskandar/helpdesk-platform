@@ -90,11 +90,12 @@ export interface NotificationItem {
 export interface KbArticle {
   id: string
   title: string
-  category: TicketCategory
+  category: string
   excerpt: string
   body: string
   views: number
+  createdAt: string
   updatedAt: string
   status: "published" | "draft"
-  author: string
+  authorUserId: string
 }

@@ -187,6 +187,29 @@ public class TicketRepository : ITicketRepository
             .CountAsync();
     }
 
+    public async Task<IReadOnlyList<Ticket>> GetForAnalyticsAsync(DateTime from, DateTime to)
+    {
+        return await _context.Tickets
+            .AsNoTracking()
+            .Where(t => t.CreatedAt >= from && t.CreatedAt < to)
+            .Select(t => new Ticket
+            {
+                Id = t.Id,
+                CreatedAt = t.CreatedAt,
+                StatusId = t.StatusId,
+                PriorityId = t.PriorityId
+            })
+            .ToListAsync();
+    }
+
+    public async Task<int> GetUnassignedCountAsync(DateTime from, DateTime to)
+    {
+        return await _context.Tickets
+            .Where(t => t.CreatedAt >= from && t.CreatedAt < to)
+            .Where(t => !_context.TicketAssignments.Any(a => a.TicketId == t.Id && a.UnassignedAt == null))
+            .CountAsync();
+    }
+
     public async Task AddAsync(Ticket ticket)
     {
         await _context.Tickets.AddAsync(ticket);

@@ -15,6 +15,7 @@ public class TicketDbContext : DbContext
     public DbSet<TicketComment> TicketComments => Set<TicketComment>();
     public DbSet<TicketAttachment> TicketAttachments => Set<TicketAttachment>();
     public DbSet<TicketAuditLogEntry> TicketAuditLogs => Set<TicketAuditLogEntry>();
+    public DbSet<KbArticle> KbArticles => Set<KbArticle>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -118,6 +119,7 @@ public class TicketDbContext : DbContext
             entity.Property(e => e.FileName).IsRequired().HasMaxLength(255);
             entity.Property(e => e.FileUrl).IsRequired().HasMaxLength(2000);
             entity.Property(e => e.UploadedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.Property(e => e.Size).HasDefaultValue(0);
 
             entity.HasOne(e => e.Ticket)
                 .WithMany(t => t.Attachments)
@@ -151,6 +153,20 @@ public class TicketDbContext : DbContext
 
             entity.HasIndex(e => e.ProcessedAt);
             entity.HasIndex(e => new { e.ProcessedAt, e.RetryCount });
+        });
+
+        modelBuilder.Entity<KbArticle>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Title).IsRequired().HasMaxLength(200);
+            entity.Property(e => e.Excerpt).HasMaxLength(500);
+            entity.Property(e => e.Body).IsRequired().HasColumnType("nvarchar(max)");
+            entity.Property(e => e.Category).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Status).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.Views).HasDefaultValue(0);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.HasIndex(e => e.Category);
         });
 
         SeedLookupData(modelBuilder);

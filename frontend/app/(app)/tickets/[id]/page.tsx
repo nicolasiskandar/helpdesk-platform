@@ -56,11 +56,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { StatusBadge, PriorityIndicator } from "@/components/ticket-badges"
+import { AttachmentUpload } from "@/components/attachment-upload"
+import { AttachmentPreview, isImageFile } from "@/components/attachment-preview"
 import { useStore } from "@/lib/store"
-import { formatRelative, formatDateTime, formatDuration } from "@/lib/analytics"
+import { formatRelative, formatDateTime, formatDuration, formatFileSize } from "@/lib/analytics"
 import type { Ticket, Comment, TicketStatus, TicketCategory, TicketPriority } from "@/lib/types"
 import type { AuditLogEntryResponse, AttachmentResponse, CategoryResponse, PriorityResponse, UserResponse } from "@/lib/api"
-import { apiGetTicketByReference, apiGetCategories, apiGetPriorities, apiAttachmentDownloadUrl, apiGetUsers, apiUnassignAgent, apiUploadAttachment, apiEscalateTicket } from "@/lib/api"
+import { apiGetTicketByReference, apiGetCategories, apiGetPriorities, apiAttachmentDownloadUrl, apiGetUsers, apiUnassignAgent, apiUploadAttachment, apiEscalateTicket, apiDeleteAttachment } from "@/lib/api"
 
 function initials(name: string) {
   return name
@@ -139,23 +141,45 @@ export default function TicketDetailPage() {
   const [categories, setCategories] = React.useState<CategoryResponse[]>([])
   const [priorities, setPriorities] = React.useState<PriorityResponse[]>([])
   const [editFiles, setEditFiles] = React.useState<File[]>([])
-  const editFileInputRef = React.useRef<HTMLInputElement>(null)
 
-  const MAX_FILE_SIZE = 10 * 1024 * 1024
+  const [uploadFiles, setUploadFiles] = React.useState<File[]>([])
+  const [uploading, setUploading] = React.useState(false)
 
-  function handleEditFilesSelected(e: React.ChangeEvent<HTMLInputElement>) {
-    const selected = Array.from(e.target.files || [])
-    const valid = selected.filter((f) => {
-      if (f.size > MAX_FILE_SIZE) { toast.warning(`${f.name} exceeds 10 MB limit`); return false }
-      return true
-    })
-    setEditFiles((prev) => [...prev, ...valid])
-    if (editFileInputRef.current) editFileInputRef.current.value = ""
+  async function handleUploadAttachments() {
+    if (!ticket || uploadFiles.length === 0 || uploading) return
+    setUploading(true)
+    try {
+      for (const file of uploadFiles) {
+        await apiUploadAttachment(ticket.id, file)
+      }
+      const att = await loadAttachments(ticket.id)
+      setAttachments(att)
+      toast.success(
+        `Uploaded ${uploadFiles.length} file${uploadFiles.length === 1 ? "" : "s"}`
+      )
+      setUploadFiles([])
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to upload attachments.")
+    } finally {
+      setUploading(false)
+    }
   }
 
-  function removeEditFile(index: number) {
-    setEditFiles((prev) => prev.filter((_, i) => i !== index))
+  async function handleDeleteAttachment(attachmentId: string) {
+    if (!ticket) return
+    try {
+      await apiDeleteAttachment(ticket.id, attachmentId)
+      setAttachments((prev) => prev.filter((a) => a.id !== attachmentId))
+      toast.success("Attachment deleted")
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to delete attachment.")
+    }
   }
+
+  const canDeleteAttachment = (a: AttachmentResponse) =>
+    role === "admin" ||
+    (ticket?.requesterId != null && ticket.requesterId === currentUserId) ||
+    a.uploadedByUserId === currentUserId
 
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
@@ -851,7 +875,23 @@ export default function TicketDetailPage() {
 
             <TabsContent value="attachments">
               <Card>
-                <CardContent className="p-4">
+                <CardContent className="flex flex-col gap-4 p-4">
+                  <AttachmentUpload
+                    files={uploadFiles}
+                    onChange={setUploadFiles}
+                    label={uploadFiles.length > 0 ? undefined : "Attachments"}
+                  />
+                  {uploadFiles.length > 0 && (
+                    <div className="flex justify-end">
+                      <Button
+                        size="sm"
+                        onClick={handleUploadAttachments}
+                        disabled={uploading}
+                      >
+                        {uploading ? "Uploading..." : "Upload Files"}
+                      </Button>
+                    </div>
+                  )}
                   {attachments.length === 0 ? (
                     <p className="py-4 text-center text-sm text-muted-foreground">
                       No attachments.
@@ -859,32 +899,56 @@ export default function TicketDetailPage() {
                   ) : (
                     <div className="flex flex-col gap-2">
                       {attachments.map((a) => (
-                        <button
+                        <div
                           key={a.id}
-                          type="button"
-                          onClick={async () => {
-                            const res = await fetch(apiAttachmentDownloadUrl(ticket.id, a.id), {
-                              headers: { Authorization: `Bearer ${sessionStorage.getItem("accessToken") || ""}` },
-                            })
-                            if (!res.ok) return
-                            const blob = await res.blob()
-                            const url = URL.createObjectURL(blob)
-                            const link = document.createElement("a")
-                            link.href = url
-                            link.download = a.fileName
-                            link.click()
-                            URL.revokeObjectURL(url)
-                          }}
-                          className="flex items-center gap-3 rounded-md border p-3 text-left transition-colors hover:bg-muted/50"
+                          className="flex items-center gap-3 rounded-md border p-3"
                         >
-                          <PaperclipIcon className="size-4 text-muted-foreground shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{a.fileName}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {formatDateTime(a.uploadedAt)}
-                            </p>
-                          </div>
-                        </button>
+                          <AttachmentPreview
+                            ticketId={ticket.id}
+                            attachmentId={a.id}
+                            fileName={a.fileName}
+                          />
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const res = await fetch(apiAttachmentDownloadUrl(ticket.id, a.id), {
+                                headers: { Authorization: `Bearer ${sessionStorage.getItem("accessToken") || ""}` },
+                              })
+                              if (!res.ok) return
+                              const blob = await res.blob()
+                              const url = URL.createObjectURL(blob)
+                              const link = document.createElement("a")
+                              link.href = url
+                              link.download = a.fileName
+                              link.click()
+                              URL.revokeObjectURL(url)
+                            }}
+                            className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                          >
+                            {!isImageFile(a.fileName) && (
+                              <PaperclipIcon className="size-4 shrink-0 text-muted-foreground" />
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium">
+                                {a.fileName}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {a.size > 0 ? `${formatFileSize(a.size)} · ` : ""}
+                                {formatDateTime(a.uploadedAt)}
+                              </p>
+                            </div>
+                          </button>
+                          {canDeleteAttachment(a) && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteAttachment(a.id)}
+                              className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                              aria-label={`Delete ${a.fileName}`}
+                            >
+                              <TrashIcon className="size-4" />
+                            </button>
+                          )}
+                        </div>
                       ))}
                     </div>
                   )}
@@ -1169,43 +1233,7 @@ export default function TicketDetailPage() {
               </div>
             </div>
             <div className="flex flex-col gap-2">
-              <Label>Attachments</Label>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => editFileInputRef.current?.click()}
-                >
-                  <PaperclipIcon />
-                  Add files
-                </Button>
-                <span className="text-xs text-muted-foreground">Max 10 MB per file</span>
-              </div>
-              <input
-                ref={editFileInputRef}
-                type="file"
-                multiple
-                className="hidden"
-                onChange={handleEditFilesSelected}
-              />
-              {editFiles.length > 0 && (
-                <div className="flex flex-col gap-1.5 mt-1">
-                  {editFiles.map((file, i) => (
-                    <div key={`${file.name}-${i}`} className="flex items-center justify-between rounded-md border px-3 py-1.5 text-sm">
-                      <span className="truncate mr-2">{file.name}</span>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-muted-foreground text-xs">
-                          {file.size < 1024 ? `${file.size} B` : file.size < 1024 * 1024 ? `${(file.size / 1024).toFixed(1)} KB` : `${(file.size / (1024 * 1024)).toFixed(1)} MB`}
-                        </span>
-                        <button type="button" onClick={() => removeEditFile(i)} className="text-muted-foreground hover:text-foreground">
-                          <XIcon className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <AttachmentUpload files={editFiles} onChange={setEditFiles} />
             </div>
           </div>
           <DialogFooter>

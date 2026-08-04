@@ -15,7 +15,7 @@ const config = {
 export function ResolutionChart({
   data,
 }: {
-  data: { month: string; hours: number }[]
+  data: { month: string; hours: number | null | undefined }[]
 }) {
   return (
     <ChartContainer config={config} className="h-[280px] w-full">

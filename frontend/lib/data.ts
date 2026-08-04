@@ -2,7 +2,6 @@ import type {
   User,
   Ticket,
   NotificationItem,
-  KbArticle,
   Role,
   TicketCategory,
   TicketPriority,
@@ -603,79 +602,6 @@ export const notifications: NotificationItem[] = [
     ticketRef: "HLX-4802",
     createdAt: daysAgo(1, 0),
     read: true,
-  },
-]
-
-export const kbArticles: KbArticle[] = [
-  {
-    id: "kb-1",
-    title: "How to connect to the company VPN",
-    category: "Network",
-    excerpt:
-      "Step-by-step guide to installing and connecting to the corporate VPN from Windows and macOS.",
-    body: "1. Download the VPN client from the software portal.\n2. Sign in with your company credentials.\n3. Select the nearest gateway and click Connect.\n4. If the connection drops repeatedly, switch the protocol to TCP under Settings.\n5. For MFA prompts, approve the request in your authenticator app.",
-    views: 1284,
-    updatedAt: daysAgo(3, 0),
-    status: "published",
-    author: "Marcus Reed",
-  },
-  {
-    id: "kb-2",
-    title: "Resetting your password",
-    category: "Access",
-    excerpt:
-      "Reset a forgotten password or unlock your account using the self-service portal.",
-    body: "1. Go to the self-service password portal.\n2. Enter your work email and complete verification.\n3. Choose a new password meeting the complexity policy.\n4. If your account is locked, wait 15 minutes or contact IT support.",
-    views: 2051,
-    updatedAt: daysAgo(6, 0),
-    status: "published",
-    author: "Priya Nair",
-  },
-  {
-    id: "kb-3",
-    title: "Fixing Outlook crashes and freezes",
-    category: "Software",
-    excerpt:
-      "Common troubleshooting steps when Outlook becomes unresponsive or crashes on launch.",
-    body: "1. Start Outlook in Safe Mode (hold Ctrl while launching).\n2. Disable recently added add-ins.\n3. Repair your Office installation from Apps & Features.\n4. Create a new Outlook profile if the issue persists.",
-    views: 876,
-    updatedAt: daysAgo(1, 0),
-    status: "published",
-    author: "Marcus Reed",
-  },
-  {
-    id: "kb-4",
-    title: "Requesting access to shared drives",
-    category: "Access",
-    excerpt:
-      "How to request and get approval for network shared folder access.",
-    body: "1. Open a new ticket under the Access category.\n2. Specify the exact folder path and level of access needed.\n3. Include your manager's approval.\n4. IT will provision access once the data owner signs off.",
-    views: 543,
-    updatedAt: daysAgo(8, 0),
-    status: "published",
-    author: "Priya Nair",
-  },
-  {
-    id: "kb-5",
-    title: "Setting up a new printer",
-    category: "Hardware",
-    excerpt: "Add a network printer to your workstation in a few steps.",
-    body: "1. Open Settings > Printers & Scanners.\n2. Click Add a printer.\n3. Select the printer by its location code (e.g. HP-3F-02).\n4. Install drivers if prompted.",
-    views: 421,
-    updatedAt: daysAgo(10, 0),
-    status: "published",
-    author: "Diego Fernández",
-  },
-  {
-    id: "kb-6",
-    title: "Identifying and reporting phishing emails",
-    category: "Other",
-    excerpt: "Learn to spot phishing attempts and report them to security.",
-    body: "1. Check the sender's actual email address.\n2. Hover over links before clicking.\n3. Be wary of urgent requests and unexpected attachments.\n4. Use the Report Phishing button in Outlook to notify security.",
-    views: 967,
-    updatedAt: daysAgo(2, 0),
-    status: "draft",
-    author: "Priya Nair",
   },
 ]
 

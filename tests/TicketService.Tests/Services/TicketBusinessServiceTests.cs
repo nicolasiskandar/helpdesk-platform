@@ -1344,6 +1344,258 @@ public class TicketBusinessServiceTests
     }
 
     [Fact]
+    public async Task UploadAttachmentAsync_Success_CapturesSizeAndSavesFile()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var ticket = new Ticket
+        {
+            Id = ticketId,
+            ReferenceNumber = "TKT-000001",
+            Title = "Test",
+            CategoryId = 1,
+            PriorityId = 1,
+            StatusId = 1,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 1, Name = "Open" }
+        };
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _fileStorageMock.Setup(f => f.SaveFileAsync(It.IsAny<Stream>(), "photo.png", ticketId.ToString()))
+            .ReturnsAsync($"{ticketId}/stored.png");
+
+        using var stream = new MemoryStream(new byte[1234]);
+
+        // Act
+        var result = await _sut.UploadAttachmentAsync(ticketId, stream, "photo.png", userId);
+
+        // Assert
+        result.FileName.Should().Be("photo.png");
+        result.Size.Should().Be(1234);
+        _fileStorageMock.Verify(f => f.SaveFileAsync(stream, "photo.png", ticketId.ToString()), Times.Once);
+        _attachmentRepoMock.Verify(r => r.AddAsync(It.Is<TicketAttachment>(a => a.Size == 1234)), Times.Once);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UploadAttachmentAsync_DisallowedExtension_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var ticket = new Ticket
+        {
+            Id = ticketId,
+            ReferenceNumber = "TKT-000001",
+            Title = "Test",
+            CategoryId = 1,
+            PriorityId = 1,
+            StatusId = 1,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 1, Name = "Open" }
+        };
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+
+        using var stream = new MemoryStream(new byte[10]);
+
+        // Act
+        var act = () => _sut.UploadAttachmentAsync(ticketId, stream, "malware.exe", userId);
+
+        // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*not allowed*");
+        _fileStorageMock.Verify(f => f.SaveFileAsync(It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        _attachmentRepoMock.Verify(r => r.AddAsync(It.IsAny<TicketAttachment>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeleteAttachmentAsync_Success_DeletesFileRowAndWritesAudit()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var uploaderId = Guid.NewGuid();
+        var attachmentId = Guid.NewGuid();
+        var ticket = new Ticket
+        {
+            Id = ticketId,
+            ReferenceNumber = "TKT-000001",
+            Title = "Test",
+            CategoryId = 1,
+            PriorityId = 1,
+            StatusId = 1,
+            CreatedByUserId = Guid.NewGuid(),
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 1, Name = "Open" }
+        };
+        var attachment = new TicketAttachment
+        {
+            Id = attachmentId,
+            TicketId = ticketId,
+            FileName = "photo.png",
+            FileUrl = $"{ticketId}/stored.png",
+            UploadedByUserId = uploaderId,
+            UploadedAt = DateTime.UtcNow
+        };
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _attachmentRepoMock.Setup(r => r.GetByIdAsync(attachmentId)).ReturnsAsync(attachment);
+
+        // Act
+        await _sut.DeleteAttachmentAsync(ticketId, attachmentId, uploaderId, "IT Support Agent");
+
+        // Assert
+        _fileStorageMock.Verify(f => f.DeleteFileAsync($"{ticketId}/stored.png"), Times.Once);
+        _attachmentRepoMock.Verify(r => r.DeleteAsync(attachment), Times.Once);
+        _auditLogRepoMock.Verify(r => r.AddAsync(It.Is<TicketAuditLogEntry>(e =>
+            e.FieldChanged == "Attachment" && e.NewValue == "Attachment deleted")), Times.Once);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteAttachmentAsync_AdminCanDeleteAnyAttachment()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var adminId = Guid.NewGuid();
+        var attachmentId = Guid.NewGuid();
+        var ticket = new Ticket
+        {
+            Id = ticketId,
+            ReferenceNumber = "TKT-000001",
+            Title = "Test",
+            CategoryId = 1,
+            PriorityId = 1,
+            StatusId = 1,
+            CreatedByUserId = Guid.NewGuid(),
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 1, Name = "Open" }
+        };
+        var attachment = new TicketAttachment
+        {
+            Id = attachmentId,
+            TicketId = ticketId,
+            FileName = "photo.png",
+            FileUrl = $"{ticketId}/stored.png",
+            UploadedByUserId = Guid.NewGuid()
+        };
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _attachmentRepoMock.Setup(r => r.GetByIdAsync(attachmentId)).ReturnsAsync(attachment);
+
+        // Act
+        await _sut.DeleteAttachmentAsync(ticketId, attachmentId, adminId, "Admin");
+
+        // Assert
+        _fileStorageMock.Verify(f => f.DeleteFileAsync($"{ticketId}/stored.png"), Times.Once);
+        _attachmentRepoMock.Verify(r => r.DeleteAsync(attachment), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteAttachmentAsync_NoPermission_ThrowsUnauthorizedAccessException()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var otherUserId = Guid.NewGuid();
+        var attachmentId = Guid.NewGuid();
+        var ticket = new Ticket
+        {
+            Id = ticketId,
+            ReferenceNumber = "TKT-000001",
+            Title = "Test",
+            CategoryId = 1,
+            PriorityId = 1,
+            StatusId = 1,
+            CreatedByUserId = Guid.NewGuid(),
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 1, Name = "Open" }
+        };
+        var attachment = new TicketAttachment
+        {
+            Id = attachmentId,
+            TicketId = ticketId,
+            FileName = "photo.png",
+            FileUrl = $"{ticketId}/stored.png",
+            UploadedByUserId = Guid.NewGuid()
+        };
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _attachmentRepoMock.Setup(r => r.GetByIdAsync(attachmentId)).ReturnsAsync(attachment);
+
+        // Act
+        var act = () => _sut.DeleteAttachmentAsync(ticketId, attachmentId, otherUserId, "Employee");
+
+        // Assert
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+        _fileStorageMock.Verify(f => f.DeleteFileAsync(It.IsAny<string>()), Times.Never);
+        _attachmentRepoMock.Verify(r => r.DeleteAsync(It.IsAny<TicketAttachment>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetStatisticsAsync_ReturnsAggregatesForWindow()
+    {
+        // Arrange
+        var now = DateTime.UtcNow;
+        var firstOfMonth = new DateTime(now.Year, now.Month, 1);
+        var from = firstOfMonth.AddMonths(-5);
+        var ticketId1 = Guid.NewGuid();
+        var ticketId2 = Guid.NewGuid();
+        var tickets = new List<Ticket>
+        {
+            new() { Id = ticketId1, CreatedAt = firstOfMonth.AddDays(1), StatusId = 1, PriorityId = 4 },
+            new() { Id = ticketId2, CreatedAt = firstOfMonth.AddDays(2), StatusId = 4, PriorityId = 1 }
+        };
+        var transitions = new List<TicketAuditLogEntry>
+        {
+            new() { Id = Guid.NewGuid(), TicketId = ticketId2, NewValue = "Closed", ChangedAt = firstOfMonth.AddDays(3) }
+        };
+        _ticketRepoMock.Setup(r => r.GetForAnalyticsAsync(from, It.IsAny<DateTime>())).ReturnsAsync(tickets);
+        _ticketRepoMock.Setup(r => r.GetUnassignedCountAsync(from, It.IsAny<DateTime>())).ReturnsAsync(1);
+        _auditLogRepoMock.Setup(r => r.GetResolutionTransitionsAsync(from, It.IsAny<DateTime>())).ReturnsAsync(transitions);
+
+        // Act
+        var result = await _sut.GetStatisticsAsync();
+
+        // Assert
+        result.Overview.Total.Should().Be(2);
+        result.Overview.Open.Should().Be(1);
+        result.Overview.Resolved.Should().Be(1);
+        result.Overview.CriticalOpen.Should().Be(1);
+        result.Overview.Unassigned.Should().Be(1);
+        result.Overview.ResolutionRate.Should().Be(50.0);
+        result.Overview.SlaCompliance.Should().Be(100.0);
+        result.VolumeTrend.Should().HaveCount(6);
+        result.VolumeTrend[^1].Created.Should().Be(2);
+        result.VolumeTrend[^1].Resolved.Should().Be(1);
+        result.ResolutionTrend.Should().HaveCount(6);
+        result.ResolutionTrend[^1].AverageHours.Should().BeApproximately(24.0, 0.1);
+    }
+
+    [Fact]
+    public async Task GetStatisticsAsync_NoData_ReturnsEmptyOverview()
+    {
+        // Arrange
+        var now = DateTime.UtcNow;
+        var firstOfMonth = new DateTime(now.Year, now.Month, 1);
+        var from = firstOfMonth.AddMonths(-5);
+        _ticketRepoMock.Setup(r => r.GetForAnalyticsAsync(from, It.IsAny<DateTime>())).ReturnsAsync(new List<Ticket>());
+        _ticketRepoMock.Setup(r => r.GetUnassignedCountAsync(from, It.IsAny<DateTime>())).ReturnsAsync(0);
+        _auditLogRepoMock.Setup(r => r.GetResolutionTransitionsAsync(from, It.IsAny<DateTime>())).ReturnsAsync(new List<TicketAuditLogEntry>());
+
+        // Act
+        var result = await _sut.GetStatisticsAsync();
+
+        // Assert
+        result.Overview.Total.Should().Be(0);
+        result.Overview.ResolutionRate.Should().BeNull();
+        result.Overview.AverageResolutionHours.Should().BeNull();
+        result.Overview.SlaCompliance.Should().BeNull();
+        result.VolumeTrend.Should().HaveCount(6);
+        result.VolumeTrend[^1].Created.Should().Be(0);
+    }
+
+    [Fact]
     public async Task GetTicketsAsync_ReturnsPaginatedResults()
     {
         // Arrange

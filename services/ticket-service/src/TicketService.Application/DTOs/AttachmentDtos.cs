@@ -5,5 +5,6 @@ public record AttachmentResponse(
     string FileName,
     string FileUrl,
     Guid UploadedByUserId,
-    DateTime UploadedAt
+    DateTime UploadedAt,
+    long Size
 );

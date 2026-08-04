@@ -23,6 +23,7 @@ public static class DependencyInjection
         services.AddScoped<IReferenceNumberGenerator, ReferenceNumberGenerator>();
         services.AddScoped<IEventPublisher, RabbitMQPublisher>();
         services.AddScoped<ITicketService, TicketBusinessService>();
+        services.AddScoped<IKbArticleService, KbArticleService>();
 
         services.AddHttpContextAccessor();
         var identityBaseUrl = configuration["IdentityService:BaseUrl"] ?? "http://identity-service:8080";

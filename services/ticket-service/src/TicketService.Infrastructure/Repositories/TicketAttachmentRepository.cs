@@ -22,6 +22,12 @@ public class TicketAttachmentRepository : ITicketAttachmentRepository
             .ToListAsync();
     }
 
+    public async Task<TicketAttachment?> GetByIdAsync(Guid id)
+    {
+        return await _context.TicketAttachments
+            .FirstOrDefaultAsync(a => a.Id == id);
+    }
+
     public async Task AddAsync(TicketAttachment attachment)
     {
         await _context.TicketAttachments.AddAsync(attachment);

@@ -71,23 +71,7 @@ export function agentPerformance(tickets: Ticket[], userMap: Record<string, stri
   }))
 }
 
-// Synthetic 6-month trend for reports.
-export function ticketTrend() {
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"]
-  const created = [142, 168, 155, 189, 176, 203]
-  const resolved = [138, 160, 151, 182, 171, 197]
-  return months.map((month, i) => ({
-    month,
-    created: created[i],
-    resolved: resolved[i],
-  }))
-}
-
-export function resolutionTimeTrend() {
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"]
-  const hours = [9.4, 8.7, 8.9, 7.6, 7.1, 6.8]
-  return months.map((month, i) => ({ month, hours: hours[i] }))
-}
+// Date formatting helpers.
 
 function parseUtcDate(iso: string): Date {
   const dateStr = /[Zz]|[+-]\d{2}:\d{2}$/.test(iso) ? iso : iso + "Z"
@@ -132,4 +116,11 @@ export function formatDuration(minutes: number | null | undefined): string {
   const mins = total % 60
   if (hours === 0) return `${mins}m`
   return mins === 0 ? `${hours}h` : `${hours}h ${mins}m`
+}
+
+export function formatFileSize(bytes: number): string {
+  if (bytes <= 0) return "—"
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }

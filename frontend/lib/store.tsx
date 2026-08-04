@@ -41,6 +41,7 @@ import type {
   ActivityEntry,
   Attachment,
 } from "./types"
+import { formatFileSize } from "./analytics"
 
 interface NewTicketInput {
   subject: string
@@ -432,7 +433,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           ticket.attachments = attachments.map((a) => ({
             id: a.id,
             name: a.fileName,
-            size: "",
+            size: a.size > 0 ? formatFileSize(a.size) : "",
             type: a.fileName.split(".").pop() || "",
           }))
         } catch { /* ignore */ }

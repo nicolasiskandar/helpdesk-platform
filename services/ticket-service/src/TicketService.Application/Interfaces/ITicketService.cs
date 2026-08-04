@@ -21,6 +21,7 @@ public interface ITicketService
     Task<AssignmentResponse> ClaimTicketAsync(Guid ticketId, Guid userId, string userName);
     Task<TicketListResponse> GetOpenUnassignedTicketsAsync(int page, int pageSize);
     Task<IReadOnlyList<AgentWorkloadResponse>> GetAgentWorkloadAsync();
+    Task<AnalyticsResponse> GetStatisticsAsync();
 
     Task<IReadOnlyList<CommentResponse>> GetCommentsAsync(Guid ticketId, Guid viewerUserId, string viewerRole);
     Task<CommentResponse> AddCommentAsync(Guid ticketId, AddCommentRequest request, Guid authorUserId, string authorRole, string authorName);
@@ -28,6 +29,7 @@ public interface ITicketService
     Task<IReadOnlyList<AttachmentResponse>> GetAttachmentsAsync(Guid ticketId);
     Task<AttachmentResponse> AddAttachmentAsync(Guid ticketId, string fileName, string fileUrl, Guid uploadedByUserId);
     Task<AttachmentResponse> UploadAttachmentAsync(Guid ticketId, Stream fileStream, string fileName, Guid uploadedByUserId);
+    Task DeleteAttachmentAsync(Guid ticketId, Guid attachmentId, Guid deletedByUserId, string deletedByRole);
 
     Task<AuditLogListResponse> GetAuditLogAsync(Guid ticketId, int page, int pageSize);
 

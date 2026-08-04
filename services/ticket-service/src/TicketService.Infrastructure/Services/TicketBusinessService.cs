@@ -10,6 +10,16 @@ namespace TicketService.Infrastructure.Services;
 
 public class TicketBusinessService : ITicketService
 {
+    private static readonly HashSet<string> AllowedAttachmentExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp",
+        ".pdf",
+        ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt",
+        ".zip",
+        ".json", ".xml",
+        ".mp4", ".mp3"
+    };
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly IReferenceNumberGenerator _referenceNumberGenerator;
     private readonly IFileStorageService _fileStorage;
@@ -631,6 +641,101 @@ public class TicketBusinessService : ITicketService
             .ToList();
     }
 
+    public async Task<AnalyticsResponse> GetStatisticsAsync()
+    {
+        var now = DateTime.UtcNow;
+        var firstOfCurrentMonth = new DateTime(now.Year, now.Month, 1);
+        var from = firstOfCurrentMonth.AddMonths(-5);
+
+        var tickets = await _unitOfWork.Tickets.GetForAnalyticsAsync(from, now);
+        var transitions = await _unitOfWork.TicketAuditLogs.GetResolutionTransitionsAsync(from, now);
+        var unassigned = await _unitOfWork.Tickets.GetUnassignedCountAsync(from, now);
+
+        var ticketsById = tickets.ToDictionary(t => t.Id, t => t);
+
+        var firstResolutionAt = transitions
+            .GroupBy(a => a.TicketId)
+            .ToDictionary(g => g.Key, g => g.Min(a => a.ChangedAt));
+
+        var volumeTrend = new List<MonthlyVolumeEntry>();
+        var resolutionTrend = new List<MonthlyResolutionEntry>();
+
+        for (var i = 5; i >= 0; i--)
+        {
+            var monthStart = firstOfCurrentMonth.AddMonths(-i);
+            var created = tickets.Count(t => t.CreatedAt.Year == monthStart.Year && t.CreatedAt.Month == monthStart.Month);
+
+            var resolvedThisMonth = transitions
+                .Where(a => a.ChangedAt.Year == monthStart.Year && a.ChangedAt.Month == monthStart.Month)
+                .ToList();
+
+            double? avgHours = null;
+            if (resolvedThisMonth.Count > 0)
+            {
+                var hours = resolvedThisMonth
+                    .Where(a => ticketsById.ContainsKey(a.TicketId))
+                    .Select(a => (a.ChangedAt - ticketsById[a.TicketId].CreatedAt).TotalHours)
+                    .ToList();
+                if (hours.Count > 0)
+                    avgHours = Math.Round(hours.Average(), 1);
+            }
+
+            volumeTrend.Add(new MonthlyVolumeEntry(monthStart.ToString("MMM yy"), created, resolvedThisMonth.Count));
+            resolutionTrend.Add(new MonthlyResolutionEntry(monthStart.ToString("MMM yy"), avgHours));
+        }
+
+        var open = tickets.Count(t => t.StatusId == 1);
+        var inProgress = tickets.Count(t => t.StatusId == 2);
+        var pending = tickets.Count(t => t.StatusId == 3);
+        var resolved = tickets.Count(t => t.StatusId == 4 || t.StatusId == 5);
+        var criticalOpen = tickets.Count(t => t.PriorityId == 4 && t.StatusId is >= 1 and <= 3);
+
+        double? resolutionRate = tickets.Count > 0
+            ? Math.Round((double)resolved / tickets.Count * 100, 1)
+            : null;
+
+        double? averageResolutionHours = null;
+        double? slaCompliance = null;
+        if (firstResolutionAt.Count > 0)
+        {
+            var resolutionHours = firstResolutionAt
+                .Where(kvp => ticketsById.ContainsKey(kvp.Key))
+                .Select(kvp => (kvp.Value - ticketsById[kvp.Key].CreatedAt).TotalHours)
+                .ToList();
+
+            if (resolutionHours.Count > 0)
+            {
+                averageResolutionHours = Math.Round(resolutionHours.Average(), 1);
+
+                var slaThresholds = new[] { 48.0, 24.0, 8.0, 2.0 };
+                var onTime = firstResolutionAt.Count(kvp =>
+                {
+                    if (!ticketsById.TryGetValue(kvp.Key, out var ticket))
+                        return false;
+                    var threshold = ticket.PriorityId is >= 1 and <= 4
+                        ? slaThresholds[ticket.PriorityId - 1]
+                        : slaThresholds[1];
+                    return (kvp.Value - ticket.CreatedAt).TotalHours <= threshold;
+                });
+                slaCompliance = Math.Round((double)onTime / firstResolutionAt.Count * 100, 1);
+            }
+        }
+
+        var overview = new AnalyticsOverview(
+            tickets.Count,
+            open,
+            inProgress,
+            pending,
+            resolved,
+            criticalOpen,
+            unassigned,
+            resolutionRate,
+            averageResolutionHours,
+            slaCompliance);
+
+        return new AnalyticsResponse(overview, volumeTrend, resolutionTrend);
+    }
+
     public async Task<IReadOnlyList<CommentResponse>> GetCommentsAsync(Guid ticketId, Guid viewerUserId, string viewerRole)
     {
         var ticket = await _unitOfWork.Tickets.GetByIdAsync(ticketId)
@@ -859,6 +964,13 @@ public class TicketBusinessService : ITicketService
         var ticket = await _unitOfWork.Tickets.GetByIdAsync(ticketId)
             ?? throw new KeyNotFoundException("Ticket not found.");
 
+        var extension = Path.GetExtension(fileName).ToLowerInvariant();
+        if (!AllowedAttachmentExtensions.Contains(extension))
+            throw new InvalidOperationException(
+                $"File type '{extension}' is not allowed. Allowed types: images (png, jpg, jpeg, gif, svg, webp), pdf, documents (doc, docx, xls, xlsx, csv, txt), zip, json, xml, mp4, mp3.");
+
+        var size = fileStream.CanSeek ? fileStream.Length : 0;
+
         var fileUrl = await _fileStorage.SaveFileAsync(fileStream, fileName, ticketId.ToString());
 
         var attachment = new TicketAttachment
@@ -868,13 +980,43 @@ public class TicketBusinessService : ITicketService
             FileName = fileName,
             FileUrl = fileUrl,
             UploadedByUserId = uploadedByUserId,
-            UploadedAt = DateTime.UtcNow
+            UploadedAt = DateTime.UtcNow,
+            Size = size
         };
 
         await _unitOfWork.TicketAttachments.AddAsync(attachment);
         await _unitOfWork.SaveChangesAsync();
 
         return MapAttachmentToResponse(attachment);
+    }
+
+    public async Task DeleteAttachmentAsync(Guid ticketId, Guid attachmentId, Guid deletedByUserId, string deletedByRole)
+    {
+        var ticket = await _unitOfWork.Tickets.GetByIdAsync(ticketId)
+            ?? throw new KeyNotFoundException("Ticket not found.");
+
+        EnsureCanViewTicket(ticket, deletedByUserId, deletedByRole);
+
+        var attachment = await _unitOfWork.TicketAttachments.GetByIdAsync(attachmentId)
+            ?? throw new KeyNotFoundException("Attachment not found.");
+
+        if (attachment.TicketId != ticketId)
+            throw new InvalidOperationException("Attachment does not belong to this ticket.");
+
+        var canDelete = deletedByRole == "Admin"
+            || ticket.CreatedByUserId == deletedByUserId
+            || attachment.UploadedByUserId == deletedByUserId;
+
+        if (!canDelete)
+            throw new UnauthorizedAccessException("You do not have permission to delete this attachment.");
+
+        await _fileStorage.DeleteFileAsync(attachment.FileUrl);
+        await _unitOfWork.TicketAttachments.DeleteAsync(attachment);
+
+        var auditLog = CreateAuditEntry(ticketId, deletedByUserId, "Attachment", attachment.FileName, "Attachment deleted");
+        await _unitOfWork.TicketAuditLogs.AddAsync(auditLog);
+
+        await _unitOfWork.SaveChangesAsync();
     }
 
     public async Task<AuditLogListResponse> GetAuditLogAsync(Guid ticketId, int page, int pageSize)
@@ -998,7 +1140,8 @@ public class TicketBusinessService : ITicketService
             attachment.FileName,
             attachment.FileUrl,
             attachment.UploadedByUserId,
-            attachment.UploadedAt
+            attachment.UploadedAt,
+            attachment.Size
         );
     }
 

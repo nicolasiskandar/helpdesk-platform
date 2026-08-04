@@ -307,6 +307,21 @@ public class TicketsController : ControllerBase
     }
 
     /// <summary>
+    /// Deletes an attachment. Only the uploader, the ticket creator, or an admin can delete.
+    /// </summary>
+    [HttpDelete("{ticketId:guid}/attachments/{attachmentId:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteAttachment(Guid ticketId, Guid attachmentId)
+    {
+        var userId = GetUserIdFromClaims();
+        var role = GetUserRoleFromClaims();
+        await _ticketService.DeleteAttachmentAsync(ticketId, attachmentId, userId, role);
+        return NoContent();
+    }
+
+    /// <summary>
     /// Downloads an attachment file.
     /// </summary>
     [HttpGet("{ticketId:guid}/attachments/{attachmentId:guid}")]
@@ -406,6 +421,18 @@ public class TicketsController : ControllerBase
     {
         var workload = await _ticketService.GetAgentWorkloadAsync();
         return Ok(workload);
+    }
+
+    /// <summary>
+    /// Gets statistics for the last 6 months (volume trend, resolution time, SLA compliance).
+    /// </summary>
+    [HttpGet("statistics")]
+    [Authorize(Roles = "Admin,Manager")]
+    [ProducesResponseType(typeof(AnalyticsResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetStatistics()
+    {
+        var statistics = await _ticketService.GetStatisticsAsync();
+        return Ok(statistics);
     }
 
     private Guid GetUserIdFromClaims()

@@ -70,6 +70,61 @@ namespace TicketService.Infrastructure.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("TicketService.Domain.Entities.KbArticle", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AuthorUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("Excerpt")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<int>("Views")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Category");
+
+                    b.ToTable("KbArticles");
+                });
+
             modelBuilder.Entity("TicketService.Domain.Entities.OutboxMessage", b =>
                 {
                     b.Property<Guid>("Id")
@@ -314,6 +369,11 @@ namespace TicketService.Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
+
+                    b.Property<long>("Size")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
 
                     b.Property<Guid>("TicketId")
                         .HasColumnType("uniqueidentifier");

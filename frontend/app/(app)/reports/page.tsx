@@ -1,6 +1,7 @@
 "use client"
 
-import { FileDown, FileSpreadsheet, Timer, Gauge, TrendingUp, Star } from "lucide-react"
+import * as React from "react"
+import { FileDown, FileSpreadsheet, Timer, Gauge, TrendingUp, Ticket, Star } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -26,28 +27,65 @@ import { VolumeChart } from "@/components/reports/volume-chart"
 import { ResolutionChart } from "@/components/reports/resolution-chart"
 import { useStore } from "@/lib/store"
 import { RoleGuard } from "@/components/role-guard"
-import {
-  ticketTrend,
-  resolutionTimeTrend,
-  agentPerformance,
-} from "@/lib/analytics"
+import { agentPerformance } from "@/lib/analytics"
+import { apiGetStatistics } from "@/lib/api"
+import type { AnalyticsResponse } from "@/lib/api"
+import { exportReportExcel, exportReportPdf } from "@/lib/export"
 
 function initials(name: string) {
   return name.slice(0, 2).toUpperCase()
 }
 
+function formatHours(hours: number | null | undefined): string {
+  if (hours == null || hours < 0) return "—"
+  return `${hours}h`
+}
+
 export default function ReportsPage() {
   const { tickets, userMap } = useStore()
-  const trend = ticketTrend()
-  const resolution = resolutionTimeTrend()
+  const [stats, setStats] = React.useState<AnalyticsResponse | null>(null)
+  const [loading, setLoading] = React.useState(true)
+  const [error, setError] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    let cancelled = false
+    async function load() {
+      setLoading(true)
+      setError(null)
+      try {
+        const data = await apiGetStatistics()
+        if (!cancelled) setStats(data)
+      } catch (err: any) {
+        if (!cancelled) setError(err?.message || "Failed to load analytics.")
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const performance = [...agentPerformance(tickets, userMap)].sort(
     (a, b) => b.resolved - a.resolved
   )
 
-  function handleExport(kind: string) {
-    toast.success(`${kind} export started`, {
-      description: "Your report will be ready to download shortly.",
-    })
+  const overview = stats?.overview
+  const volume = stats?.volumeTrend ?? []
+  const resolution = (stats?.resolutionTrend ?? []).map((t) => ({
+    month: t.month,
+    hours: t.averageHours,
+  }))
+
+  function handleExport(kind: "pdf" | "excel") {
+    if (!stats) return
+    if (kind === "pdf") {
+      exportReportPdf(stats, performance)
+    } else {
+      exportReportExcel(stats, performance)
+    }
+    toast.success(`${kind === "pdf" ? "PDF" : "Excel"} export ready`)
   }
 
   return (
@@ -63,14 +101,20 @@ export default function ReportsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => handleExport("PDF")}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!stats}
+            onClick={() => handleExport("pdf")}
+          >
             <FileDown data-icon="inline-start" />
             Export PDF
           </Button>
           <Button
             variant="outline"
             size="sm"
-            onClick={() => handleExport("Excel")}
+            disabled={!stats}
+            onClick={() => handleExport("excel")}
           >
             <FileSpreadsheet data-icon="inline-start" />
             Export Excel
@@ -78,35 +122,70 @@ export default function ReportsPage() {
         </div>
       </div>
 
+      {error ? (
+        <Card>
+          <CardContent className="flex flex-col items-center gap-3 p-8 text-center">
+            <p className="text-sm text-destructive">{error}</p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setStats(null)
+                setLoading(true)
+                apiGetStatistics()
+                  .then((data) => setStats(data))
+                  .catch((err: any) => setError(err?.message || "Failed to load analytics."))
+                  .finally(() => setLoading(false))
+              }}
+            >
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      ) : loading && !stats ? (
+        <Card>
+          <CardContent className="flex items-center justify-center p-10 text-sm text-muted-foreground">
+            Loading analytics...
+          </CardContent>
+        </Card>
+      ) : (
+        <>
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard
           label="Avg. Resolution"
-          value="6.8h"
+          value={formatHours(overview?.averageResolutionHours)}
           icon={Timer}
           accent="primary"
-          trend={{ value: "0.3h", direction: "down", positive: true }}
-          hint="faster"
+          hint="Avg. hours to resolve"
         />
         <StatCard
           label="SLA Compliance"
-          value="96.4%"
+          value={
+            overview?.slaCompliance != null
+              ? `${overview.slaCompliance}%`
+              : "—"
+          }
           icon={Gauge}
           accent="success"
-          trend={{ value: "2.1%", direction: "up", positive: true }}
+          hint="Within priority SLA"
         />
         <StatCard
           label="Resolution Rate"
-          value="94%"
+          value={
+            overview?.resolutionRate != null
+              ? `${overview.resolutionRate}%`
+              : "—"
+          }
           icon={TrendingUp}
           accent="info"
-          hint="Tickets closed"
+          hint="Tickets resolved"
         />
         <StatCard
-          label="CSAT Score"
-          value="4.6/5"
-          icon={Star}
+          label="Total Tickets"
+          value={overview?.total ?? "—"}
+          icon={Ticket}
           accent="warning"
-          trend={{ value: "0.2", direction: "up", positive: true }}
+          hint="Last 6 months"
         />
       </div>
 
@@ -117,13 +196,13 @@ export default function ReportsPage() {
             <CardDescription>Created vs resolved per month</CardDescription>
           </CardHeader>
           <CardContent>
-            <VolumeChart data={trend} />
+            <VolumeChart data={volume} />
           </CardContent>
         </Card>
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Avg. Resolution Time</CardTitle>
-            <CardDescription>Hours to resolve, trending down</CardDescription>
+            <CardDescription>Hours to resolve, per month</CardDescription>
           </CardHeader>
           <CardContent>
             <ResolutionChart data={resolution} />
@@ -194,6 +273,8 @@ export default function ReportsPage() {
           </div>
         </CardContent>
       </Card>
+        </>
+      )}
     </div>
     </RoleGuard>
   )

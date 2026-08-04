@@ -85,6 +85,7 @@ export interface AttachmentResponse {
   fileUrl: string
   uploadedByUserId: string
   uploadedAt: string
+  size: number
 }
 
 export interface CategoryResponse {
@@ -465,6 +466,18 @@ export async function apiUploadAttachment(
   return handleResponse<AttachmentResponse>(res)
 }
 
+export async function apiDeleteAttachment(
+  ticketId: string,
+  attachmentId: string
+): Promise<void> {
+  const token = getAccessToken()
+  const res = await fetch(
+    `${API_BASE}/api/tickets/${ticketId}/attachments/${attachmentId}`,
+    { method: "DELETE", headers: authHeaders(token) }
+  )
+  return handleResponse<void>(res)
+}
+
 export async function apiGetAuditLog(
   ticketId: string,
   page = 1,
@@ -619,6 +632,136 @@ export async function apiGetAgentWorkload(): Promise<AgentWorkloadResponse[]> {
     headers: authHeaders(token),
   })
   return handleResponse<AgentWorkloadResponse[]>(res)
+}
+
+// ---------- Statistics API ----------
+
+export interface AnalyticsOverviewResponse {
+  total: number
+  open: number
+  inProgress: number
+  pending: number
+  resolved: number
+  criticalOpen: number
+  unassigned: number
+  resolutionRate: number | null
+  averageResolutionHours: number | null
+  slaCompliance: number | null
+}
+
+export interface MonthlyVolumeResponse {
+  month: string
+  created: number
+  resolved: number
+}
+
+export interface MonthlyResolutionResponse {
+  month: string
+  averageHours: number | null
+}
+
+export interface AnalyticsResponse {
+  overview: AnalyticsOverviewResponse
+  volumeTrend: MonthlyVolumeResponse[]
+  resolutionTrend: MonthlyResolutionResponse[]
+}
+
+export async function apiGetStatistics(): Promise<AnalyticsResponse> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/tickets/statistics`, {
+    headers: authHeaders(token),
+  })
+  return handleResponse<AnalyticsResponse>(res)
+}
+
+// ---------- Knowledge Base API ----------
+
+export interface KbArticleResponse {
+  id: string
+  title: string
+  excerpt: string
+  body: string
+  category: string
+  authorUserId: string
+  views: number
+  status: "published" | "draft"
+  createdAt: string
+  updatedAt: string
+}
+
+export interface KbArticleListResponse {
+  articles: KbArticleResponse[]
+  totalCount: number
+  page: number
+  pageSize: number
+}
+
+export async function apiGetKbArticles(
+  search?: string,
+  category?: string,
+  page = 1,
+  pageSize = 50
+): Promise<KbArticleListResponse> {
+  const token = getAccessToken()
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
+  if (search) params.set("search", search)
+  if (category) params.set("category", category)
+  const res = await fetch(`${API_BASE}/api/kb-articles?${params}`, {
+    headers: authHeaders(token),
+  })
+  return handleResponse<KbArticleListResponse>(res)
+}
+
+export async function apiGetKbArticle(id: string): Promise<KbArticleResponse> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/kb-articles/${id}`, {
+    headers: authHeaders(token),
+  })
+  return handleResponse<KbArticleResponse>(res)
+}
+
+export async function apiCreateKbArticle(request: {
+  title: string
+  excerpt: string
+  body: string
+  category: string
+  status: "published" | "draft"
+}): Promise<KbArticleResponse> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/kb-articles`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(request),
+  })
+  return handleResponse<KbArticleResponse>(res)
+}
+
+export async function apiUpdateKbArticle(
+  id: string,
+  request: {
+    title: string
+    excerpt: string
+    body: string
+    category: string
+    status: "published" | "draft"
+  }
+): Promise<KbArticleResponse> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/kb-articles/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(request),
+  })
+  return handleResponse<KbArticleResponse>(res)
+}
+
+export async function apiDeleteKbArticle(id: string): Promise<void> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/kb-articles/${id}`, {
+    method: "DELETE",
+    headers: authHeaders(token),
+  })
+  return handleResponse<void>(res)
 }
 
 // ---------- Notification API ----------

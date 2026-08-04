@@ -32,6 +32,25 @@ public class TicketAuditLogRepository : ITicketAuditLogRepository
             .ToListAsync();
     }
 
+    public async Task<IReadOnlyList<TicketAuditLogEntry>> GetResolutionTransitionsAsync(DateTime from, DateTime to)
+    {
+        var resolutionStatuses = new[] { "Resolved - Pending Confirmation", "Closed", "Resolved by AI" };
+
+        return await _context.TicketAuditLogs
+            .AsNoTracking()
+            .Where(a => a.FieldChanged == "Status"
+                && resolutionStatuses.Contains(a.NewValue)
+                && a.ChangedAt >= from && a.ChangedAt < to)
+            .Select(a => new TicketAuditLogEntry
+            {
+                Id = a.Id,
+                TicketId = a.TicketId,
+                NewValue = a.NewValue,
+                ChangedAt = a.ChangedAt
+            })
+            .ToListAsync();
+    }
+
     public async Task<int> GetCountByTicketIdAsync(Guid ticketId)
     {
         return await _context.TicketAuditLogs.CountAsync(a => a.TicketId == ticketId);
