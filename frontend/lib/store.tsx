@@ -139,6 +139,7 @@ const NOTIF_TYPE_MAP: Record<string, NotificationItem["type"]> = {
   assigned: "assignment",
   unassigned: "assignment",
   status_changed: "status",
+  closed: "status",
   comment: "comment",
 }
 

@@ -53,6 +53,14 @@ public class TicketBusinessServiceTests
             .Setup(l => l.GetRolesByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<string>()))
             .ReturnsAsync(new Dictionary<Guid, string>());
 
+        _userLookupMock
+            .Setup(l => l.GetUserIdsByRoleAsync(It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(new List<Guid>());
+
+        _assignmentRepoMock
+            .Setup(r => r.GetByTicketIdAsync(It.IsAny<Guid>()))
+            .ReturnsAsync(new List<TicketAssignment>());
+
         _sut = new TicketBusinessService(
             _unitOfWorkMock.Object,
             _referenceNumberGeneratorMock.Object,
@@ -100,6 +108,73 @@ public class TicketBusinessServiceTests
         )), Times.Once);
 
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateTicketAsync_Success_EmbedsManagerAndAdminIdsInEvent()
+    {
+        // Arrange
+        var managerId = Guid.NewGuid();
+        var adminId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+
+        _categoryRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(new Category { Id = 1, Name = "Hardware" });
+        _priorityRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(new Priority { Id = 1, Name = "Low", Level = 1 });
+        _statusRepoMock.Setup(r => r.GetByNameAsync("Open")).ReturnsAsync(new Status { Id = 1, Name = "Open" });
+        _referenceNumberGeneratorMock.Setup(g => g.GenerateAsync()).ReturnsAsync("TKT-000001");
+        _userLookupMock
+            .Setup(l => l.GetUserIdsByRoleAsync("Manager", It.IsAny<string>()))
+            .ReturnsAsync(new List<Guid> { managerId });
+        _userLookupMock
+            .Setup(l => l.GetUserIdsByRoleAsync("Admin", It.IsAny<string>()))
+            .ReturnsAsync(new List<Guid> { adminId });
+
+        OutboxMessage? captured = null;
+        _outboxRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<OutboxMessage>()))
+            .Callback<OutboxMessage>(m => captured = m);
+
+        // Act
+        var result = await _sut.CreateTicketAsync(new CreateTicketRequest("Test Title", "Test Description", 1, 1), userId);
+
+        // Assert
+        result.ReferenceNumber.Should().Be("TKT-000001");
+        captured.Should().NotBeNull();
+        captured!.EventType.Should().Be("ticket.created");
+
+        var evt = JsonSerializer.Deserialize<TicketCreatedEvent>(captured.Payload,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        evt.Should().NotBeNull();
+        evt!.ManagerUserIds.Should().Contain(managerId);
+        evt.AdminUserIds.Should().Contain(adminId);
+    }
+
+    [Fact]
+    public async Task CreateTicketAsync_NoAccessToken_DoesNotLookupRoles()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+
+        var httpContextAccessorMock = new Mock<IHttpContextAccessor>();
+        httpContextAccessorMock.Setup(a => a.HttpContext).Returns(new DefaultHttpContext());
+
+        var sut = new TicketBusinessService(
+            _unitOfWorkMock.Object,
+            _referenceNumberGeneratorMock.Object,
+            _fileStorageMock.Object,
+            _userLookupMock.Object,
+            httpContextAccessorMock.Object);
+
+        _categoryRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(new Category { Id = 1, Name = "Hardware" });
+        _priorityRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(new Priority { Id = 1, Name = "Low", Level = 1 });
+        _statusRepoMock.Setup(r => r.GetByNameAsync("Open")).ReturnsAsync(new Status { Id = 1, Name = "Open" });
+        _referenceNumberGeneratorMock.Setup(g => g.GenerateAsync()).ReturnsAsync("TKT-000001");
+
+        // Act
+        await sut.CreateTicketAsync(new CreateTicketRequest("Test Title", "Test Description", 1, 1), userId);
+
+        // Assert
+        _userLookupMock.Verify(l => l.GetUserIdsByRoleAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
     }
 
     [Fact]
@@ -548,6 +623,139 @@ public class TicketBusinessServiceTests
         _outboxRepoMock.Verify(r => r.AddAsync(It.Is<OutboxMessage>(m =>
             m.EventType == "ticket.status_changed"
         )), Times.Once);
+    }
+
+    [Fact]
+    public async Task ChangeStatusAsync_ToClosed_AddsTicketClosedOutboxMessage()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var adminId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+
+        var ticket = new Ticket
+        {
+            Id = ticketId,
+            ReferenceNumber = "TKT-000001",
+            Title = "Test",
+            CategoryId = 1,
+            PriorityId = 1,
+            StatusId = 3,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 3, Name = "Resolved - Pending Confirmation" }
+        };
+
+        var newStatus = new Status { Id = 4, Name = "Closed" };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _statusRepoMock.Setup(r => r.GetByIdAsync(4)).ReturnsAsync(newStatus);
+        _userLookupMock
+            .Setup(l => l.GetUserIdsByRoleAsync("Admin", It.IsAny<string>()))
+            .ReturnsAsync(new List<Guid> { adminId });
+
+        var addedMessages = new List<OutboxMessage>();
+        _outboxRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<OutboxMessage>()))
+            .Callback<OutboxMessage>(m => addedMessages.Add(m));
+
+        // Act
+        var result = await _sut.ChangeStatusAsync(ticketId, new ChangeStatusRequest(4, null), userId);
+
+        // Assert
+        result.StatusName.Should().Be("Closed");
+
+        var closedMessage = addedMessages.Single(m => m.EventType == "ticket.closed");
+        var evt = JsonSerializer.Deserialize<TicketClosedEvent>(closedMessage.Payload,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        evt.Should().NotBeNull();
+        evt!.AdminUserIds.Should().Contain(adminId);
+        evt.ClosedByUserId.Should().Be(userId);
+        evt.ReferenceNumber.Should().Be("TKT-000001");
+    }
+
+    [Fact]
+    public async Task ChangeStatusAsync_NonClose_DoesNotAddTicketClosedOutboxMessage()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+
+        var ticket = new Ticket
+        {
+            Id = ticketId,
+            ReferenceNumber = "TKT-000001",
+            Title = "Test",
+            CategoryId = 1,
+            PriorityId = 1,
+            StatusId = 1,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 1, Name = "Open" }
+        };
+
+        var newStatus = new Status { Id = 2, Name = "In Progress" };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _statusRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(newStatus);
+
+        // Act
+        await _sut.ChangeStatusAsync(ticketId, new ChangeStatusRequest(2, null), userId);
+
+        // Assert
+        _outboxRepoMock.Verify(r => r.AddAsync(It.Is<OutboxMessage>(m =>
+            m.EventType == "ticket.closed"
+        )), Times.Never);
+    }
+
+    [Fact]
+    public async Task ChangeStatusAsync_EmbedsCreatorAndActiveAssigneesInEvent()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var creatorId = Guid.NewGuid();
+        var agentId = Guid.NewGuid();
+        var changedById = Guid.NewGuid();
+
+        var ticket = new Ticket
+        {
+            Id = ticketId,
+            ReferenceNumber = "TKT-000001",
+            Title = "Test",
+            CategoryId = 1,
+            PriorityId = 1,
+            StatusId = 1,
+            CreatedByUserId = creatorId,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 1, Name = "Open" }
+        };
+
+        var newStatus = new Status { Id = 2, Name = "In Progress" };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _statusRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(newStatus);
+        _assignmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(new List<TicketAssignment>
+        {
+            new() { TicketId = ticketId, AgentUserId = agentId, UnassignedAt = null }
+        });
+
+        var captured = new List<OutboxMessage>();
+        _outboxRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<OutboxMessage>()))
+            .Callback<OutboxMessage>(m => captured.Add(m));
+
+        // Act
+        await _sut.ChangeStatusAsync(ticketId, new ChangeStatusRequest(2, null), changedById);
+
+        // Assert
+        var statusChanged = captured.Single(m => m.EventType == "ticket.status_changed");
+        var evt = JsonSerializer.Deserialize<TicketStatusChangedEvent>(statusChanged.Payload,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        evt.Should().NotBeNull();
+        evt!.RecipientUserIds.Should().Contain(creatorId);
+        evt.RecipientUserIds.Should().Contain(agentId);
+        evt.RecipientUserIds.Should().NotContain(changedById);
     }
 
     [Fact]
@@ -1370,7 +1578,7 @@ public class TicketBusinessServiceTests
         using var stream = new MemoryStream(new byte[1234]);
 
         // Act
-        var result = await _sut.UploadAttachmentAsync(ticketId, stream, "photo.png", userId);
+        var result = await _sut.UploadAttachmentAsync(ticketId, stream, "photo.png", userId, "Admin");
 
         // Assert
         result.FileName.Should().Be("photo.png");
@@ -1403,13 +1611,140 @@ public class TicketBusinessServiceTests
         using var stream = new MemoryStream(new byte[10]);
 
         // Act
-        var act = () => _sut.UploadAttachmentAsync(ticketId, stream, "malware.exe", userId);
+        var act = () => _sut.UploadAttachmentAsync(ticketId, stream, "malware.exe", userId, "Admin");
 
         // Assert
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*not allowed*");
         _fileStorageMock.Verify(f => f.SaveFileAsync(It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         _attachmentRepoMock.Verify(r => r.AddAsync(It.IsAny<TicketAttachment>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UploadAttachmentAsync_Admin_CanUploadWhenTicketNotOpen()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var creatorId = Guid.NewGuid();
+        var adminId = Guid.NewGuid();
+        var ticket = BuildTicket(ticketId, "Closed", creatorId);
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _fileStorageMock.Setup(f => f.SaveFileAsync(It.IsAny<Stream>(), "photo.png", ticketId.ToString()))
+            .ReturnsAsync($"{ticketId}/stored.png");
+
+        using var stream = new MemoryStream(new byte[10]);
+
+        // Act
+        var result = await _sut.UploadAttachmentAsync(ticketId, stream, "photo.png", adminId, "Admin");
+
+        // Assert
+        result.FileName.Should().Be("photo.png");
+        _fileStorageMock.Verify(f => f.SaveFileAsync(It.IsAny<Stream>(), "photo.png", ticketId.ToString()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UploadAttachmentAsync_EmployeeCreator_CanUploadWhenOpen()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var creatorId = Guid.NewGuid();
+        var ticket = BuildTicket(ticketId, "Open", creatorId);
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _fileStorageMock.Setup(f => f.SaveFileAsync(It.IsAny<Stream>(), "photo.png", ticketId.ToString()))
+            .ReturnsAsync($"{ticketId}/stored.png");
+
+        using var stream = new MemoryStream(new byte[10]);
+
+        // Act
+        var result = await _sut.UploadAttachmentAsync(ticketId, stream, "photo.png", creatorId, "Employee");
+
+        // Assert
+        result.FileName.Should().Be("photo.png");
+        _fileStorageMock.Verify(f => f.SaveFileAsync(It.IsAny<Stream>(), "photo.png", ticketId.ToString()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UploadAttachmentAsync_EmployeeCreator_CannotUploadWhenNotOpen()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var creatorId = Guid.NewGuid();
+        var ticket = BuildTicket(ticketId, "In Progress", creatorId);
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+
+        using var stream = new MemoryStream(new byte[10]);
+
+        // Act
+        var act = () => _sut.UploadAttachmentAsync(ticketId, stream, "photo.png", creatorId, "Employee");
+
+        // Assert
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+        _fileStorageMock.Verify(f => f.SaveFileAsync(It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UploadAttachmentAsync_Manager_CannotUpload()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var managerId = Guid.NewGuid();
+        var ticket = BuildTicket(ticketId, "Open", managerId);
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+
+        using var stream = new MemoryStream(new byte[10]);
+
+        // Act
+        var act = () => _sut.UploadAttachmentAsync(ticketId, stream, "photo.png", managerId, "Manager");
+
+        // Assert
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+        _fileStorageMock.Verify(f => f.SaveFileAsync(It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UploadAttachmentAsync_NonCreatorEmployee_CannotUpload()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var creatorId = Guid.NewGuid();
+        var otherEmployeeId = Guid.NewGuid();
+        var ticket = BuildTicket(ticketId, "Open", creatorId);
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+
+        using var stream = new MemoryStream(new byte[10]);
+
+        // Act
+        var act = () => _sut.UploadAttachmentAsync(ticketId, stream, "photo.png", otherEmployeeId, "Employee");
+
+        // Assert
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+        _fileStorageMock.Verify(f => f.SaveFileAsync(It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UploadAttachmentAsync_Agent_CannotUpload()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var creatorId = Guid.NewGuid();
+        var agentId = Guid.NewGuid();
+        var ticket = BuildTicket(ticketId, "Open", creatorId);
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+
+        using var stream = new MemoryStream(new byte[10]);
+
+        // Act
+        var act = () => _sut.UploadAttachmentAsync(ticketId, stream, "photo.png", agentId, "IT Support Agent");
+
+        // Assert
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+        _fileStorageMock.Verify(f => f.SaveFileAsync(It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
     }
 
     [Fact]
@@ -1427,7 +1762,7 @@ public class TicketBusinessServiceTests
             CategoryId = 1,
             PriorityId = 1,
             StatusId = 1,
-            CreatedByUserId = Guid.NewGuid(),
+            CreatedByUserId = uploaderId,
             Category = new Category { Id = 1, Name = "Hardware" },
             Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
             Status = new Status { Id = 1, Name = "Open" }
@@ -1445,7 +1780,7 @@ public class TicketBusinessServiceTests
         _attachmentRepoMock.Setup(r => r.GetByIdAsync(attachmentId)).ReturnsAsync(attachment);
 
         // Act
-        await _sut.DeleteAttachmentAsync(ticketId, attachmentId, uploaderId, "IT Support Agent");
+        await _sut.DeleteAttachmentAsync(ticketId, attachmentId, uploaderId, "Employee");
 
         // Assert
         _fileStorageMock.Verify(f => f.DeleteFileAsync($"{ticketId}/stored.png"), Times.Once);
@@ -1527,6 +1862,118 @@ public class TicketBusinessServiceTests
 
         // Act
         var act = () => _sut.DeleteAttachmentAsync(ticketId, attachmentId, otherUserId, "Employee");
+
+        // Assert
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+        _fileStorageMock.Verify(f => f.DeleteFileAsync(It.IsAny<string>()), Times.Never);
+        _attachmentRepoMock.Verify(r => r.DeleteAsync(It.IsAny<TicketAttachment>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeleteAttachmentAsync_EmployeeCreator_CannotDeleteWhenNotOpen()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var creatorId = Guid.NewGuid();
+        var attachmentId = Guid.NewGuid();
+        var ticket = BuildTicket(ticketId, "Closed", creatorId);
+        var attachment = new TicketAttachment
+        {
+            Id = attachmentId,
+            TicketId = ticketId,
+            FileName = "photo.png",
+            FileUrl = $"{ticketId}/stored.png",
+            UploadedByUserId = creatorId
+        };
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _attachmentRepoMock.Setup(r => r.GetByIdAsync(attachmentId)).ReturnsAsync(attachment);
+
+        // Act
+        var act = () => _sut.DeleteAttachmentAsync(ticketId, attachmentId, creatorId, "Employee");
+
+        // Assert
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+        _fileStorageMock.Verify(f => f.DeleteFileAsync(It.IsAny<string>()), Times.Never);
+        _attachmentRepoMock.Verify(r => r.DeleteAsync(It.IsAny<TicketAttachment>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeleteAttachmentAsync_Manager_CannotDelete()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var managerId = Guid.NewGuid();
+        var attachmentId = Guid.NewGuid();
+        var ticket = BuildTicket(ticketId, "Open", Guid.NewGuid());
+        var attachment = new TicketAttachment
+        {
+            Id = attachmentId,
+            TicketId = ticketId,
+            FileName = "photo.png",
+            FileUrl = $"{ticketId}/stored.png",
+            UploadedByUserId = Guid.NewGuid()
+        };
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _attachmentRepoMock.Setup(r => r.GetByIdAsync(attachmentId)).ReturnsAsync(attachment);
+
+        // Act
+        var act = () => _sut.DeleteAttachmentAsync(ticketId, attachmentId, managerId, "Manager");
+
+        // Assert
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+        _fileStorageMock.Verify(f => f.DeleteFileAsync(It.IsAny<string>()), Times.Never);
+        _attachmentRepoMock.Verify(r => r.DeleteAsync(It.IsAny<TicketAttachment>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeleteAttachmentAsync_Agent_CannotDelete_EvenWhenUploader()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var agentId = Guid.NewGuid();
+        var attachmentId = Guid.NewGuid();
+        var ticket = BuildTicket(ticketId, "Open", Guid.NewGuid());
+        var attachment = new TicketAttachment
+        {
+            Id = attachmentId,
+            TicketId = ticketId,
+            FileName = "photo.png",
+            FileUrl = $"{ticketId}/stored.png",
+            UploadedByUserId = agentId
+        };
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _attachmentRepoMock.Setup(r => r.GetByIdAsync(attachmentId)).ReturnsAsync(attachment);
+
+        // Act
+        var act = () => _sut.DeleteAttachmentAsync(ticketId, attachmentId, agentId, "IT Support Agent");
+
+        // Assert
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+        _fileStorageMock.Verify(f => f.DeleteFileAsync(It.IsAny<string>()), Times.Never);
+        _attachmentRepoMock.Verify(r => r.DeleteAsync(It.IsAny<TicketAttachment>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeleteAttachmentAsync_NonCreatorEmployeeUploader_CannotDelete()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var uploaderId = Guid.NewGuid();
+        var attachmentId = Guid.NewGuid();
+        var ticket = BuildTicket(ticketId, "Open", Guid.NewGuid());
+        var attachment = new TicketAttachment
+        {
+            Id = attachmentId,
+            TicketId = ticketId,
+            FileName = "photo.png",
+            FileUrl = $"{ticketId}/stored.png",
+            UploadedByUserId = uploaderId
+        };
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _attachmentRepoMock.Setup(r => r.GetByIdAsync(attachmentId)).ReturnsAsync(attachment);
+
+        // Act
+        var act = () => _sut.DeleteAttachmentAsync(ticketId, attachmentId, uploaderId, "Employee");
 
         // Assert
         await act.Should().ThrowAsync<UnauthorizedAccessException>();
@@ -3014,7 +3461,7 @@ public class TicketBusinessServiceTests
         using var stream = new MemoryStream(new byte[10]);
 
         // Act
-        var act = () => _sut.UploadAttachmentAsync(ticketId, stream, "photo.png", Guid.NewGuid());
+        var act = () => _sut.UploadAttachmentAsync(ticketId, stream, "photo.png", Guid.NewGuid(), "Admin");
 
         // Assert
         await act.Should().ThrowAsync<KeyNotFoundException>()
@@ -3044,7 +3491,7 @@ public class TicketBusinessServiceTests
         using var stream = new FakeStream(10 * 1024 * 1024 + 1);
 
         // Act
-        var act = () => _sut.UploadAttachmentAsync(ticketId, stream, "photo.png", Guid.NewGuid());
+        var act = () => _sut.UploadAttachmentAsync(ticketId, stream, "photo.png", Guid.NewGuid(), "Admin");
 
         // Assert
         await act.Should().ThrowAsync<InvalidOperationException>()
@@ -3078,7 +3525,7 @@ public class TicketBusinessServiceTests
         using var stream = new FakeStream(0) { CanSeekValue = false };
 
         // Act
-        var result = await _sut.UploadAttachmentAsync(ticketId, stream, "photo.png", userId);
+        var result = await _sut.UploadAttachmentAsync(ticketId, stream, "photo.png", userId, "Admin");
 
         // Assert
         result.Size.Should().Be(0);
@@ -3127,7 +3574,7 @@ public class TicketBusinessServiceTests
         using var stream = new MemoryStream(new byte[64]);
 
         // Act
-        var result = await _sut.UploadAttachmentAsync(ticketId, stream, $"file{extension}", Guid.NewGuid());
+        var result = await _sut.UploadAttachmentAsync(ticketId, stream, $"file{extension}", Guid.NewGuid(), "Admin");
 
         // Assert
         result.FileName.Should().Be($"file{extension}");
@@ -3173,7 +3620,7 @@ public class TicketBusinessServiceTests
         using var stream = new MemoryStream(new byte[64]);
 
         // Act
-        var act = () => _sut.UploadAttachmentAsync(ticketId, stream, $"malware{extension}", Guid.NewGuid());
+        var act = () => _sut.UploadAttachmentAsync(ticketId, stream, $"malware{extension}", Guid.NewGuid(), "Admin");
 
         // Assert
         await act.Should().ThrowAsync<InvalidOperationException>()

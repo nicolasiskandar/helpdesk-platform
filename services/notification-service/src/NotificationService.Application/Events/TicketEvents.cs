@@ -8,7 +8,17 @@ public record TicketCreatedEvent(
     string CategoryName,
     string PriorityName,
     Guid CreatedByUserId,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    IReadOnlyList<Guid> ManagerUserIds,
+    IReadOnlyList<Guid> AdminUserIds
+);
+
+public record TicketClosedEvent(
+    Guid TicketId,
+    string ReferenceNumber,
+    Guid ClosedByUserId,
+    DateTime ClosedAt,
+    IReadOnlyList<Guid> AdminUserIds
 );
 
 public record TicketAssignedEvent(
@@ -26,7 +36,8 @@ public record TicketStatusChangedEvent(
     string NewStatus,
     Guid ChangedByUserId,
     string ChangedByType,
-    DateTime ChangedAt
+    DateTime ChangedAt,
+    IReadOnlyList<Guid> RecipientUserIds
 );
 
 public record TicketCommentedEvent(

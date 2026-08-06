@@ -177,11 +177,6 @@ export default function TicketDetailPage() {
     }
   }
 
-  const canDeleteAttachment = (a: AttachmentResponse) =>
-    role === "admin" ||
-    (ticket?.requesterId != null && ticket.requesterId === currentUserId) ||
-    a.uploadedByUserId === currentUserId
-
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
   const [claiming, setClaiming] = React.useState(false)
@@ -553,6 +548,8 @@ export default function TicketDetailPage() {
   const canEdit = isOpen && (isCreator || isAdmin)
   const canDelete = isOpen && (isCreator || isAdmin)
   const canManageAssignments = role === "admin" || role === "manager"
+  const canManageTicketAttachments =
+    role === "admin" || (role === "employee" && isCreator && isOpen)
   const activeAssigneeIds = ticket.assigneeIds.length > 0
     ? ticket.assigneeIds
     : ticket.assigneeId
@@ -725,7 +722,7 @@ export default function TicketDetailPage() {
                         fileName={a.fileName}
                         size={a.size}
                       />
-                      {canDeleteAttachment(a) && (
+                      {canManageTicketAttachments && (
                         <button
                           type="button"
                           onClick={() => handleDeleteAttachment(a.id)}
@@ -739,21 +736,23 @@ export default function TicketDetailPage() {
                   ))}
                 </div>
               )}
-              <div className="flex flex-col gap-2 border-t pt-3">
-                <AttachmentUpload
-                  files={uploadFiles}
-                  onChange={setUploadFiles}
-                  label="Add attachments"
-                  allowDragAndDrop={false}
-                />
-                {uploadFiles.length > 0 && (
-                  <div className="flex justify-end">
-                    <Button size="sm" onClick={handleUploadAttachments} disabled={uploading}>
-                      {uploading ? "Uploading..." : "Upload Files"}
-                    </Button>
-                  </div>
-                )}
-              </div>
+              {canManageTicketAttachments && (
+                <div className="flex flex-col gap-2 border-t pt-3">
+                  <AttachmentUpload
+                    files={uploadFiles}
+                    onChange={setUploadFiles}
+                    label="Add attachments"
+                    allowDragAndDrop={false}
+                  />
+                  {uploadFiles.length > 0 && (
+                    <div className="flex justify-end">
+                      <Button size="sm" onClick={handleUploadAttachments} disabled={uploading}>
+                        {uploading ? "Uploading..." : "Upload Files"}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -1233,9 +1232,11 @@ export default function TicketDetailPage() {
                 </Select>
               </div>
             </div>
-            <div className="flex flex-col gap-2">
-              <AttachmentUpload files={editFiles} onChange={setEditFiles} allowDragAndDrop={false} />
-            </div>
+            {canManageTicketAttachments && (
+              <div className="flex flex-col gap-2">
+                <AttachmentUpload files={editFiles} onChange={setEditFiles} allowDragAndDrop={false} />
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditOpen(false)}>

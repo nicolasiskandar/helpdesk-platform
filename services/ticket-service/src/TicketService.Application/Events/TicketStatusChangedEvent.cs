@@ -7,5 +7,6 @@ public record TicketStatusChangedEvent(
     string NewStatus,
     Guid ChangedByUserId,
     string ChangedByType,
-    DateTime ChangedAt
+    DateTime ChangedAt,
+    IReadOnlyList<Guid> RecipientUserIds
 );

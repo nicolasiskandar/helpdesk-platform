@@ -96,6 +96,9 @@ public class TicketBusinessService : ITicketService
 
         await _unitOfWork.TicketAuditLogs.AddAsync(auditLog);
 
+        var accessToken = _httpContextAccessor.HttpContext?.Request.Headers["Authorization"].ToString();
+        var (managerUserIds, adminUserIds) = await ResolveManagerAndAdminUserIdsAsync(accessToken);
+
         var outboxMessage = new OutboxMessage
         {
             Id = Guid.NewGuid(),
@@ -108,7 +111,9 @@ public class TicketBusinessService : ITicketService
                 category.Name,
                 priority.Name,
                 createdByUserId,
-                ticket.CreatedAt
+                ticket.CreatedAt,
+                managerUserIds,
+                adminUserIds
             )),
             CreatedAt = DateTime.UtcNow
         };
@@ -332,12 +337,36 @@ public class TicketBusinessService : ITicketService
                 newStatus.Name,
                 changedByUserId,
                 changedByType,
-                DateTime.UtcNow
+                DateTime.UtcNow,
+                await GetTicketRecipientsAsync(ticket.Id, ticket.CreatedByUserId)
             )),
             CreatedAt = DateTime.UtcNow
         };
 
         await _unitOfWork.Outbox.AddAsync(outboxMessage);
+
+        if (newStatus.Name == "Closed")
+        {
+            var accessToken = _httpContextAccessor.HttpContext?.Request.Headers["Authorization"].ToString();
+            var adminUserIds = await ResolveUserIdsByRoleAsync("Admin", accessToken);
+
+            var closedOutboxMessage = new OutboxMessage
+            {
+                Id = Guid.NewGuid(),
+                EventType = "ticket.closed",
+                Payload = JsonSerializer.Serialize(new TicketClosedEvent(
+                    ticket.Id,
+                    ticket.ReferenceNumber,
+                    changedByUserId,
+                    DateTime.UtcNow,
+                    adminUserIds
+                )),
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await _unitOfWork.Outbox.AddAsync(closedOutboxMessage);
+        }
+
         await _unitOfWork.SaveChangesAsync();
 
         return MapToResponse(ticket, ticket.Category, ticket.Priority, newStatus);
@@ -380,7 +409,8 @@ public class TicketBusinessService : ITicketService
                 EventType = "ticket.status_changed",
                 Payload = JsonSerializer.Serialize(new TicketStatusChangedEvent(
                     ticketId, ticket.ReferenceNumber, oldStatusName, "In Progress",
-                    assignedByUserId, "User", DateTime.UtcNow)),
+                    assignedByUserId, "User", DateTime.UtcNow,
+                    await GetTicketRecipientsAsync(ticketId, ticket.CreatedByUserId))),
                 CreatedAt = DateTime.UtcNow
             };
             await _unitOfWork.Outbox.AddAsync(statusOutbox);
@@ -454,7 +484,8 @@ public class TicketBusinessService : ITicketService
                 EventType = "ticket.status_changed",
                 Payload = JsonSerializer.Serialize(new TicketStatusChangedEvent(
                     ticketId, ticket.ReferenceNumber, oldStatusName, "Open",
-                    changedByUserId, "User", DateTime.UtcNow)),
+                    changedByUserId, "User", DateTime.UtcNow,
+                    await GetTicketRecipientsAsync(ticketId, ticket.CreatedByUserId))),
                 CreatedAt = DateTime.UtcNow
             };
             await _unitOfWork.Outbox.AddAsync(statusOutbox);
@@ -522,7 +553,8 @@ public class TicketBusinessService : ITicketService
                 EventType = "ticket.status_changed",
                 Payload = JsonSerializer.Serialize(new TicketStatusChangedEvent(
                     ticketId, ticket.ReferenceNumber, oldStatusName, "Open",
-                    userId, "User", DateTime.UtcNow)),
+                    userId, "User", DateTime.UtcNow,
+                    await GetTicketRecipientsAsync(ticketId, ticket.CreatedByUserId))),
                 CreatedAt = DateTime.UtcNow
             };
             await _unitOfWork.Outbox.AddAsync(statusOutbox);
@@ -620,7 +652,8 @@ public class TicketBusinessService : ITicketService
                 "In Progress",
                 userId,
                 "User",
-                DateTime.UtcNow
+                DateTime.UtcNow,
+                await GetTicketRecipientsAsync(ticketId, ticket.CreatedByUserId)
             )),
             CreatedAt = DateTime.UtcNow
         };
@@ -953,6 +986,38 @@ public class TicketBusinessService : ITicketService
         await _unitOfWork.SaveChangesAsync();
     }
 
+    private async Task<IReadOnlyList<Guid>> ResolveUserIdsByRoleAsync(string role, string? accessToken)
+    {
+        if (string.IsNullOrEmpty(accessToken))
+            return Array.Empty<Guid>();
+
+        return await _userLookupService.GetUserIdsByRoleAsync(role, accessToken);
+    }
+
+    private async Task<(IReadOnlyList<Guid> Managers, IReadOnlyList<Guid> Admins)> ResolveManagerAndAdminUserIdsAsync(string? accessToken)
+    {
+        if (string.IsNullOrEmpty(accessToken))
+            return (Array.Empty<Guid>(), Array.Empty<Guid>());
+
+        var managersTask = _userLookupService.GetUserIdsByRoleAsync("Manager", accessToken);
+        var adminsTask = _userLookupService.GetUserIdsByRoleAsync("Admin", accessToken);
+        await Task.WhenAll(managersTask, adminsTask);
+
+        return (await managersTask, await adminsTask);
+    }
+
+    private async Task<IReadOnlyList<Guid>> GetTicketRecipientsAsync(Guid ticketId, Guid creatorUserId)
+    {
+        var assignments = await _unitOfWork.TicketAssignments.GetByTicketIdAsync(ticketId);
+        var recipients = new List<Guid> { creatorUserId };
+        recipients.AddRange(assignments
+            .Where(a => a.UnassignedAt == null)
+            .Select(a => a.AgentUserId)
+            .Where(id => id != creatorUserId));
+
+        return recipients.Distinct().ToList();
+    }
+
     private async Task ValidateRecipientRolesAsync(AddCommentRequest request, TicketComment? parentComment, Ticket ticket, bool isReply)
     {
         if (request.RecipientUserIds == null)
@@ -1035,10 +1100,18 @@ public class TicketBusinessService : ITicketService
         return MapAttachmentToResponse(attachment);
     }
 
-    public async Task<AttachmentResponse> UploadAttachmentAsync(Guid ticketId, Stream fileStream, string fileName, Guid uploadedByUserId)
+    public async Task<AttachmentResponse> UploadAttachmentAsync(Guid ticketId, Stream fileStream, string fileName, Guid uploadedByUserId, string uploadedByRole)
     {
         var ticket = await _unitOfWork.Tickets.GetByIdAsync(ticketId)
             ?? throw new KeyNotFoundException("Ticket not found.");
+
+        var canUpload = uploadedByRole == "Admin"
+            || (uploadedByRole == "Employee"
+                && ticket.CreatedByUserId == uploadedByUserId
+                && ticket.Status.Name == "Open");
+
+        if (!canUpload)
+            throw new UnauthorizedAccessException("Only an admin or the employee who created the ticket (while it is open) can upload attachments.");
 
         var size = fileStream.CanSeek ? fileStream.Length : 0;
 
@@ -1077,8 +1150,9 @@ public class TicketBusinessService : ITicketService
             throw new InvalidOperationException("Attachment does not belong to this ticket.");
 
         var canDelete = deletedByRole == "Admin"
-            || ticket.CreatedByUserId == deletedByUserId
-            || attachment.UploadedByUserId == deletedByUserId;
+            || (deletedByRole == "Employee"
+                && ticket.CreatedByUserId == deletedByUserId
+                && ticket.Status.Name == "Open");
 
         if (!canDelete)
             throw new UnauthorizedAccessException("You do not have permission to delete this attachment.");

@@ -100,6 +100,9 @@ public class NotificationBusinessService : INotificationService
                 case "ticket.created":
                     await HandleTicketCreatedAsync(payload);
                     break;
+                case "ticket.closed":
+                    await HandleTicketClosedAsync(payload);
+                    break;
                 case "ticket.assigned":
                     await HandleTicketAssignedAsync(payload);
                     break;
@@ -123,12 +126,34 @@ public class NotificationBusinessService : INotificationService
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         if (evt == null) return;
 
-        var agentUserIds = await _unitOfWork.GetActiveAgentUserIdsAsync();
-        foreach (var agentId in agentUserIds)
+        var recipientIds = (evt.ManagerUserIds ?? Array.Empty<Guid>())
+            .Concat(evt.AdminUserIds ?? Array.Empty<Guid>())
+            .Distinct();
+
+        foreach (var recipientId in recipientIds)
         {
-            await CreateAndDeliverAsync(agentId, "created",
+            if (recipientId == evt.CreatedByUserId) continue;
+
+            await CreateAndDeliverAsync(recipientId, "created",
                 $"New ticket: {evt.ReferenceNumber}",
                 $"A new ticket has been created: {evt.Title}",
+                evt.TicketId, evt.ReferenceNumber);
+        }
+    }
+
+    private async Task HandleTicketClosedAsync(string payload)
+    {
+        var evt = JsonSerializer.Deserialize<TicketClosedEvent>(payload,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        if (evt == null) return;
+
+        foreach (var adminId in (evt.AdminUserIds ?? Array.Empty<Guid>()).Distinct())
+        {
+            if (adminId == evt.ClosedByUserId) continue;
+
+            await CreateAndDeliverAsync(adminId, "closed",
+                $"Ticket closed: {evt.ReferenceNumber}",
+                $"Ticket {evt.ReferenceNumber} was closed on {evt.ClosedAt:dd MMM yyyy} at {evt.ClosedAt:HH:mm} UTC.",
                 evt.TicketId, evt.ReferenceNumber);
         }
     }
@@ -151,8 +176,7 @@ public class NotificationBusinessService : INotificationService
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         if (evt == null) return;
 
-        var recipientIds = await _unitOfWork.GetTicketRecipientIdsAsync(evt.TicketId);
-        foreach (var recipientId in recipientIds)
+        foreach (var recipientId in (evt.RecipientUserIds ?? Array.Empty<Guid>()).Distinct())
         {
             if (recipientId == evt.ChangedByUserId) continue;
 
@@ -169,9 +193,7 @@ public class NotificationBusinessService : INotificationService
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         if (evt == null) return;
 
-        var recipientIds = evt.RecipientUserIds?.Count > 0
-            ? evt.RecipientUserIds
-            : await _unitOfWork.GetTicketRecipientIdsAsync(evt.TicketId);
+        var recipientIds = evt.RecipientUserIds ?? Array.Empty<Guid>();
 
         foreach (var recipientId in recipientIds.Distinct())
         {
@@ -260,6 +282,7 @@ public class NotificationBusinessService : INotificationService
         "assigned" => (pref.TicketAssignedInApp, pref.TicketAssignedEmail),
         "unassigned" => (pref.TicketUnassignedInApp, pref.TicketUnassignedEmail),
         "status_changed" => (pref.TicketStatusChangedInApp, pref.TicketStatusChangedEmail),
+        "closed" => (pref.TicketStatusChangedInApp, pref.TicketStatusChangedEmail),
         "comment" => (pref.TicketCommentedInApp, pref.TicketCommentedEmail),
         _ => (true, true)
     };

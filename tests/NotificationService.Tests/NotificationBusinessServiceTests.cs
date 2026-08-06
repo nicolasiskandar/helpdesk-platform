@@ -173,17 +173,14 @@ public class NotificationBusinessServiceTests
     }
 
     [Fact]
-    public async Task ProcessTicketEventAsync_CreatedEvent_NotifiesAllAgents()
+    public async Task ProcessTicketEventAsync_CreatedEvent_NotifiesManagersAndAdminsButNotAgents()
     {
-        var agentId1 = Guid.NewGuid();
-        var agentId2 = Guid.NewGuid();
-        _unitOfWork.Setup(u => u.GetActiveAgentUserIdsAsync())
-            .ReturnsAsync(new List<Guid> { agentId1, agentId2 });
-
-        var pref1 = DefaultPreference(agentId1);
-        var pref2 = DefaultPreference(agentId2);
-        _preferenceRepo.Setup(r => r.GetOrCreateByUserIdAsync(agentId1)).ReturnsAsync(pref1);
-        _preferenceRepo.Setup(r => r.GetOrCreateByUserIdAsync(agentId2)).ReturnsAsync(pref2);
+        var managerId = Guid.NewGuid();
+        var adminId = Guid.NewGuid();
+        var agentId = Guid.NewGuid();
+        _preferenceRepo.Setup(r => r.GetOrCreateByUserIdAsync(managerId)).ReturnsAsync(DefaultPreference(managerId));
+        _preferenceRepo.Setup(r => r.GetOrCreateByUserIdAsync(adminId)).ReturnsAsync(DefaultPreference(adminId));
+        _preferenceRepo.Setup(r => r.GetOrCreateByUserIdAsync(agentId)).ReturnsAsync(DefaultPreference(agentId));
         _notificationRepo.Setup(r => r.AddAsync(It.IsAny<Notification>())).Returns(Task.CompletedTask);
         _unitOfWork.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
 
@@ -195,15 +192,84 @@ public class NotificationBusinessServiceTests
             "Hardware",
             "Medium",
             Guid.NewGuid(),
-            DateTime.UtcNow);
+            DateTime.UtcNow,
+            new List<Guid> { managerId },
+            new List<Guid> { adminId });
 
         var sut = CreateSut();
         await sut.ProcessTicketEventAsync("ticket.created", JsonSerializer.Serialize(evt));
 
         _notificationRepo.Verify(r => r.AddAsync(It.Is<Notification>(n =>
-            n.RecipientUserId == agentId1 && n.Type == "created")), Times.Once);
+            n.RecipientUserId == managerId && n.Type == "created")), Times.Once);
         _notificationRepo.Verify(r => r.AddAsync(It.Is<Notification>(n =>
-            n.RecipientUserId == agentId2 && n.Type == "created")), Times.Once);
+            n.RecipientUserId == adminId && n.Type == "created")), Times.Once);
+        // Agents are not notified on ticket creation
+        _notificationRepo.Verify(r => r.AddAsync(It.Is<Notification>(n =>
+            n.RecipientUserId == agentId)), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessTicketEventAsync_CreatedEvent_ExcludesCreator()
+    {
+        var creatorId = Guid.NewGuid();
+        var managerId = Guid.NewGuid();
+        _preferenceRepo.Setup(r => r.GetOrCreateByUserIdAsync(managerId)).ReturnsAsync(DefaultPreference(managerId));
+        _preferenceRepo.Setup(r => r.GetOrCreateByUserIdAsync(creatorId)).ReturnsAsync(DefaultPreference(creatorId));
+        _notificationRepo.Setup(r => r.AddAsync(It.IsAny<Notification>())).Returns(Task.CompletedTask);
+        _unitOfWork.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
+
+        var evt = new TicketCreatedEvent(
+            Guid.NewGuid(),
+            "TKT-0001",
+            "Test ticket",
+            "Description",
+            "Hardware",
+            "Medium",
+            creatorId,
+            DateTime.UtcNow,
+            new List<Guid> { managerId, creatorId },
+            new List<Guid>());
+
+        var sut = CreateSut();
+        await sut.ProcessTicketEventAsync("ticket.created", JsonSerializer.Serialize(evt));
+
+        _notificationRepo.Verify(r => r.AddAsync(It.Is<Notification>(n =>
+            n.RecipientUserId == managerId)), Times.Once);
+        _notificationRepo.Verify(r => r.AddAsync(It.Is<Notification>(n =>
+            n.RecipientUserId == creatorId)), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessTicketEventAsync_ClosedEvent_NotifiesAdminsWithCloseTime()
+    {
+        var adminId1 = Guid.NewGuid();
+        var adminId2 = Guid.NewGuid();
+        var closerId = Guid.NewGuid();
+        var closedAt = new DateTime(2026, 8, 6, 15, 30, 0, DateTimeKind.Utc);
+
+        _preferenceRepo.Setup(r => r.GetOrCreateByUserIdAsync(adminId1)).ReturnsAsync(DefaultPreference(adminId1));
+        _preferenceRepo.Setup(r => r.GetOrCreateByUserIdAsync(adminId2)).ReturnsAsync(DefaultPreference(adminId2));
+        _notificationRepo.Setup(r => r.AddAsync(It.IsAny<Notification>())).Returns(Task.CompletedTask);
+        _unitOfWork.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
+
+        var evt = new TicketClosedEvent(
+            Guid.NewGuid(),
+            "TKT-0007",
+            closerId,
+            closedAt,
+            new List<Guid> { adminId1, adminId2 });
+
+        var sut = CreateSut();
+        await sut.ProcessTicketEventAsync("ticket.closed", JsonSerializer.Serialize(evt));
+
+        _notificationRepo.Verify(r => r.AddAsync(It.Is<Notification>(n =>
+            n.RecipientUserId == adminId1 && n.Type == "closed" &&
+            n.Message.Contains("15:30") && n.Message.Contains("06 Aug 2026"))), Times.Once);
+        _notificationRepo.Verify(r => r.AddAsync(It.Is<Notification>(n =>
+            n.RecipientUserId == adminId2 && n.Type == "closed")), Times.Once);
+        // The admin who closed the ticket is not notified
+        _notificationRepo.Verify(r => r.AddAsync(It.Is<Notification>(n =>
+            n.RecipientUserId == closerId)), Times.Never);
     }
 
     [Fact]
@@ -236,9 +302,6 @@ public class NotificationBusinessServiceTests
         var changedById = Guid.NewGuid();
         var ticketId = Guid.NewGuid();
 
-        _unitOfWork.Setup(u => u.GetTicketRecipientIdsAsync(ticketId))
-            .ReturnsAsync(new List<Guid> { creatorId, changedById });
-
         var pref = DefaultPreference(creatorId);
         _preferenceRepo.Setup(r => r.GetOrCreateByUserIdAsync(creatorId)).ReturnsAsync(pref);
         _notificationRepo.Setup(r => r.AddAsync(It.IsAny<Notification>())).Returns(Task.CompletedTask);
@@ -251,7 +314,8 @@ public class NotificationBusinessServiceTests
             "In Progress",
             changedById,
             "Admin",
-            DateTime.UtcNow);
+            DateTime.UtcNow,
+            new List<Guid> { creatorId, changedById });
 
         var sut = CreateSut();
         await sut.ProcessTicketEventAsync("ticket.status_changed", JsonSerializer.Serialize(evt));
@@ -261,6 +325,29 @@ public class NotificationBusinessServiceTests
         // Actor should not receive notification
         _notificationRepo.Verify(r => r.AddAsync(It.Is<Notification>(n =>
             n.RecipientUserId == changedById)), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessTicketEventAsync_StatusChangedEvent_NoRecipients_DoesNotNotify()
+    {
+        var changedById = Guid.NewGuid();
+        _notificationRepo.Setup(r => r.AddAsync(It.IsAny<Notification>())).Returns(Task.CompletedTask);
+        _unitOfWork.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
+
+        var evt = new TicketStatusChangedEvent(
+            Guid.NewGuid(),
+            "TKT-0008",
+            "Open",
+            "In Progress",
+            changedById,
+            "Admin",
+            DateTime.UtcNow,
+            new List<Guid>());
+
+        var sut = CreateSut();
+        await sut.ProcessTicketEventAsync("ticket.status_changed", JsonSerializer.Serialize(evt));
+
+        _notificationRepo.Verify(r => r.AddAsync(It.IsAny<Notification>()), Times.Never);
     }
 
     [Fact]
@@ -307,13 +394,11 @@ public class NotificationBusinessServiceTests
     [Fact]
     public async Task ProcessTicketEventAsync_PreferencesDisabled_DoesNotNotify()
     {
-        var agentId = Guid.NewGuid();
-        var disabledPref = DefaultPreference(agentId);
+        var managerId = Guid.NewGuid();
+        var disabledPref = DefaultPreference(managerId);
         disabledPref.TicketCreatedInApp = false;
         disabledPref.TicketCreatedEmail = false;
-        _unitOfWork.Setup(u => u.GetActiveAgentUserIdsAsync())
-            .ReturnsAsync(new List<Guid> { agentId });
-        _preferenceRepo.Setup(r => r.GetOrCreateByUserIdAsync(agentId)).ReturnsAsync(disabledPref);
+        _preferenceRepo.Setup(r => r.GetOrCreateByUserIdAsync(managerId)).ReturnsAsync(disabledPref);
 
         var evt = new TicketCreatedEvent(
             Guid.NewGuid(),
@@ -323,7 +408,9 @@ public class NotificationBusinessServiceTests
             "Hardware",
             "Medium",
             Guid.NewGuid(),
-            DateTime.UtcNow);
+            DateTime.UtcNow,
+            new List<Guid> { managerId },
+            new List<Guid>());
 
         var sut = CreateSut();
         await sut.ProcessTicketEventAsync("ticket.created", JsonSerializer.Serialize(evt));
@@ -350,11 +437,9 @@ public class NotificationBusinessServiceTests
     [Fact]
     public async Task ProcessTicketEventAsync_CreatedEvent_SendsSignalRNotification()
     {
-        var agentId = Guid.NewGuid();
-        var pref = DefaultPreference(agentId);
-        _unitOfWork.Setup(u => u.GetActiveAgentUserIdsAsync())
-            .ReturnsAsync(new List<Guid> { agentId });
-        _preferenceRepo.Setup(r => r.GetOrCreateByUserIdAsync(agentId)).ReturnsAsync(pref);
+        var managerId = Guid.NewGuid();
+        var pref = DefaultPreference(managerId);
+        _preferenceRepo.Setup(r => r.GetOrCreateByUserIdAsync(managerId)).ReturnsAsync(pref);
         _notificationRepo.Setup(r => r.AddAsync(It.IsAny<Notification>())).Returns(Task.CompletedTask);
         _unitOfWork.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
 
@@ -366,7 +451,9 @@ public class NotificationBusinessServiceTests
             "Hardware",
             "Medium",
             Guid.NewGuid(),
-            DateTime.UtcNow);
+            DateTime.UtcNow,
+            new List<Guid> { managerId },
+            new List<Guid>());
 
         var sut = CreateSut();
         await sut.ProcessTicketEventAsync("ticket.created", JsonSerializer.Serialize(evt));
@@ -374,18 +461,16 @@ public class NotificationBusinessServiceTests
         // SignalR is called internally but SendAsync is an extension method that can't be verified via Moq.
         // The notification is created and persisted, which is the critical path.
         _notificationRepo.Verify(r => r.AddAsync(It.Is<Notification>(n =>
-            n.RecipientUserId == agentId && n.Type == "created")), Times.Once);
+            n.RecipientUserId == managerId && n.Type == "created")), Times.Once);
     }
 
     [Fact]
     public async Task ProcessTicketEventAsync_CreatedEvent_SendsEmailIfEnabled()
     {
-        var agentId = Guid.NewGuid();
-        var pref = DefaultPreference(agentId);
+        var managerId = Guid.NewGuid();
+        var pref = DefaultPreference(managerId);
         pref.TicketCreatedEmail = true;
-        _unitOfWork.Setup(u => u.GetActiveAgentUserIdsAsync())
-            .ReturnsAsync(new List<Guid> { agentId });
-        _preferenceRepo.Setup(r => r.GetOrCreateByUserIdAsync(agentId)).ReturnsAsync(pref);
+        _preferenceRepo.Setup(r => r.GetOrCreateByUserIdAsync(managerId)).ReturnsAsync(pref);
         _notificationRepo.Setup(r => r.AddAsync(It.IsAny<Notification>())).Returns(Task.CompletedTask);
         _unitOfWork.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
         _emailSender.Setup(e => e.SendAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
@@ -399,7 +484,9 @@ public class NotificationBusinessServiceTests
             "Hardware",
             "Medium",
             Guid.NewGuid(),
-            DateTime.UtcNow);
+            DateTime.UtcNow,
+            new List<Guid> { managerId },
+            new List<Guid>());
 
         var sut = CreateSut();
         await sut.ProcessTicketEventAsync("ticket.created", JsonSerializer.Serialize(evt));

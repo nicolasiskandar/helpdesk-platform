@@ -356,7 +356,7 @@ public class TicketsController : ControllerBase
 
         var userId = GetUserIdFromClaims();
         await EnsureTicketAccessAsync(ticketId, userId, GetUserRoleFromClaims());
-        var attachment = await _ticketService.UploadAttachmentAsync(ticketId, file.OpenReadStream(), file.FileName, userId);
+        var attachment = await _ticketService.UploadAttachmentAsync(ticketId, file.OpenReadStream(), file.FileName, userId, GetUserRoleFromClaims());
 
         _logger.LogInformation("UploadAttachment completed for ticket {TicketId}, attachmentId: {AttachmentId}", ticketId, attachment.Id);
 

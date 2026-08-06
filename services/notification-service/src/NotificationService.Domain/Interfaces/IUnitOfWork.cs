@@ -8,6 +8,4 @@ public interface IUnitOfWork : IDisposable
     INotificationPreferenceRepository NotificationPreferences { get; }
     IProcessedMessageRepository ProcessedMessages { get; }
     Task<int> SaveChangesAsync();
-    Task<IReadOnlyList<Guid>> GetActiveAgentUserIdsAsync();
-    Task<IReadOnlyList<Guid>> GetTicketRecipientIdsAsync(Guid ticketId);
 }

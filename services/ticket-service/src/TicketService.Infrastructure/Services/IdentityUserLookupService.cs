@@ -47,6 +47,37 @@ public class IdentityUserLookupService : IUserLookupService
             .ToDictionary(u => u.Id, u => u.Role);
     }
 
+    public async Task<IReadOnlyList<Guid>> GetUserIdsByRoleAsync(string role, string accessToken)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/users?isActive=true&page=1&pageSize=500");
+        request.Headers.TryAddWithoutValidation("Authorization", accessToken);
+
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var response = await _httpClient.SendAsync(request, timeout.Token);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Identity user lookup by role failed with status {Status}", response.StatusCode);
+                return Array.Empty<Guid>();
+            }
+
+            var content = await response.Content.ReadAsStringAsync();
+            var result = JsonSerializer.Deserialize<IdentityUserListResponse>(content, JsonOptions);
+
+            return (result?.Users ?? Enumerable.Empty<IdentityUserResponse>())
+                .Where(u => string.Equals(u.Role, role, StringComparison.OrdinalIgnoreCase))
+                .Select(u => u.Id)
+                .Distinct()
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Identity user lookup by role '{Role}' failed", role);
+            return Array.Empty<Guid>();
+        }
+    }
+
     private sealed class IdentityUserListResponse
     {
         public List<IdentityUserResponse> Users { get; set; } = new();

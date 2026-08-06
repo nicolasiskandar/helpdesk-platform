@@ -8,5 +8,7 @@ public record TicketCreatedEvent(
     string CategoryName,
     string PriorityName,
     Guid CreatedByUserId,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    IReadOnlyList<Guid> ManagerUserIds,
+    IReadOnlyList<Guid> AdminUserIds
 );
