@@ -54,6 +54,15 @@ export interface AssignmentResponse {
   unassignedAt: string | null
 }
 
+export interface CommentAttachmentResponse {
+  id: string
+  fileName: string
+  fileUrl: string
+  size: number
+  uploadedByUserId: string
+  uploadedAt: string
+}
+
 export interface CommentResponse {
   id: string
   authorUserId: string
@@ -62,6 +71,7 @@ export interface CommentResponse {
   parentCommentId: string | null
   recipientUserIds: string[]
   createdAt: string
+  attachments: CommentAttachmentResponse[]
 }
 
 export interface AuditLogEntryResponse {
@@ -425,15 +435,42 @@ export async function apiAddComment(
   ticketId: string,
   content: string,
   parentCommentId?: string,
-  recipientUserIds?: string[]
+  recipientUserIds?: string[],
+  files?: File[]
 ): Promise<CommentResponse> {
   const token = getAccessToken()
+  const formData = new FormData()
+  formData.append("content", content)
+  if (parentCommentId) formData.append("parentCommentId", parentCommentId)
+  if (recipientUserIds) formData.append("recipientUserIds", JSON.stringify(recipientUserIds))
+  for (const f of files ?? []) formData.append("files", f)
   const res = await fetch(`${API_BASE}/api/tickets/${ticketId}/comments`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders(token) },
-    body: JSON.stringify({ content, parentCommentId, recipientUserIds }),
+    headers: authHeaders(token),
+    body: formData,
   })
   return handleResponse<CommentResponse>(res)
+}
+
+export function apiCommentAttachmentDownloadUrl(
+  ticketId: string,
+  commentId: string,
+  attachmentId: string
+): string {
+  return `${API_BASE}/api/tickets/${ticketId}/comments/${commentId}/attachments/${attachmentId}`
+}
+
+export async function apiDeleteCommentAttachment(
+  ticketId: string,
+  commentId: string,
+  attachmentId: string
+): Promise<void> {
+  const token = getAccessToken()
+  const res = await fetch(
+    `${API_BASE}/api/tickets/${ticketId}/comments/${commentId}/attachments/${attachmentId}`,
+    { method: "DELETE", headers: authHeaders(token) }
+  )
+  return handleResponse<void>(res)
 }
 
 export async function apiGetAttachments(
@@ -476,6 +513,19 @@ export async function apiDeleteAttachment(
     { method: "DELETE", headers: authHeaders(token) }
   )
   return handleResponse<void>(res)
+}
+
+export async function downloadFile(url: string, fileName: string): Promise<void> {
+  const token = getAccessToken()
+  const res = await fetch(url, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error("Failed to download file")
+  const blob = await res.blob()
+  const objectUrl = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+  link.href = objectUrl
+  link.download = fileName
+  link.click()
+  URL.revokeObjectURL(objectUrl)
 }
 
 export async function apiGetAuditLog(

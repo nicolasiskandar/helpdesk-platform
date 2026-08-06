@@ -14,4 +14,5 @@ public class TicketComment
     public TicketComment? ParentComment { get; set; }
     public ICollection<TicketComment> Replies { get; set; } = new List<TicketComment>();
     public ICollection<TicketCommentRecipient> Recipients { get; set; } = new List<TicketCommentRecipient>();
+    public ICollection<CommentAttachment> Attachments { get; set; } = new List<CommentAttachment>();
 }

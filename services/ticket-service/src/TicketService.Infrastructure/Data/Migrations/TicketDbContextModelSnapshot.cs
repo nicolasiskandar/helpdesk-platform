@@ -484,6 +484,45 @@ namespace TicketService.Infrastructure.Data.Migrations
                     b.ToTable("TicketCommentRecipients");
                 });
 
+            modelBuilder.Entity("TicketService.Domain.Entities.CommentAttachment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CommentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("FileUrl")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<long>("Size")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
+
+                    b.Property<DateTime>("UploadedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<Guid>("UploadedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CommentId");
+
+                    b.ToTable("CommentAttachments");
+                });
+
             modelBuilder.Entity("TicketService.Domain.Entities.Ticket", b =>
                 {
                     b.HasOne("TicketService.Domain.Entities.Category", "Category")
@@ -559,6 +598,8 @@ namespace TicketService.Infrastructure.Data.Migrations
 
                     b.Navigation("ParentComment");
 
+                    b.Navigation("Attachments");
+
                     b.Navigation("Recipients");
 
                     b.Navigation("Replies");
@@ -570,6 +611,17 @@ namespace TicketService.Infrastructure.Data.Migrations
                 {
                     b.HasOne("TicketService.Domain.Entities.TicketComment", "Comment")
                         .WithMany("Recipients")
+                        .HasForeignKey("CommentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Comment");
+                });
+
+            modelBuilder.Entity("TicketService.Domain.Entities.CommentAttachment", b =>
+                {
+                    b.HasOne("TicketService.Domain.Entities.TicketComment", "Comment")
+                        .WithMany("Attachments")
                         .HasForeignKey("CommentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();

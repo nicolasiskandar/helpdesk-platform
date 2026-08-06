@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
@@ -6,10 +7,10 @@ COPY src/TicketService.Domain/TicketService.Domain.csproj src/TicketService.Doma
 COPY src/TicketService.Application/TicketService.Application.csproj src/TicketService.Application/
 COPY src/TicketService.Infrastructure/TicketService.Infrastructure.csproj src/TicketService.Infrastructure/
 COPY src/TicketService.Api/TicketService.Api.csproj src/TicketService.Api/
-RUN dotnet restore TicketService.sln
+RUN --mount=type=cache,target=/root/.nuget/packages dotnet restore TicketService.sln
 
 COPY src/ src/
-RUN dotnet publish src/TicketService.Api/TicketService.Api.csproj -c Release -o /app/publish
+RUN --mount=type=cache,target=/root/.nuget/packages dotnet publish src/TicketService.Api/TicketService.Api.csproj -c Release -o /app/publish
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app

@@ -9,6 +9,7 @@ public interface IUnitOfWork : IDisposable
     ITicketAssignmentRepository TicketAssignments { get; }
     ITicketCommentRepository TicketComments { get; }
     ITicketAttachmentRepository TicketAttachments { get; }
+    ICommentAttachmentRepository CommentAttachments { get; }
     ITicketAuditLogRepository TicketAuditLogs { get; }
     IKbArticleRepository KbArticles { get; }
     IOutboxRepository Outbox { get; }

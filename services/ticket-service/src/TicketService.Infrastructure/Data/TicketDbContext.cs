@@ -14,6 +14,7 @@ public class TicketDbContext : DbContext
     public DbSet<TicketAssignment> TicketAssignments => Set<TicketAssignment>();
     public DbSet<TicketComment> TicketComments => Set<TicketComment>();
     public DbSet<TicketAttachment> TicketAttachments => Set<TicketAttachment>();
+    public DbSet<CommentAttachment> CommentAttachments => Set<CommentAttachment>();
     public DbSet<TicketAuditLogEntry> TicketAuditLogs => Set<TicketAuditLogEntry>();
     public DbSet<KbArticle> KbArticles => Set<KbArticle>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
@@ -107,6 +108,23 @@ public class TicketDbContext : DbContext
 
             entity.HasOne(e => e.Comment)
                 .WithMany(c => c.Recipients)
+                .HasForeignKey(e => e.CommentId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => e.CommentId);
+        });
+
+        modelBuilder.Entity<CommentAttachment>(entity =>
+        {
+            entity.ToTable("CommentAttachments");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.FileName).IsRequired().HasMaxLength(255);
+            entity.Property(e => e.FileUrl).IsRequired().HasMaxLength(2000);
+            entity.Property(e => e.UploadedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.Property(e => e.Size).HasDefaultValue(0);
+
+            entity.HasOne(e => e.Comment)
+                .WithMany(c => c.Attachments)
                 .HasForeignKey(e => e.CommentId)
                 .OnDelete(DeleteBehavior.Cascade);
 

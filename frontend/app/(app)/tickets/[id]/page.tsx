@@ -6,7 +6,6 @@ import { toast } from "sonner"
 import {
   ArrowLeftIcon,
   SendIcon,
-  PaperclipIcon,
   UserPlusIcon,
   UserMinusIcon,
   ClockIcon,
@@ -57,12 +56,12 @@ import {
 } from "@/components/ui/dialog"
 import { StatusBadge, PriorityIndicator } from "@/components/ticket-badges"
 import { AttachmentUpload } from "@/components/attachment-upload"
-import { AttachmentPreview, isImageFile } from "@/components/attachment-preview"
+import { AttachmentPreview } from "@/components/attachment-preview"
 import { useStore } from "@/lib/store"
-import { formatRelative, formatDateTime, formatDuration, formatFileSize } from "@/lib/analytics"
+import { formatRelative, formatDateTime, formatDuration } from "@/lib/analytics"
 import type { Ticket, Comment, TicketStatus, TicketCategory, TicketPriority } from "@/lib/types"
 import type { AuditLogEntryResponse, AttachmentResponse, CategoryResponse, PriorityResponse, UserResponse } from "@/lib/api"
-import { apiGetTicketByReference, apiGetCategories, apiGetPriorities, apiAttachmentDownloadUrl, apiGetUsers, apiUnassignAgent, apiUploadAttachment, apiEscalateTicket, apiDeleteAttachment } from "@/lib/api"
+import { apiGetTicketByReference, apiGetCategories, apiGetPriorities, apiAttachmentDownloadUrl, apiGetUsers, apiUnassignAgent, apiUploadAttachment, apiEscalateTicket, apiDeleteAttachment, apiCommentAttachmentDownloadUrl, apiDeleteCommentAttachment } from "@/lib/api"
 
 function initials(name: string) {
   return name
@@ -132,6 +131,7 @@ export default function TicketDetailPage() {
   const scrolledKeyRef = React.useRef<string | null>(null)
   const [replyCandidateIds, setReplyCandidateIds] = React.useState<string[]>([])
   const [recipientOpen, setRecipientOpen] = React.useState(false)
+  const [commentFiles, setCommentFiles] = React.useState<File[]>([])
 
   const [editOpen, setEditOpen] = React.useState(false)
   const [editTitle, setEditTitle] = React.useState("")
@@ -275,9 +275,11 @@ export default function TicketDetailPage() {
         ticket.id,
         commentText.trim(),
         replyTo ?? undefined,
-        omitRecipients ? undefined : recipientIds
+        omitRecipients ? undefined : recipientIds,
+        commentFiles
       )
       setCommentText("")
+      setCommentFiles([])
       setReplyTo(null)
       setRecipientIds([])
       setReplyCandidateIds([])
@@ -300,6 +302,18 @@ export default function TicketDetailPage() {
       toast.success(`Status changed to ${newStatus}`)
     } catch {
       toast.error("Failed to change status")
+    }
+  }
+
+  async function handleDeleteCommentAttachment(commentId: string, attachmentId: string) {
+    if (!ticket) return
+    try {
+      await apiDeleteCommentAttachment(ticket.id, commentId, attachmentId)
+      const c = await loadComments(ticket.id)
+      setComments(c)
+      toast.success("Attachment deleted")
+    } catch {
+      toast.error("Failed to delete attachment")
     }
   }
 
@@ -605,6 +619,29 @@ export default function TicketDetailPage() {
             <p className="mt-1 whitespace-pre-wrap text-sm">
               {comment.body}
             </p>
+            {comment.attachments.length > 0 && (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {comment.attachments.map((a) => (
+                  <div key={a.id} className="flex items-center gap-1">
+                    <AttachmentPreview
+                      url={apiCommentAttachmentDownloadUrl(ticket.id, comment.id, a.id)}
+                      fileName={a.name}
+                      size={a.size}
+                    />
+                    {(comment.authorId === currentUserId || role === "admin") && (
+                      <button
+                        type="button"
+                        className="text-muted-foreground hover:text-destructive"
+                        aria-label={`Delete ${a.name}`}
+                        onClick={() => handleDeleteCommentAttachment(comment.id, a.id)}
+                      >
+                        <TrashIcon className="size-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
             <button
               type="button"
               className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
@@ -672,6 +709,54 @@ export default function TicketDetailPage() {
             </CardContent>
           </Card>
 
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle>Attachments ({attachments.length})</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3 pt-0">
+              {attachments.length === 0 ? (
+                <p className="py-1 text-sm text-muted-foreground">No attachments.</p>
+              ) : (
+                <div className="flex flex-wrap items-center gap-3">
+                  {attachments.map((a) => (
+                    <div key={a.id} className="flex items-center gap-1">
+                      <AttachmentPreview
+                        url={apiAttachmentDownloadUrl(ticket.id, a.id)}
+                        fileName={a.fileName}
+                        size={a.size}
+                      />
+                      {canDeleteAttachment(a) && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteAttachment(a.id)}
+                          className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                          aria-label={`Delete ${a.fileName}`}
+                        >
+                          <TrashIcon className="size-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex flex-col gap-2 border-t pt-3">
+                <AttachmentUpload
+                  files={uploadFiles}
+                  onChange={setUploadFiles}
+                  label="Add attachments"
+                  allowDragAndDrop={false}
+                />
+                {uploadFiles.length > 0 && (
+                  <div className="flex justify-end">
+                    <Button size="sm" onClick={handleUploadAttachments} disabled={uploading}>
+                      {uploading ? "Uploading..." : "Upload Files"}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
           <Tabs defaultValue="comments">
             <TabsList>
               <TabsTrigger value="comments">
@@ -679,9 +764,6 @@ export default function TicketDetailPage() {
               </TabsTrigger>
               <TabsTrigger value="activity">
                 Activity ({auditLog.length})
-              </TabsTrigger>
-              <TabsTrigger value="attachments">
-                Attachments ({attachments.length})
               </TabsTrigger>
             </TabsList>
 
@@ -709,6 +791,7 @@ export default function TicketDetailPage() {
                     onChange={(e) => setCommentText(e.target.value)}
                     rows={3}
                   />
+                  <AttachmentUpload files={commentFiles} onChange={setCommentFiles} label="Attach files" allowDragAndDrop={false} />
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-3">
                       <Popover open={recipientOpen} onOpenChange={setRecipientOpen}>
@@ -869,89 +952,6 @@ export default function TicketDetailPage() {
                         {i < auditLog.length - 1 && <Separator />}
                       </div>
                     ))
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="attachments">
-              <Card>
-                <CardContent className="flex flex-col gap-4 p-4">
-                  <AttachmentUpload
-                    files={uploadFiles}
-                    onChange={setUploadFiles}
-                    label={uploadFiles.length > 0 ? undefined : "Attachments"}
-                  />
-                  {uploadFiles.length > 0 && (
-                    <div className="flex justify-end">
-                      <Button
-                        size="sm"
-                        onClick={handleUploadAttachments}
-                        disabled={uploading}
-                      >
-                        {uploading ? "Uploading..." : "Upload Files"}
-                      </Button>
-                    </div>
-                  )}
-                  {attachments.length === 0 ? (
-                    <p className="py-4 text-center text-sm text-muted-foreground">
-                      No attachments.
-                    </p>
-                  ) : (
-                    <div className="flex flex-col gap-2">
-                      {attachments.map((a) => (
-                        <div
-                          key={a.id}
-                          className="flex items-center gap-3 rounded-md border p-3"
-                        >
-                          <AttachmentPreview
-                            ticketId={ticket.id}
-                            attachmentId={a.id}
-                            fileName={a.fileName}
-                          />
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              const res = await fetch(apiAttachmentDownloadUrl(ticket.id, a.id), {
-                                headers: { Authorization: `Bearer ${sessionStorage.getItem("accessToken") || ""}` },
-                              })
-                              if (!res.ok) return
-                              const blob = await res.blob()
-                              const url = URL.createObjectURL(blob)
-                              const link = document.createElement("a")
-                              link.href = url
-                              link.download = a.fileName
-                              link.click()
-                              URL.revokeObjectURL(url)
-                            }}
-                            className="flex min-w-0 flex-1 items-center gap-3 text-left"
-                          >
-                            {!isImageFile(a.fileName) && (
-                              <PaperclipIcon className="size-4 shrink-0 text-muted-foreground" />
-                            )}
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-medium">
-                                {a.fileName}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                {a.size > 0 ? `${formatFileSize(a.size)} · ` : ""}
-                                {formatDateTime(a.uploadedAt)}
-                              </p>
-                            </div>
-                          </button>
-                          {canDeleteAttachment(a) && (
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteAttachment(a.id)}
-                              className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-                              aria-label={`Delete ${a.fileName}`}
-                            >
-                              <TrashIcon className="size-4" />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
                   )}
                 </CardContent>
               </Card>
@@ -1234,7 +1234,7 @@ export default function TicketDetailPage() {
               </div>
             </div>
             <div className="flex flex-col gap-2">
-              <AttachmentUpload files={editFiles} onChange={setEditFiles} />
+              <AttachmentUpload files={editFiles} onChange={setEditFiles} allowDragAndDrop={false} />
             </div>
           </div>
           <DialogFooter>

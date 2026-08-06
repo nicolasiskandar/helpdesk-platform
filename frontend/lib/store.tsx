@@ -61,7 +61,7 @@ interface StoreValue {
   unreadCount: number
   createTicket: (input: NewTicketInput) => Promise<Ticket>
   updateTicket: (id: string, patch: Partial<Ticket>, activity?: string, detail?: string) => Promise<void>
-  addComment: (ticketId: string, body: string, parentCommentId?: string, recipientUserIds?: string[]) => Promise<void>
+  addComment: (ticketId: string, body: string, parentCommentId?: string, recipientUserIds?: string[], files?: File[]) => Promise<void>
   assignTicket: (ticketId: string, assigneeId: string | null) => Promise<void>
   claimTicket: (ticketId: string) => Promise<void>
   deleteTicket: (id: string) => Promise<void>
@@ -290,8 +290,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   )
 
   const addComment = React.useCallback(
-    async (ticketId: string, body: string, parentCommentId?: string, recipientUserIds?: string[]) => {
-      await apiAddComment(ticketId, body, parentCommentId, recipientUserIds)
+    async (ticketId: string, body: string, parentCommentId?: string, recipientUserIds?: string[], files?: File[]) => {
+      await apiAddComment(ticketId, body, parentCommentId, recipientUserIds, files)
     },
     []
   )
@@ -420,6 +420,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             isPrivate: c.isPrivate,
             parentId: c.parentCommentId ?? undefined,
             recipientIds: c.recipientUserIds ?? [],
+            attachments: (c.attachments ?? []).map((a) => ({
+              id: a.id,
+              name: a.fileName,
+              size: a.size,
+            })),
           }))
         } catch { /* ignore */ }
         // Load audit log
@@ -457,6 +462,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         isPrivate: c.isPrivate,
         parentId: c.parentCommentId ?? undefined,
         recipientIds: c.recipientUserIds ?? [],
+        attachments: (c.attachments ?? []).map((a) => ({
+          id: a.id,
+          name: a.fileName,
+          size: a.size,
+        })),
       }))
     },
     []

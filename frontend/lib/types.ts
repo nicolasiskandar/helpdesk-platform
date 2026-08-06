@@ -28,6 +28,12 @@ export interface User {
   joinedAt: string
 }
 
+export interface CommentAttachment {
+  id: string
+  name: string
+  size: number
+}
+
 export interface Comment {
   id: string
   authorId: string
@@ -36,6 +42,7 @@ export interface Comment {
   isPrivate: boolean
   parentId?: string
   recipientIds: string[]
+  attachments: CommentAttachment[]
 }
 
 export interface ActivityEntry {

@@ -6,6 +6,9 @@ using IdentityService.Infrastructure.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Moq;
+using Moq.Protected;
+using System.Net;
+using System.Net.Http;
 using Xunit;
 
 namespace IdentityService.Tests.Services;
@@ -589,5 +592,196 @@ public class AuthServiceTests
 
         await act.Should().ThrowAsync<KeyNotFoundException>()
             .WithMessage("*not found*");
+    }
+
+    // ---------- ForgotPasswordAsync ----------
+
+    [Fact]
+    public async Task ForgotPasswordAsync_ExistingEmail_CreatesHashedTokenAndSendsEmail()
+    {
+        // Arrange
+        var user = new User { Id = Guid.NewGuid(), Email = "test@example.com", FullName = "Test User" };
+        _unitOfWorkMock.Setup(u => u.Users.GetByEmailAsync("test@example.com")).ReturnsAsync(user);
+        _unitOfWorkMock.Setup(u => u.PasswordResetTokens.AddAsync(It.IsAny<PasswordResetToken>())).Returns(Task.CompletedTask);
+
+        Exception? caughtException = null;
+        _loggerMock.Setup(l => l.Log(
+                It.IsAny<LogLevel>(),
+                It.IsAny<EventId>(),
+                It.IsAny<It.IsAnyType>(),
+                It.IsAny<Exception>(),
+                (Func<It.IsAnyType, Exception?, string>)It.IsAny<Func<It.IsAnyType, Exception?, string>>()))
+            .Callback((LogLevel level, EventId id, object state, Exception? ex, object formatter) => caughtException = ex);
+
+        HttpRequestMessage? captured = null;
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
+            .Callback<HttpRequestMessage, CancellationToken>((req, _) => captured = req)
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK));
+        _httpClientFactoryMock.Setup(f => f.CreateClient("NotificationService"))
+            .Returns(new HttpClient(handler.Object) { BaseAddress = new Uri("http://notifications:8080") });
+
+        var request = new ForgotPasswordRequest("test@example.com");
+
+        // Act
+        await _sut.ForgotPasswordAsync(request);
+
+        // Assert
+        _unitOfWorkMock.Verify(u => u.PasswordResetTokens.AddAsync(It.Is<PasswordResetToken>(t =>
+            t.UserId == user.Id &&
+            !string.IsNullOrEmpty(t.TokenHash) &&
+            t.ExpiresAt > DateTime.UtcNow)), Times.Once);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _httpClientFactoryMock.Verify(f => f.CreateClient("NotificationService"), Times.Once);
+        caughtException.Should().BeNull();
+        captured.Should().NotBeNull();
+        captured!.Method.Should().Be(HttpMethod.Post);
+        captured.RequestUri!.AbsolutePath.Should().Be("/api/email/send");
+    }
+
+    [Fact]
+    public async Task ForgotPasswordAsync_UnknownEmail_ReturnsSilentlyWithoutCreatingToken()
+    {
+        // Arrange - unknown email must not reveal whether the account exists
+        _unitOfWorkMock.Setup(u => u.Users.GetByEmailAsync("missing@example.com")).ReturnsAsync((User?)null);
+
+        var request = new ForgotPasswordRequest("missing@example.com");
+
+        // Act
+        await _sut.ForgotPasswordAsync(request);
+
+        // Assert
+        _unitOfWorkMock.Verify(u => u.PasswordResetTokens.AddAsync(It.IsAny<PasswordResetToken>()), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _httpClientFactoryMock.Verify(f => f.CreateClient(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ForgotPasswordAsync_EmailSendFailure_DoesNotThrow()
+    {
+        // Arrange
+        var user = new User { Id = Guid.NewGuid(), Email = "test@example.com", FullName = "Test User" };
+        _unitOfWorkMock.Setup(u => u.Users.GetByEmailAsync("test@example.com")).ReturnsAsync(user);
+        _unitOfWorkMock.Setup(u => u.PasswordResetTokens.AddAsync(It.IsAny<PasswordResetToken>())).Returns(Task.CompletedTask);
+
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.InternalServerError));
+        _httpClientFactoryMock.Setup(f => f.CreateClient("NotificationService"))
+            .Returns(new HttpClient(handler.Object) { BaseAddress = new Uri("http://notifications:8080") });
+
+        var request = new ForgotPasswordRequest("test@example.com");
+
+        // Act
+        var act = () => _sut.ForgotPasswordAsync(request);
+
+        // Assert - the token is still created but the email failure is swallowed
+        await act.Should().NotThrowAsync();
+        _unitOfWorkMock.Verify(u => u.PasswordResetTokens.AddAsync(It.IsAny<PasswordResetToken>()), Times.Once);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ---------- ResetPasswordAsync ----------
+
+    [Fact]
+    public async Task ResetPasswordAsync_Success_HashesPasswordMarksUsedAndRevokesTokens()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var user = new User { Id = userId, Email = "test@example.com", PasswordHash = "old-hash" };
+        var storedToken = new PasswordResetToken
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TokenHash = "stored-hash",
+            ExpiresAt = DateTime.UtcNow.AddMinutes(10),
+            CreatedAt = DateTime.UtcNow,
+            User = user
+        };
+        _unitOfWorkMock.Setup(u => u.PasswordResetTokens.GetByTokenHashAsync(It.IsAny<string>())).ReturnsAsync(storedToken);
+        _passwordHasherMock.Setup(p => p.HashPassword("NewPass1!")).Returns("new-hash");
+        _unitOfWorkMock.Setup(u => u.Users.UpdateAsync(It.IsAny<User>())).Returns(Task.CompletedTask);
+
+        var request = new ResetPasswordRequest("raw-token", "NewPass1!");
+
+        // Act
+        await _sut.ResetPasswordAsync(request);
+
+        // Assert
+        user.PasswordHash.Should().Be("new-hash");
+        _unitOfWorkMock.Verify(u => u.Users.UpdateAsync(user), Times.Once);
+        _unitOfWorkMock.Verify(u => u.PasswordResetTokens.MarkAsUsedAsync(storedToken), Times.Once);
+        _refreshTokenRepoMock.Verify(r => r.RevokeAllUserTokensAsync(userId), Times.Once);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ResetPasswordAsync_TokenNotFound_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        _unitOfWorkMock.Setup(u => u.PasswordResetTokens.GetByTokenHashAsync(It.IsAny<string>())).ReturnsAsync((PasswordResetToken?)null);
+
+        var request = new ResetPasswordRequest("raw-token", "NewPass1!");
+
+        // Act
+        var act = () => _sut.ResetPasswordAsync(request);
+
+        // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*Invalid or expired*");
+    }
+
+    [Fact]
+    public async Task ResetPasswordAsync_ExpiredToken_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var storedToken = new PasswordResetToken
+        {
+            Id = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
+            TokenHash = "stored-hash",
+            ExpiresAt = DateTime.UtcNow.AddMinutes(-1),
+            CreatedAt = DateTime.UtcNow,
+            User = new User { Id = Guid.NewGuid(), Email = "x@example.com", PasswordHash = "old-hash" }
+        };
+        _unitOfWorkMock.Setup(u => u.PasswordResetTokens.GetByTokenHashAsync(It.IsAny<string>())).ReturnsAsync(storedToken);
+
+        var request = new ResetPasswordRequest("raw-token", "NewPass1!");
+
+        // Act
+        var act = () => _sut.ResetPasswordAsync(request);
+
+        // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*Invalid or expired*");
+        _unitOfWorkMock.Verify(u => u.Users.UpdateAsync(It.IsAny<User>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ResetPasswordAsync_AlreadyUsedToken_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var storedToken = new PasswordResetToken
+        {
+            Id = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
+            TokenHash = "stored-hash",
+            ExpiresAt = DateTime.UtcNow.AddMinutes(10),
+            UsedAt = DateTime.UtcNow,
+            User = new User { Id = Guid.NewGuid(), Email = "x@example.com", PasswordHash = "old-hash" }
+        };
+        _unitOfWorkMock.Setup(u => u.PasswordResetTokens.GetByTokenHashAsync(It.IsAny<string>())).ReturnsAsync(storedToken);
+
+        var request = new ResetPasswordRequest("raw-token", "NewPass1!");
+
+        // Act
+        var act = () => _sut.ResetPasswordAsync(request);
+
+        // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*Invalid or expired*");
+        _unitOfWorkMock.Verify(u => u.Users.UpdateAsync(It.IsAny<User>()), Times.Never);
     }
 }

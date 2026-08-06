@@ -24,7 +24,8 @@ public interface ITicketService
     Task<AnalyticsResponse> GetStatisticsAsync();
 
     Task<IReadOnlyList<CommentResponse>> GetCommentsAsync(Guid ticketId, Guid viewerUserId, string viewerRole);
-    Task<CommentResponse> AddCommentAsync(Guid ticketId, AddCommentRequest request, Guid authorUserId, string authorRole, string authorName);
+    Task<CommentResponse> AddCommentAsync(Guid ticketId, AddCommentRequest request, Guid authorUserId, string authorRole, string authorName, IReadOnlyList<CommentFileUpload>? files = null);
+    Task DeleteCommentAttachmentAsync(Guid ticketId, Guid commentId, Guid attachmentId, Guid deletedByUserId, string deletedByRole);
 
     Task<IReadOnlyList<AttachmentResponse>> GetAttachmentsAsync(Guid ticketId);
     Task<AttachmentResponse> AddAttachmentAsync(Guid ticketId, string fileName, string fileUrl, Guid uploadedByUserId);

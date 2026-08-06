@@ -20,6 +20,19 @@ public class TicketBusinessService : ITicketService
         ".mp4", ".mp3"
     };
 
+    private const long MaxAttachmentSizeBytes = 10 * 1024 * 1024;
+
+    private static void ValidateUploadFile(string fileName, long size)
+    {
+        var extension = Path.GetExtension(fileName).ToLowerInvariant();
+        if (!AllowedAttachmentExtensions.Contains(extension))
+            throw new InvalidOperationException(
+                $"File type '{extension}' is not allowed. Allowed types: images (png, jpg, jpeg, gif, svg, webp), pdf, documents (doc, docx, xls, xlsx, csv, txt), zip, json, xml, mp4, mp3.");
+
+        if (size > MaxAttachmentSizeBytes)
+            throw new InvalidOperationException($"File exceeds the maximum allowed size of {MaxAttachmentSizeBytes / (1024 * 1024)} MB.");
+    }
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly IReferenceNumberGenerator _referenceNumberGenerator;
     private readonly IFileStorageService _fileStorage;
@@ -752,7 +765,7 @@ public class TicketBusinessService : ITicketService
         return comments.Select(MapCommentToResponse).ToList();
     }
 
-    public async Task<CommentResponse> AddCommentAsync(Guid ticketId, AddCommentRequest request, Guid authorUserId, string authorRole, string authorName)
+    public async Task<CommentResponse> AddCommentAsync(Guid ticketId, AddCommentRequest request, Guid authorUserId, string authorRole, string authorName, IReadOnlyList<CommentFileUpload>? files = null)
     {
         var ticket = await _unitOfWork.Tickets.GetByIdAsync(ticketId)
             ?? throw new KeyNotFoundException("Ticket not found.");
@@ -842,6 +855,8 @@ public class TicketBusinessService : ITicketService
             });
         }
 
+        await SaveCommentAttachmentsAsync(ticketId, comment, files);
+
         await _unitOfWork.TicketComments.AddAsync(comment);
 
         var auditMessage = isTargeted
@@ -875,6 +890,67 @@ public class TicketBusinessService : ITicketService
         await _unitOfWork.SaveChangesAsync();
 
         return MapCommentToResponse(comment);
+    }
+
+    private async Task SaveCommentAttachmentsAsync(Guid ticketId, TicketComment comment, IReadOnlyList<CommentFileUpload>? files)
+    {
+        if (files == null || files.Count == 0)
+            return;
+
+        foreach (var file in files)
+        {
+            ValidateUploadFile(file.FileName, file.Size);
+
+            var subDirectory = $"{ticketId}/comments/{comment.Id}";
+            var fileUrl = await _fileStorage.SaveFileAsync(file.Content, file.FileName, subDirectory);
+
+            comment.Attachments.Add(new CommentAttachment
+            {
+                Id = Guid.NewGuid(),
+                CommentId = comment.Id,
+                FileName = file.FileName,
+                FileUrl = fileUrl,
+                UploadedByUserId = comment.AuthorUserId,
+                UploadedAt = DateTime.UtcNow,
+                Size = file.Size
+            });
+        }
+    }
+
+    public async Task DeleteCommentAttachmentAsync(Guid ticketId, Guid commentId, Guid attachmentId, Guid deletedByUserId, string deletedByRole)
+    {
+        var ticket = await _unitOfWork.Tickets.GetByIdAsync(ticketId)
+            ?? throw new KeyNotFoundException("Ticket not found.");
+
+        EnsureCanViewTicket(ticket, deletedByUserId, deletedByRole);
+
+        var comment = await _unitOfWork.TicketComments.GetByIdAsync(commentId)
+            ?? throw new KeyNotFoundException("Comment not found.");
+
+        if (comment.TicketId != ticketId)
+            throw new InvalidOperationException("Comment does not belong to this ticket.");
+
+        var attachment = await _unitOfWork.CommentAttachments.GetByIdAsync(attachmentId)
+            ?? throw new KeyNotFoundException("Attachment not found.");
+
+        if (attachment.CommentId != commentId)
+            throw new InvalidOperationException("Attachment does not belong to this comment.");
+
+        var canDelete = deletedByRole == "Admin"
+            || ticket.CreatedByUserId == deletedByUserId
+            || comment.AuthorUserId == deletedByUserId
+            || attachment.UploadedByUserId == deletedByUserId;
+
+        if (!canDelete)
+            throw new UnauthorizedAccessException("Only the comment author, ticket creator, or an admin can delete this attachment.");
+
+        await _fileStorage.DeleteFileAsync(attachment.FileUrl);
+        await _unitOfWork.CommentAttachments.DeleteAsync(attachment);
+
+        var auditEntry = CreateAuditEntry(ticketId, deletedByUserId, "Attachment", null, $"Comment attachment '{attachment.FileName}' deleted");
+        await _unitOfWork.TicketAuditLogs.AddAsync(auditEntry);
+
+        await _unitOfWork.SaveChangesAsync();
     }
 
     private async Task ValidateRecipientRolesAsync(AddCommentRequest request, TicketComment? parentComment, Ticket ticket, bool isReply)
@@ -964,12 +1040,9 @@ public class TicketBusinessService : ITicketService
         var ticket = await _unitOfWork.Tickets.GetByIdAsync(ticketId)
             ?? throw new KeyNotFoundException("Ticket not found.");
 
-        var extension = Path.GetExtension(fileName).ToLowerInvariant();
-        if (!AllowedAttachmentExtensions.Contains(extension))
-            throw new InvalidOperationException(
-                $"File type '{extension}' is not allowed. Allowed types: images (png, jpg, jpeg, gif, svg, webp), pdf, documents (doc, docx, xls, xlsx, csv, txt), zip, json, xml, mp4, mp3.");
-
         var size = fileStream.CanSeek ? fileStream.Length : 0;
+
+        ValidateUploadFile(fileName, size);
 
         var fileUrl = await _fileStorage.SaveFileAsync(fileStream, fileName, ticketId.ToString());
 
@@ -1129,7 +1202,20 @@ public class TicketBusinessService : ITicketService
             comment.IsPrivate,
             comment.ParentCommentId,
             comment.Recipients.Select(r => r.RecipientUserId).ToList(),
-            comment.CreatedAt
+            comment.CreatedAt,
+            comment.Attachments.Select(MapCommentAttachmentToResponse).ToList()
+        );
+    }
+
+    private static CommentAttachmentResponse MapCommentAttachmentToResponse(CommentAttachment attachment)
+    {
+        return new CommentAttachmentResponse(
+            attachment.Id,
+            attachment.FileName,
+            attachment.FileUrl,
+            attachment.Size,
+            attachment.UploadedByUserId,
+            attachment.UploadedAt
         );
     }
 

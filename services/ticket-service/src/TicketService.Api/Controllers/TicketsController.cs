@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TicketService.Application.DTOs;
@@ -256,19 +257,75 @@ public class TicketsController : ControllerBase
     }
 
     /// <summary>
-    /// Adds a comment to a ticket.
+    /// Adds a comment to a ticket (multipart/form-data). Optional files are attached to the comment.
     /// </summary>
     [HttpPost("{ticketId:guid}/comments")]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(50 * 1024 * 1024)]
     [ProducesResponseType(typeof(CommentResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> AddComment(Guid ticketId, [FromBody] AddCommentRequest request)
+    public async Task<IActionResult> AddComment(Guid ticketId, [FromForm] AddCommentForm request, [FromForm] List<IFormFile>? files)
     {
         var userId = GetUserIdFromClaims();
         var role = GetUserRoleFromClaims();
         var userName = GetUserNameFromClaims();
         await EnsureTicketAccessAsync(ticketId, userId, role);
-        var comment = await _ticketService.AddCommentAsync(ticketId, request, userId, role, userName);
+
+        IReadOnlyList<Guid>? recipientUserIds = null;
+        if (!string.IsNullOrWhiteSpace(request.RecipientUserIds))
+        {
+            recipientUserIds = JsonSerializer.Deserialize<List<Guid>>(request.RecipientUserIds);
+        }
+
+        var dto = new AddCommentRequest(request.Content, request.IsPrivate, request.ParentCommentId, recipientUserIds);
+
+        IReadOnlyList<CommentFileUpload>? uploads = files is { Count: > 0 }
+            ? files.Select(f => new CommentFileUpload(f.FileName, f.OpenReadStream(), f.Length)).ToList()
+            : null;
+
+        var comment = await _ticketService.AddCommentAsync(ticketId, dto, userId, role, userName, uploads);
         return CreatedAtAction(nameof(GetComments), new { ticketId }, comment);
+    }
+
+    /// <summary>
+    /// Downloads a comment attachment.
+    /// </summary>
+    [HttpGet("{ticketId:guid}/comments/{commentId:guid}/attachments/{attachmentId:guid}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DownloadCommentAttachment(Guid ticketId, Guid commentId, Guid attachmentId)
+    {
+        var userId = GetUserIdFromClaims();
+        var role = GetUserRoleFromClaims();
+        await EnsureTicketAccessAsync(ticketId, userId, role);
+
+        var comments = await _ticketService.GetCommentsAsync(ticketId, userId, role);
+        var attachment = comments
+            .Where(c => c.Id == commentId)
+            .SelectMany(c => c.Attachments ?? Array.Empty<CommentAttachmentResponse>())
+            .FirstOrDefault(a => a.Id == attachmentId);
+
+        if (attachment is null)
+            return NotFound(new ErrorResponse("Attachment not found.", null));
+
+        var stream = _fileStorage.OpenFileAsync(attachment.FileUrl);
+        var contentType = GetContentType(attachment.FileName);
+        return File(stream, contentType, attachment.FileName);
+    }
+
+    /// <summary>
+    /// Deletes a comment attachment. Allowed for the comment author, the ticket creator, or an admin.
+    /// </summary>
+    [HttpDelete("{ticketId:guid}/comments/{commentId:guid}/attachments/{attachmentId:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteCommentAttachment(Guid ticketId, Guid commentId, Guid attachmentId)
+    {
+        var userId = GetUserIdFromClaims();
+        var role = GetUserRoleFromClaims();
+        await _ticketService.DeleteCommentAttachmentAsync(ticketId, commentId, attachmentId, userId, role);
+        return NoContent();
     }
 
     /// <summary>
@@ -463,4 +520,12 @@ public class TicketsController : ControllerBase
     {
         return User.FindFirst(ClaimTypes.Name)?.Value ?? "Unknown";
     }
+}
+
+public class AddCommentForm
+{
+    public string Content { get; set; } = string.Empty;
+    public bool IsPrivate { get; set; }
+    public Guid? ParentCommentId { get; set; }
+    public string? RecipientUserIds { get; set; }
 }

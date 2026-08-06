@@ -23,6 +23,7 @@ public class TicketCommentRepository : ITicketCommentRepository
     {
         return await _context.TicketComments
             .Include(c => c.Recipients)
+            .Include(c => c.Attachments)
             .Where(c => c.TicketId == ticketId)
             .Where(c => !c.IsPrivate && !c.Recipients.Any()
                 || viewerRole == "Admin"
@@ -38,6 +39,7 @@ public class TicketCommentRepository : ITicketCommentRepository
     {
         return _context.TicketComments
             .Include(c => c.Recipients)
+            .Include(c => c.Attachments)
             .FirstOrDefaultAsync(c => c.Id == commentId);
     }
 

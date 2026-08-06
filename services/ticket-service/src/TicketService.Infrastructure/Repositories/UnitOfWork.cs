@@ -18,6 +18,7 @@ public class UnitOfWork : IUnitOfWork
         TicketAssignments = new TicketAssignmentRepository(context);
         TicketComments = new TicketCommentRepository(context);
         TicketAttachments = new TicketAttachmentRepository(context);
+        CommentAttachments = new CommentAttachmentRepository(context);
         TicketAuditLogs = new TicketAuditLogRepository(context);
         KbArticles = new KbArticleRepository(context);
         Outbox = new OutboxRepository(context);
@@ -30,6 +31,7 @@ public class UnitOfWork : IUnitOfWork
     public ITicketAssignmentRepository TicketAssignments { get; }
     public ITicketCommentRepository TicketComments { get; }
     public ITicketAttachmentRepository TicketAttachments { get; }
+    public ICommentAttachmentRepository CommentAttachments { get; }
     public ITicketAuditLogRepository TicketAuditLogs { get; }
     public IKbArticleRepository KbArticles { get; }
     public IOutboxRepository Outbox { get; }

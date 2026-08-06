@@ -7,6 +7,21 @@ public record AddCommentRequest(
     IReadOnlyList<Guid>? RecipientUserIds = null
 );
 
+public record CommentFileUpload(
+    string FileName,
+    Stream Content,
+    long Size
+);
+
+public record CommentAttachmentResponse(
+    Guid Id,
+    string FileName,
+    string FileUrl,
+    long Size,
+    Guid UploadedByUserId,
+    DateTime UploadedAt
+);
+
 public record CommentResponse(
     Guid Id,
     Guid AuthorUserId,
@@ -14,5 +29,6 @@ public record CommentResponse(
     bool IsPrivate,
     Guid? ParentCommentId,
     IReadOnlyList<Guid> RecipientUserIds,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    IReadOnlyList<CommentAttachmentResponse>? Attachments = null
 );

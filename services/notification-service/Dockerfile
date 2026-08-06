@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
@@ -6,10 +7,10 @@ COPY src/NotificationService.Domain/NotificationService.Domain.csproj src/Notifi
 COPY src/NotificationService.Application/NotificationService.Application.csproj src/NotificationService.Application/
 COPY src/NotificationService.Infrastructure/NotificationService.Infrastructure.csproj src/NotificationService.Infrastructure/
 COPY src/NotificationService.Api/NotificationService.Api.csproj src/NotificationService.Api/
-RUN dotnet restore NotificationService.sln
+RUN --mount=type=cache,target=/root/.nuget/packages dotnet restore NotificationService.sln
 
 COPY src/ src/
-RUN dotnet publish src/NotificationService.Api/NotificationService.Api.csproj -c Release -o /app/publish
+RUN --mount=type=cache,target=/root/.nuget/packages dotnet publish src/NotificationService.Api/NotificationService.Api.csproj -c Release -o /app/publish
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app

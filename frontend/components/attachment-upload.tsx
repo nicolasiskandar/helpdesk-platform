@@ -40,6 +40,7 @@ interface AttachmentUploadProps {
   onChange: (files: File[]) => void
   maxSizeMb?: number
   label?: string
+  allowDragAndDrop?: boolean
 }
 
 export function AttachmentUpload({
@@ -47,6 +48,7 @@ export function AttachmentUpload({
   onChange,
   maxSizeMb = 10,
   label = "Attachments",
+  allowDragAndDrop = true,
 }: AttachmentUploadProps) {
   const inputRef = React.useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = React.useState(false)
@@ -70,35 +72,37 @@ export function AttachmentUpload({
   return (
     <div className="flex flex-col gap-2">
       <Label>{label}</Label>
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => inputRef.current?.click()}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") inputRef.current?.click()
-        }}
-        onDragOver={(e) => {
-          e.preventDefault()
-          setDragging(true)
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(e) => {
-          e.preventDefault()
-          setDragging(false)
-          if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files)
-        }}
-        className={`flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed px-4 py-5 text-center transition-colors ${
-          dragging
-            ? "border-primary bg-primary/5"
-            : "border-border hover:bg-muted/50"
-        }`}
-      >
-        <UploadCloud className="size-5 text-muted-foreground" />
-        <p className="text-sm font-medium">Drag & drop files here</p>
-        <p className="text-xs text-muted-foreground">
-          or click to browse · Max {maxSizeMb} MB per file
-        </p>
-      </div>
+      {allowDragAndDrop && (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => inputRef.current?.click()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") inputRef.current?.click()
+          }}
+          onDragOver={(e) => {
+            e.preventDefault()
+            setDragging(true)
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault()
+            setDragging(false)
+            if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files)
+          }}
+          className={`flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed px-4 py-5 text-center transition-colors ${
+            dragging
+              ? "border-primary bg-primary/5"
+              : "border-border hover:bg-muted/50"
+          }`}
+        >
+          <UploadCloud className="size-5 text-muted-foreground" />
+          <p className="text-sm font-medium">Drag & drop files here</p>
+          <p className="text-xs text-muted-foreground">
+            or click to browse · Max {maxSizeMb} MB per file
+          </p>
+        </div>
+      )}
       <input
         ref={inputRef}
         type="file"
