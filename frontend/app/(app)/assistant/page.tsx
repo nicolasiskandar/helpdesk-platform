@@ -16,6 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useAuth } from "@/lib/auth"
+import { apiAiStatus, apiChat } from "@/lib/api"
 
 interface Message {
   id: string
@@ -57,28 +58,62 @@ export default function AssistantPage() {
   const [messages, setMessages] = React.useState<Message[]>([])
   const [input, setInput] = React.useState("")
   const [thinking, setThinking] = React.useState(false)
+  const [streamingId, setStreamingId] = React.useState<string | null>(null)
+  const [waiting, setWaiting] = React.useState(false)
+  const [live, setLive] = React.useState(false)
+
+  React.useEffect(() => {
+    apiAiStatus().then(setLive)
+  }, [])
+
+  React.useEffect(() => {
+    if (!thinking) {
+      setWaiting(false)
+      return
+    }
+    const timer = setTimeout(() => setWaiting(true), 5000)
+    return () => clearTimeout(timer)
+  }, [thinking, streamingId])
 
   const send = React.useCallback(
-    (text: string) => {
+    async (text: string) => {
       const trimmed = text.trim()
       if (!trimmed || thinking) return
       setMessages((prev) => [...prev, { id: nextId(), role: "user", text: trimmed }])
       setInput("")
       setThinking(true)
-      setTimeout(() => {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: nextId(),
-            role: "assistant",
-            text:
-              "The AI assistant isn't reachable right now, so I can't look up live information yet. " +
-              "In the meantime you can check the Knowledge Base for self-service guides, or open a ticket " +
-              "and an IT support agent will pick it up. I'll be able to answer directly once the AI service is online.",
-          },
-        ])
+      const assistantId = nextId()
+      setMessages((prev) => [...prev, { id: assistantId, role: "assistant", text: "" }])
+      setStreamingId(assistantId)
+      try {
+        await apiChat(trimmed, (token) => {
+          setWaiting(false)
+          setMessages((prev) =>
+            prev.map((m) => (m.id === assistantId ? { ...m, text: m.text + token } : m))
+          )
+        })
+        setLive(true)
+      } catch (err: any) {
+        const warming = err?.status === 503
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  text: warming
+                    ? "The AI assistant is still warming up — its models are downloading. Give it a minute or two, then try again."
+                    : err?.message
+                      ? `The AI service hit a problem: ${err.message}`
+                      : "I couldn't reach the AI service right now. Check the Knowledge Base for self-service guides, or open a ticket and an IT support agent will pick it up.",
+                }
+              : m
+          )
+        )
+      } finally {
         setThinking(false)
-      }, 900)
+        setStreamingId(null)
+        setWaiting(false)
+      }
     },
     [thinking]
   )
@@ -104,10 +139,18 @@ export default function AssistantPage() {
               <CardTitle className="text-base">Helpdesk Assistant</CardTitle>
               <CardDescription className="flex items-center gap-2">
                 <span className="relative flex size-2">
-                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-amber-400 opacity-60" />
-                  <span className="relative inline-flex size-2 rounded-full bg-amber-400" />
+                  <span
+                    className={`absolute inline-flex size-full animate-ping rounded-full opacity-60 ${
+                      live ? "bg-emerald-400" : "bg-amber-400"
+                    }`}
+                  />
+                  <span
+                    className={`relative inline-flex size-2 rounded-full ${
+                      live ? "bg-emerald-400" : "bg-amber-400"
+                    }`}
+                  />
                 </span>
-                Service unavailable
+                {live ? "Connected" : "Service unavailable"}
               </CardDescription>
             </div>
           </div>
@@ -171,7 +214,7 @@ export default function AssistantPage() {
                       : "border bg-muted/50"
                   }`}
                 >
-                  {m.text}
+                  {m.text || "…"}
                 </div>
                 {m.role === "user" && (
                   <div className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-muted">
@@ -181,7 +224,7 @@ export default function AssistantPage() {
               </div>
             ))}
 
-            {thinking && (
+            {thinking && !streamingId && (
               <div className="flex items-center gap-2">
                 <div className="flex size-7 items-center justify-center rounded-full bg-primary/10">
                   <Bot className="size-4 text-primary" />
@@ -189,6 +232,15 @@ export default function AssistantPage() {
                 <div className="rounded-lg border bg-muted/50 px-3.5 py-2 text-sm text-muted-foreground">
                   Thinking<span className="animate-pulse">…</span>
                 </div>
+              </div>
+            )}
+
+            {waiting && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Bot className="size-4 shrink-0 animate-pulse text-primary" />
+                <span>
+                  Model is warming up — the first reply can take up to a minute…
+                </span>
               </div>
             )}
           </CardContent>
@@ -214,7 +266,9 @@ export default function AssistantPage() {
           </form>
           <div className="mt-2">
             <Badge variant="outline" className="text-muted-foreground">
-              AI service is offline — answers are simulated for now
+              {live
+                ? "Streaming answers from the AI service"
+                : "AI service is offline — answers may not be available"}
             </Badge>
           </div>
         </div>

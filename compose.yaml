@@ -231,6 +231,86 @@ services:
       start_period: 15s
 
   # ---------------------------------------------------------------------------
+  # Ollama (local LLM + embeddings for the AI service)
+  # ---------------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    container_name: helpdesk-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - helpdesk-network
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Qdrant (vector store for the AI service)
+  # ---------------------------------------------------------------------------
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: helpdesk-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    networks:
+      - helpdesk-network
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333'"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # AI Service (RAG chat, ticket/KB indexing — gateway routes /api/ai/* here)
+  # ---------------------------------------------------------------------------
+  ai-service:
+    build:
+      context: ./services/ai-service
+      dockerfile: Dockerfile
+    container_name: helpdesk-ai-service
+    environment:
+      OLLAMA_URL: http://ollama:11434
+      QDRANT_URL: http://qdrant:6333
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      RABBITMQ_EXCHANGE: ticket.events
+      INDEX_QUEUE: ai-index.q
+      COLLECTION_NAME: helpdesk_index
+      AI_CHAT_MODEL: llama3.2:3b
+      AI_EMBEDDING_MODEL: nomic-embed-text
+      JWT_PUBLIC_KEY_PATH: /app/certs/public.pem
+      TICKET_SERVICE_BASE_URL: http://ticket-service:8080
+      OTEL_SERVICE_NAME: helpdesk-ai-service
+    ports:
+      - "5090:8080"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    volumes:
+      - ./infra/certs:/app/certs:ro
+      - ai-data:/data
+    networks:
+      - helpdesk-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
   # Jaeger (distributed tracing)
   # ---------------------------------------------------------------------------
   jaeger:
@@ -318,7 +398,17 @@ volumes:
   grafana-data:
   ticket-uploads:
   notification-postgres-data:
+  ollama-data:
+  qdrant-data:
+  ai-data:
 
 networks:
   helpdesk-network:
     driver: bridge
+    driver_opts:
+      # The host's path MTU to the internet is < 1500 (verified: 1500-byte
+      # packets are dropped, 1478 passes). The default bridge MTU of 1500
+      # causes large downloads (e.g. Ollama model blobs from Cloudflare R2) to
+      # stall mid-stream. Set the bridge MTU below the path limit so sustained
+      # transfers work from inside containers.
+      com.docker.network.driver.mtu: 1450

@@ -21,5 +21,8 @@ services:
   notification-service:
     image: ghcr.io/nicolasiskandar/helpdesk-platform-notification-service:${IMAGE_TAG:-latest}
 
+  ai-service:
+    image: ghcr.io/nicolasiskandar/helpdesk-platform-ai-service:${IMAGE_TAG:-latest}
+
   frontend:
     image: ghcr.io/nicolasiskandar/helpdesk-platform-frontend:${IMAGE_TAG:-latest}

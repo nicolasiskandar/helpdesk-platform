@@ -1,0 +1,9 @@
+# Secrets / keys
+certs/
+
+# Local deploy artifacts
+*.override.yml
+jenkins/workspace/
+jenkins/logs/
+backup/
+*.log

@@ -22,7 +22,7 @@ export DOCKER_HOST="${DOCKER_HOST:-unix:///var/run/docker.sock}"
 # the helpdesk-* container names and the helpdesk-platform_* data volumes; a new
 # project (e.g. 'helpdesk-deploy' from this directory's name) would conflict on
 # the container names and create fresh empty volumes. Reusing the project name
-# recreates the 5 app services with the new GHCR images, restarts the unchanged
+# recreates the 6 app services with the new GHCR images, restarts the unchanged
 # infra containers, and keeps the existing DB volumes.
 export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-helpdesk-platform}"
 

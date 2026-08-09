@@ -19,6 +19,13 @@ docker-compose.override.yml
 .DS_Store
 Thumbs.db
 
+# Logs / build caches
+*.log
+*.tsbuildinfo
+
+# Runtime data
+uploads/
+
 # IDE
 .idea/
 *.swp

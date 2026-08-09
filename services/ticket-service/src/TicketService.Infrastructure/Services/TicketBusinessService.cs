@@ -367,6 +367,34 @@ public class TicketBusinessService : ITicketService
             await _unitOfWork.Outbox.AddAsync(closedOutboxMessage);
         }
 
+        var resolutionStatusIds = new[] { 3, 4 }; // Resolved - Pending Confirmation, Closed
+        if (resolutionStatusIds.Contains(newStatus.Id))
+        {
+            var assignments = await _unitOfWork.TicketAssignments.GetByTicketIdAsync(ticket.Id);
+            var remainingAssigneeIds = assignments
+                .Where(a => a.UnassignedAt == null && a.AgentUserId != changedByUserId)
+                .Select(a => a.AgentUserId)
+                .ToList();
+
+            var resolvedOutboxMessage = new OutboxMessage
+            {
+                Id = Guid.NewGuid(),
+                EventType = "ticket.resolved",
+                Payload = JsonSerializer.Serialize(new TicketResolvedEvent(
+                    ticket.Id,
+                    ticket.ReferenceNumber,
+                    ticket.Title,
+                    ticket.Description,
+                    changedByUserId,
+                    remainingAssigneeIds,
+                    DateTime.UtcNow
+                )),
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await _unitOfWork.Outbox.AddAsync(resolvedOutboxMessage);
+        }
+
         await _unitOfWork.SaveChangesAsync();
 
         return MapToResponse(ticket, ticket.Category, ticket.Priority, newStatus);

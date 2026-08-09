@@ -56,6 +56,16 @@ try
     var app = builder.Build();
 
     app.UseMiddleware<RequestLoggingMiddleware>();
+    app.Use(async (context, next) =>
+    {
+        await next();
+        if (!context.Response.HasStarted
+            && context.Request.Headers.ContainsKey("Origin")
+            && !context.Response.Headers.ContainsKey("Access-Control-Allow-Origin"))
+        {
+            context.Response.Headers["Access-Control-Allow-Origin"] = "*";
+        }
+    });
     app.MapHealthChecks("/health");
     app.MapReverseProxy();
 

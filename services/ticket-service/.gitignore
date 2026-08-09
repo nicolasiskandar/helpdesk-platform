@@ -1,0 +1,16 @@
+# Build artifacts
+bin/
+obj/
+
+# IDE
+.vs/
+.idea/
+*.user
+*.suo
+
+# Runtime data (local uploads when running outside Docker)
+uploads/
+
+# OS
+.DS_Store
+Thumbs.db

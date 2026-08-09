@@ -931,3 +931,66 @@ export async function apiUpdateSettings(settings: { key: string; value: string }
   })
   return handleResponse<void>(res)
 }
+
+// ---------- AI Assistant API ----------
+
+export async function apiAiStatus(): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE}/api/ai/health/ready`, {
+      signal: AbortSignal.timeout(5000),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+export async function apiChat(
+  message: string,
+  onToken: (token: string) => void
+): Promise<void> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/ai/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify({ message }),
+    signal: AbortSignal.timeout(180_000),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    let parsed: any
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      /* empty/error body */
+    }
+    throw Object.assign(parsed || { message: `Chat failed with status ${res.status}` }, { status: res.status })
+  }
+  const reader = res.body?.getReader()
+  if (!reader) throw new Error("No response stream")
+  const decoder = new TextDecoder()
+  let buffer = ""
+  let streamError: string | null = null
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n")
+    const events = buffer.split("\n\n")
+    buffer = events.pop() ?? ""
+    for (const raw of events) {
+      const dataLine = raw.split("\n").find((l) => l.startsWith("data:"))
+      if (!dataLine) continue
+      const data = dataLine.slice(5).trim()
+      if (!data) continue
+      let parsed: any
+      try {
+        parsed = JSON.parse(data)
+      } catch {
+        continue
+      }
+      if (typeof parsed.error === "string") streamError = parsed.error
+      if (typeof parsed.token === "string") onToken(parsed.token)
+    }
+  }
+  if (streamError) throw Object.assign(new Error(streamError), { status: 500 })
+}

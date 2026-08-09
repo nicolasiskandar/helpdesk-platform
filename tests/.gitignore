@@ -1,0 +1,6 @@
+# Test artifacts
+bin/
+obj/
+TestResults/
+coverage/
+*.trx

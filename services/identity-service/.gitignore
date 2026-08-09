@@ -1,0 +1,17 @@
+# Build artifacts
+bin/
+obj/
+
+# IDE
+.vs/
+.idea/
+*.user
+*.suo
+*.swp
+
+# Secrets / keys
+certs/
+
+# OS
+.DS_Store
+Thumbs.db

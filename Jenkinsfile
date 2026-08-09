@@ -109,6 +109,22 @@ pipeline {
                         }
                     }
                 }
+                stage('AI build + test') {
+                    agent {
+                        docker {
+                            image 'python:3.12-slim'
+                            reuseNode true
+                        }
+                    }
+                    steps {
+                        sh 'python -m venv /tmp/ai-venv'
+                        sh '/tmp/ai-venv/bin/pip install --quiet -e "./services/ai-service[dev]"'
+                        sh '/tmp/ai-venv/bin/ruff check services/ai-service/app services/ai-service/tests'
+                        dir('services/ai-service') {
+                            sh '/tmp/ai-venv/bin/python -m pytest -q'
+                        }
+                    }
+                }
                 stage('Frontend build') {
                     agent {
                         docker {
@@ -129,7 +145,7 @@ pipeline {
         }
 
         // ------------------------------------------------------------------
-        // main + version tags: build the 5 images on the dind sidecar and push
+        // main + version tags: build the 6 images on the dind sidecar and push
         // them to GHCR (ghcr.io/nicolasiskandar/helpdesk-platform-*). All images
         // are built first, then pushed with retries — GHCR blob uploads can
         // stall on slow/flaky links, so a transient timeout must not abort the
@@ -150,6 +166,7 @@ pipeline {
                         [name: 'identity-service',     context: 'services/identity-service'],
                         [name: 'ticket-service',       context: 'services/ticket-service'],
                         [name: 'notification-service', context: 'services/notification-service'],
+                        [name: 'ai-service',           context: 'services/ai-service'],
                         [name: 'frontend',             context: 'frontend'],
                     ]
                     withCredentials([usernamePassword(
