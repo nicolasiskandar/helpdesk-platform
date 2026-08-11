@@ -132,6 +132,7 @@ services:
       RabbitMQ__ExchangeName: ticket.events
       Outbox__BatchSize: "20"
       Outbox__PollIntervalSeconds: "5"
+      AI_SERVICE_KEY: ${AI_SERVICE_KEY}
       OTEL_SERVICE_NAME: helpdesk-ticket-service
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
     ports:
@@ -288,6 +289,7 @@ services:
       AI_EMBEDDING_MODEL: nomic-embed-text
       JWT_PUBLIC_KEY_PATH: /app/certs/public.pem
       TICKET_SERVICE_BASE_URL: http://ticket-service:8080
+      AI_SERVICE_KEY: ${AI_SERVICE_KEY}
       OTEL_SERVICE_NAME: helpdesk-ai-service
     ports:
       - "5090:8080"

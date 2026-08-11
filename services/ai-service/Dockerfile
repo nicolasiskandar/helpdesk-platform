@@ -15,7 +15,8 @@ RUN apt-get update \
 
 COPY pyproject.toml ./
 COPY app ./app
-RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir .
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --retries 5 --timeout 60 .
 
 COPY entrypoint.sh ./
 RUN chmod +x entrypoint.sh

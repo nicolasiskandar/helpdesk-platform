@@ -2,8 +2,9 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 import { toast } from "sonner"
-import { ArrowLeftIcon, SendIcon } from "lucide-react"
+import { ArrowLeftIcon, SendIcon, SparklesIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -20,7 +21,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useStore } from "@/lib/store"
-import { apiUploadAttachment } from "@/lib/api"
+import { apiUploadAttachment, apiSimilarTickets, apiAnalyzeTicket } from "@/lib/api"
+import type { SimilarTicketResponse } from "@/lib/api"
 import type { TicketCategory, TicketPriority } from "@/lib/types"
 
 const CATEGORIES: { value: TicketCategory; label: string }[] = [
@@ -49,7 +51,56 @@ export default function NewTicketPage() {
   const [files, setFiles] = React.useState<File[]>([])
   const [submitting, setSubmitting] = React.useState(false)
 
+  const [similarStatus, setSimilarStatus] = React.useState<
+    "idle" | "loading" | "results" | "empty" | "error"
+  >("idle")
+  const [similarTickets, setSimilarTickets] = React.useState<SimilarTicketResponse[]>([])
+  const similarRequestRef = React.useRef(0)
+  const aiPrefilledRef = React.useRef(false)
+
   const canSubmit = subject.trim() && description.trim() && category && priority
+
+  React.useEffect(() => {
+    const requestId = ++similarRequestRef.current
+    if (!description.trim()) {
+      setSimilarTickets([])
+      setSimilarStatus("idle")
+      return
+    }
+    const query = `${subject} ${description}`.trim()
+    const t = window.setTimeout(async () => {
+      setSimilarStatus("loading")
+      try {
+        const similar = await apiSimilarTickets(query)
+        if (requestId !== similarRequestRef.current) return
+        const results = similar.slice(0, 5)
+        setSimilarTickets(results)
+        setSimilarStatus(results.length > 0 ? "results" : "empty")
+      } catch {
+        if (requestId !== similarRequestRef.current) return
+        setSimilarTickets([])
+        setSimilarStatus("error")
+      }
+    }, 600)
+    return () => window.clearTimeout(t)
+  }, [subject, description])
+
+  React.useEffect(() => {
+    if (!subject.trim() || !description.trim()) return
+    const t = window.setTimeout(async () => {
+      try {
+        const analysis = await apiAnalyzeTicket(subject, description)
+        if (!aiPrefilledRef.current) {
+          setCategory((prev) => (prev || analysis.category) as TicketCategory)
+          setPriority((prev) => (prev || analysis.priority) as TicketPriority)
+          aiPrefilledRef.current = true
+        }
+      } catch {
+        /* AI unavailable — leave manual selection */
+      }
+    }, 900)
+    return () => window.clearTimeout(t)
+  }, [subject, description])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -130,6 +181,50 @@ export default function NewTicketPage() {
                 rows={6}
               />
             </div>
+
+            {(similarStatus === "loading" ||
+              similarStatus === "results" ||
+              similarStatus === "empty" ||
+              similarStatus === "error") && (
+              <div className="flex flex-col gap-3 rounded-lg border bg-muted/40 p-4">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <SparklesIcon className="h-4 w-4 text-primary" />
+                  Similar resolved tickets
+                </div>
+                {similarStatus === "loading" ? (
+                  <p className="text-sm text-muted-foreground">
+                    Searching the knowledge base...
+                  </p>
+                ) : similarStatus === "results" ? (
+                  <ul className="flex flex-col gap-2">
+                    {similarTickets.map((t) => (
+                      <li key={t.ticketId}>
+                        <Link
+                          href={`/tickets/${t.ticketId}`}
+                          className="group flex flex-col gap-0.5 rounded-md p-2 transition-colors hover:bg-background"
+                        >
+                          <span className="text-sm font-medium group-hover:underline">
+                            {t.title}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {t.referenceNumber} · {t.status} ·{" "}
+                            {Math.round(t.score * 100)}% match
+                          </span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                ) : similarStatus === "empty" ? (
+                  <p className="text-sm text-muted-foreground">
+                    No similar tickets found.
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Similar-ticket search is currently unavailable.
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-2">

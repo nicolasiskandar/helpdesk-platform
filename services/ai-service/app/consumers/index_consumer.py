@@ -30,10 +30,11 @@ class IndexConsumer:
                 self._settings.rabbitmq_exchange, aio_pika.ExchangeType.TOPIC, durable=True
             )
             queue = await channel.declare_queue(self._settings.index_queue, durable=True)
-            for key in ("ticket.created", "ticket.resolved"):
+            for key in ("ticket.created", "ticket.resolved", "ticket.commented", "ticket.status_changed"):
                 await queue.bind(exchange, key)
             logger.info(
-                "Listening on queue %s (routing keys: ticket.created, ticket.resolved)",
+                "Listening on queue %s (routing keys: ticket.created, ticket.resolved, "
+                "ticket.commented, ticket.status_changed)",
                 self._settings.index_queue,
             )
 

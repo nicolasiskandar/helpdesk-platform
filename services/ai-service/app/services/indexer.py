@@ -1,4 +1,5 @@
 import logging
+import uuid
 
 from qdrant_client.models import PointStruct
 
@@ -8,8 +9,35 @@ from app.services.vector_store import VectorStore
 logger = logging.getLogger(__name__)
 
 
+def pick(payload: dict, *keys: str):
+    """Returns the first present key in ``payload`` (case-insensitive).
+
+    The ticket service publishes outbox events serialized with default
+    System.Text.Json settings (PascalCase property names), while the AI
+    service consumes them as dicts. Normalize so both forms work.
+    """
+    normalized = {k.lower(): v for k, v in payload.items()}
+    for key in keys:
+        value = normalized.get(key.lower())
+        if value is not None:
+            return value
+    return None
+
+
+def resolved_index_status(payload: dict) -> str:
+    """Maps a ``ticket.resolved`` event to its vector-store status tag.
+
+    Only tickets that reached the terminal ``Closed`` status are treated as
+    closed; ``Resolved - Pending Confirmation`` tickets may still be reopened,
+    so they are tagged ``resolved`` (kept in the index but excluded from
+    similar-ticket recommendations).
+    """
+    name = str(pick(payload, "resolvedStatusName", "ResolvedStatusName") or "")
+    return "closed" if name == "Closed" else "resolved"
+
+
 class Indexer:
-    """Chunks and embeds ticket / KB content into the vector store."""
+    """Chunks and embeds ticket / comment / KB content into the vector store."""
 
     def __init__(
         self,
@@ -49,17 +77,19 @@ class Indexer:
     ) -> list[PointStruct]:
         return [
             PointStruct(
-                id=f"{doc_type}:{doc_id}:{i}",
+                id=str(
+                    uuid.uuid5(uuid.NAMESPACE_URL, f"{doc_type}:{doc_id}:{i}")
+                ),
                 vector=vectors[i],
                 payload={**payload, "text": chunks[i]},
             )
             for i in range(len(chunks))
         ]
 
-    async def index_ticket(self, payload: dict) -> int:
-        ticket_id = str(payload.get("ticketId"))
-        title = payload.get("title", "")
-        description = payload.get("description", "")
+    async def index_ticket(self, payload: dict, *, status: str = "open") -> int:
+        ticket_id = str(pick(payload, "ticketId", "TicketId"))
+        title = pick(payload, "title", "Title") or ""
+        description = pick(payload, "description", "Description") or ""
         text = f"{title}\n{description}".strip()
         chunks = self.chunk_text(text)
         if not chunks:
@@ -73,13 +103,41 @@ class Indexer:
             {
                 "doc_type": "ticket",
                 "doc_id": ticket_id,
-                "reference_number": payload.get("referenceNumber"),
-                "category": payload.get("categoryName"),
-                "priority": payload.get("priorityName"),
+                "reference_number": pick(payload, "referenceNumber", "ReferenceNumber"),
+                "title": title,
+                "category": pick(payload, "categoryName", "CategoryName"),
+                "priority": pick(payload, "priorityName", "PriorityName"),
+                "status": status,
             },
         )
         await self._store.upsert(points)
         logger.info("Indexed ticket %s (%d chunks)", ticket_id, len(chunks))
+        return len(chunks)
+
+    async def index_comment(self, payload: dict) -> int:
+        if pick(payload, "isPrivate", "IsPrivate"):
+            return 0
+        comment_id = str(pick(payload, "commentId", "CommentId"))
+        content = pick(payload, "content", "Content") or ""
+        chunks = self.chunk_text(content)
+        if not chunks:
+            return 0
+        vectors = await self._embeddings.embed_many(chunks)
+        points = self._points(
+            "comment",
+            comment_id,
+            chunks,
+            vectors,
+            {
+                "doc_type": "comment",
+                "doc_id": comment_id,
+                "ticket_id": str(pick(payload, "ticketId", "TicketId")),
+                "reference_number": pick(payload, "referenceNumber", "ReferenceNumber"),
+                "author_name": pick(payload, "authorName", "AuthorName"),
+            },
+        )
+        await self._store.upsert(points)
+        logger.info("Indexed comment %s (%d chunks)", comment_id, len(chunks))
         return len(chunks)
 
     async def index_kb_articles(self, articles: list[dict]) -> int:

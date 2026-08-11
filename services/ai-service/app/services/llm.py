@@ -35,6 +35,22 @@ class LlmClient:
                 if data.get("done"):
                     return
 
+    async def complete(self, prompt: str, *, max_tokens: int = 128, temperature: float = 0.0) -> str:
+        """Single (non-streaming) completion — used for classification."""
+        url = f"{self._base_url}/api/generate"
+        payload = {
+            "model": self._model,
+            "prompt": prompt,
+            "stream": False,
+            "keep_alive": 3600,
+            "options": {"num_predict": max_tokens, "temperature": temperature},
+        }
+        timeout = httpx.Timeout(connect=15.0, read=600.0, write=30.0, pool=15.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+            return response.json().get("response", "")
+
     async def warmup(self) -> None:
         """Loads the chat model into memory so the first user request is fast."""
         url = f"{self._base_url}/api/generate"

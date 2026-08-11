@@ -16,12 +16,18 @@ public class TicketsController : ControllerBase
     private readonly ITicketService _ticketService;
     private readonly IFileStorageService _fileStorage;
     private readonly ILogger<TicketsController> _logger;
+    private readonly IConfiguration _configuration;
 
-    public TicketsController(ITicketService ticketService, IFileStorageService fileStorage, ILogger<TicketsController> logger)
+    public TicketsController(
+        ITicketService ticketService,
+        IFileStorageService fileStorage,
+        ILogger<TicketsController> logger,
+        IConfiguration configuration)
     {
         _ticketService = ticketService;
         _fileStorage = fileStorage;
         _logger = logger;
+        _configuration = configuration;
     }
 
     /// <summary>
@@ -141,11 +147,28 @@ public class TicketsController : ControllerBase
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ChangeStatus(Guid id, [FromBody] ChangeStatusRequest request)
     {
+        var aiServiceKey = _configuration["AI_SERVICE_KEY"];
+        var isAiServiceCall = !string.IsNullOrEmpty(aiServiceKey)
+            && Request.Headers["X-AI-Service-Key"].ToString() == aiServiceKey;
+
+        if (isAiServiceCall)
+        {
+            // Scoped AI service identity (design rule #3): may ONLY close a ticket
+            // from "Resolved - Pending Confirmation" (3) to "Closed" (4).
+            if (request.StatusId != 4)
+            {
+                throw new UnauthorizedAccessException("AI service may only close tickets from pending confirmation.");
+            }
+
+            var ticket = await _ticketService.ChangeStatusAsync(id, request, Guid.Empty, "AI");
+            return Ok(ticket);
+        }
+
         var userId = GetUserIdFromClaims();
         var role = GetUserRoleFromClaims();
         await EnsureTicketAccessAsync(id, userId, role);
-        var ticket = await _ticketService.ChangeStatusAsync(id, request, userId);
-        return Ok(ticket);
+        var userTicket = await _ticketService.ChangeStatusAsync(id, request, userId);
+        return Ok(userTicket);
     }
 
     /// <summary>

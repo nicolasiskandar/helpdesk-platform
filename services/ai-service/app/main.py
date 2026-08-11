@@ -6,15 +6,18 @@ import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import chat, reindex
+from app.api.routes import analyze, chat, followup, reindex, similar, summarize
 from app.consumers.dedup import DedupStore
+from app.consumers.followup_store import FollowUpStore
 from app.consumers.index_consumer import IndexConsumer
 from app.core.config import Settings, get_settings
 from app.core.jwt import JwtValidator
+from app.services.classifier import Classifier
 from app.services.embeddings import EmbeddingClient
-from app.services.indexer import Indexer
+from app.services.indexer import Indexer, pick, resolved_index_status
 from app.services.llm import LlmClient
 from app.services.rag import RagService
+from app.services.similarity import SimilarityService
 from app.services.vector_store import VectorStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
@@ -45,21 +48,39 @@ def build_services(settings: Settings):
     store = VectorStore(settings.qdrant_url, settings.collection_name, settings.vector_size)
     llm = LlmClient(settings.ollama_url, settings.chat_model)
     rag = RagService(settings, store, embeddings)
+    similarity = SimilarityService(settings, store, embeddings)
+    classifier = Classifier(settings)
     indexer = Indexer(store, embeddings, settings.chunk_size, settings.chunk_overlap)
     jwt_validator = JwtValidator(settings.jwt_public_key_path, settings.jwt_audience)
     dedup = DedupStore(settings.dedup_db_path, settings.dedup_ttl_seconds)
-    return store, llm, rag, indexer, jwt_validator, dedup, embeddings
+    followups = FollowUpStore(settings.dedup_db_path)
+    return store, llm, rag, similarity, classifier, indexer, jwt_validator, dedup, followups, embeddings
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
-    store, llm, rag, indexer, jwt_validator, dedup, embeddings = build_services(settings)
+    store, llm, rag, similarity, classifier, indexer, jwt_validator, dedup, followups, embeddings = (
+        build_services(settings)
+    )
     await store.ensure_collection()
 
     async def on_event(routing_key: str, payload: dict) -> None:
-        if routing_key in ("ticket.created", "ticket.resolved"):
-            await indexer.index_ticket(payload)
+        if routing_key == "ticket.created":
+            await indexer.index_ticket(payload, status="open")
+        elif routing_key == "ticket.resolved":
+            await indexer.index_ticket(payload, status=resolved_index_status(payload))
+        elif routing_key == "ticket.commented":
+            await indexer.index_comment(payload)
+        elif (
+            routing_key == "ticket.status_changed"
+            and pick(payload, "newStatus", "NewStatus") == "Resolved - Pending Confirmation"
+        ):
+            followups.record(
+                str(pick(payload, "ticketId", "TicketId")),
+                str(pick(payload, "referenceNumber", "ReferenceNumber") or ""),
+                [str(u) for u in (pick(payload, "recipientUserIds", "RecipientUserIds") or [])],
+            )
 
     consumer = IndexConsumer(settings, dedup, on_event)
     consumer_task = asyncio.create_task(consumer.run(asyncio.Event()))
@@ -67,9 +88,12 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings
     app.state.llm = llm
     app.state.rag = rag
+    app.state.similarity = similarity
+    app.state.classifier = classifier
     app.state.indexer = indexer
     app.state.jwt_validator = jwt_validator
     app.state.dedup = dedup
+    app.state.followups = followups
     app.state.are_models_ready = are_models_ready
 
     async def warm_up_model() -> None:
@@ -104,6 +128,7 @@ async def lifespan(app: FastAPI):
     except asyncio.CancelledError:
         pass
     dedup.close()
+    followups.close()
 
 
 def create_app() -> FastAPI:
@@ -117,6 +142,10 @@ def create_app() -> FastAPI:
     )
     app.include_router(chat.router)
     app.include_router(reindex.router)
+    app.include_router(similar.router)
+    app.include_router(analyze.router)
+    app.include_router(followup.router)
+    app.include_router(summarize.router)
 
     @app.get("/health")
     async def health():

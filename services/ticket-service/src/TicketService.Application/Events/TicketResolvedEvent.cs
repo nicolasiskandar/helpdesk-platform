@@ -7,5 +7,8 @@ public record TicketResolvedEvent(
     string Description,
     Guid ResolvedByUserId,
     IReadOnlyList<Guid> RemainingAssigneeIds,
-    DateTime ResolvedAt
+    DateTime ResolvedAt,
+    string? CategoryName,
+    string? PriorityName,
+    string ResolvedStatusName
 );

@@ -21,10 +21,12 @@ class Settings(BaseSettings):
     jwt_public_key_path: str = "/app/certs/public.pem"
     jwt_audience: str = "it-helpdesk-api"
     ticket_service_base_url: str = "http://ticket-service:8080"
+    ai_service_key: str = ""
 
     chunk_size: int = 800
     chunk_overlap: int = 80
     top_k: int = 5
+    similar_scan: int = 20
     max_tokens: int = 512
     temperature: float = 0.3
 

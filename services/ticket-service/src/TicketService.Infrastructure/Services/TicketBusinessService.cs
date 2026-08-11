@@ -387,7 +387,10 @@ public class TicketBusinessService : ITicketService
                     ticket.Description,
                     changedByUserId,
                     remainingAssigneeIds,
-                    DateTime.UtcNow
+                    DateTime.UtcNow,
+                    ticket.Category?.Name,
+                    ticket.Priority?.Name,
+                    newStatus.Name
                 )),
                 CreatedAt = DateTime.UtcNow
             };

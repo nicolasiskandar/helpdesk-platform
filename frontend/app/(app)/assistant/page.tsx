@@ -16,7 +16,14 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useAuth } from "@/lib/auth"
-import { apiAiStatus, apiChat } from "@/lib/api"
+import {
+  apiAiStatus,
+  apiChat,
+  apiConfirmResolved,
+  apiGetMyTickets,
+  apiChangeStatus,
+} from "@/lib/api"
+import type { TicketResponse } from "@/lib/api"
 
 interface Message {
   id: string
@@ -61,10 +68,74 @@ export default function AssistantPage() {
   const [streamingId, setStreamingId] = React.useState<string | null>(null)
   const [waiting, setWaiting] = React.useState(false)
   const [live, setLive] = React.useState(false)
+  const [pendingConfirmations, setPendingConfirmations] = React.useState<TicketResponse[]>([])
+  const [confirmingId, setConfirmingId] = React.useState<string | null>(null)
+
+  const loadPendingConfirmations = React.useCallback(async () => {
+    try {
+      const data = await apiGetMyTickets(1, 100)
+      setPendingConfirmations(
+        data.tickets.filter(
+          (t) => t.statusName === "Resolved - Pending Confirmation"
+        )
+      )
+    } catch {
+      setPendingConfirmations([])
+    }
+  }, [])
 
   React.useEffect(() => {
     apiAiStatus().then(setLive)
-  }, [])
+    loadPendingConfirmations()
+  }, [loadPendingConfirmations])
+
+  const confirmResolved = React.useCallback(
+    async (ticket: TicketResponse) => {
+      setConfirmingId(ticket.id)
+      try {
+        await apiConfirmResolved(ticket.id)
+        setPendingConfirmations((prev) =>
+          prev.filter((t) => t.id !== ticket.id)
+        )
+      } catch (err: any) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: nextId(),
+            role: "assistant",
+            text: `I couldn't confirm ticket ${ticket.referenceNumber} as resolved: ${err?.message || "unknown error"}`,
+          },
+        ])
+      } finally {
+        setConfirmingId(null)
+      }
+    },
+    []
+  )
+
+  const reopenTicket = React.useCallback(
+    async (ticket: TicketResponse) => {
+      setConfirmingId(ticket.id)
+      try {
+        await apiChangeStatus(ticket.id, 2, "Still experiencing the issue")
+        setPendingConfirmations((prev) =>
+          prev.filter((t) => t.id !== ticket.id)
+        )
+      } catch (err: any) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: nextId(),
+            role: "assistant",
+            text: `I couldn't reopen ticket ${ticket.referenceNumber}: ${err?.message || "unknown error"}`,
+          },
+        ])
+      } finally {
+        setConfirmingId(null)
+      }
+    },
+    []
+  )
 
   React.useEffect(() => {
     if (!thinking) {
@@ -128,6 +199,57 @@ export default function AssistantPage() {
           Get answers and take shortcuts without opening a ticket
         </p>
       </div>
+
+      {pendingConfirmations.length > 0 && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Sparkles className="size-4 text-primary" />
+              <CardTitle className="text-base">
+                Confirm your resolved tickets
+              </CardTitle>
+            </div>
+            <CardDescription>
+              A few of your tickets were marked resolved. Please confirm they&apos;re
+              fixed, or let us know if the issue persists.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {pendingConfirmations.map((t) => (
+              <div
+                key={t.id}
+                className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-sm font-medium">
+                    {t.referenceNumber} — {t.title}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {t.categoryName} · {t.priorityName}
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={confirmingId !== null}
+                    onClick={() => reopenTicket(t)}
+                  >
+                    Still having issues
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={confirmingId !== null}
+                    onClick={() => confirmResolved(t)}
+                  >
+                    {confirmingId === t.id ? "Confirming..." : "Confirm resolved"}
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="flex min-h-[560px] flex-col">
         <CardHeader className="border-b">

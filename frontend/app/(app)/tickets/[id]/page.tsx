@@ -15,6 +15,7 @@ import {
   XIcon,
   ReplyIcon,
   ChevronDownIcon,
+  SparklesIcon,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -25,6 +26,7 @@ import { Label } from "@/components/ui/label"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   Popover,
@@ -61,7 +63,7 @@ import { useStore } from "@/lib/store"
 import { formatRelative, formatDateTime, formatDuration } from "@/lib/analytics"
 import type { Ticket, Comment, TicketStatus, TicketCategory, TicketPriority } from "@/lib/types"
 import type { AuditLogEntryResponse, AttachmentResponse, CategoryResponse, PriorityResponse, UserResponse } from "@/lib/api"
-import { apiGetTicketByReference, apiGetCategories, apiGetPriorities, apiAttachmentDownloadUrl, apiGetUsers, apiUnassignAgent, apiUploadAttachment, apiEscalateTicket, apiDeleteAttachment, apiCommentAttachmentDownloadUrl, apiDeleteCommentAttachment } from "@/lib/api"
+import { apiGetTicketByReference, apiGetCategories, apiGetPriorities, apiAttachmentDownloadUrl, apiGetUsers, apiUnassignAgent, apiUploadAttachment, apiEscalateTicket, apiDeleteAttachment, apiCommentAttachmentDownloadUrl, apiDeleteCommentAttachment, apiSummarizeTicket } from "@/lib/api"
 
 function initials(name: string) {
   return name
@@ -145,6 +147,40 @@ export default function TicketDetailPage() {
 
   const [uploadFiles, setUploadFiles] = React.useState<File[]>([])
   const [uploading, setUploading] = React.useState(false)
+
+  const [summaryOpen, setSummaryOpen] = React.useState(false)
+  const [summaryText, setSummaryText] = React.useState("")
+  const [summarizing, setSummarizing] = React.useState(false)
+
+  async function handleSummarize() {
+    if (!ticket || summarizing) return
+    setSummaryOpen(true)
+    setSummaryText("")
+    setSummarizing(true)
+    try {
+      await apiSummarizeTicket(ticket.id, (token) => {
+        setSummaryText((prev) => prev + token)
+      })
+    } catch (err: any) {
+      if (err?.status === 403) {
+        toast.error("You don't have access to summarize this ticket.")
+      } else {
+        toast.error(err?.message || "Failed to summarize the ticket.")
+      }
+      setSummaryText("")
+    } finally {
+      setSummarizing(false)
+    }
+  }
+
+  async function handleCopySummary() {
+    try {
+      await navigator.clipboard.writeText(summaryText)
+      toast.success("Summary copied to clipboard")
+    } catch {
+      toast.error("Failed to copy summary.")
+    }
+  }
 
   async function handleUploadAttachments() {
     if (!ticket || uploadFiles.length === 0 || uploading) return
@@ -697,7 +733,18 @@ export default function TicketDetailPage() {
         <div className="flex flex-col gap-6 lg:col-span-2">
           <Card>
             <CardHeader>
-              <CardTitle>Description</CardTitle>
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle>Description</CardTitle>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSummarize}
+                  disabled={summarizing || !ticket}
+                >
+                  <SparklesIcon data-icon="inline-start" className="size-4" />
+                  {summarizing ? "Summarizing…" : "Summarize"}
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <p className="whitespace-pre-wrap text-sm text-muted-foreground">
@@ -1302,6 +1349,36 @@ export default function TicketDetailPage() {
             <Button onClick={handleEscalate} disabled={escalating}>
               {escalating ? "Escalating..." : "Escalate Ticket"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={summaryOpen} onOpenChange={setSummaryOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>AI Summary</DialogTitle>
+            <DialogDescription>
+              A concise overview of this ticket generated from its description and comment thread.
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="max-h-[50vh]">
+            <p className="whitespace-pre-wrap text-sm">
+              {summaryText
+                ? summaryText
+                : summarizing
+                  ? "Generating…"
+                  : "No summary available."}
+            </p>
+          </ScrollArea>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={handleCopySummary}
+              disabled={summarizing || !summaryText}
+            >
+              Copy
+            </Button>
+            <Button onClick={() => setSummaryOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

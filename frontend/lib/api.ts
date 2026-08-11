@@ -994,3 +994,114 @@ export async function apiChat(
   }
   if (streamError) throw Object.assign(new Error(streamError), { status: 500 })
 }
+
+export interface SimilarTicketResponse {
+  ticketId: string
+  referenceNumber: string
+  title: string
+  excerpt: string
+  category: string
+  priority: string
+  status: string
+  score: number
+}
+
+export async function apiSimilarTickets(
+  query: string,
+  excludeTicketId?: string
+): Promise<SimilarTicketResponse[]> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/ai/similar-tickets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify({ query, excludeTicketId: excludeTicketId || null }),
+    signal: AbortSignal.timeout(30_000),
+  })
+  return handleResponse<SimilarTicketResponse[]>(res)
+}
+
+export interface AnalyzeTicketResponse {
+  categoryId: number
+  category: string
+  priorityId: number
+  priority: string
+  method: string
+}
+
+export async function apiAnalyzeTicket(
+  title: string,
+  description: string
+): Promise<AnalyzeTicketResponse> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/ai/analyze`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify({ title, description }),
+    signal: AbortSignal.timeout(30_000),
+  })
+  return handleResponse<AnalyzeTicketResponse>(res)
+}
+
+export async function apiConfirmResolved(ticketId: string): Promise<TicketResponse> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/ai/confirm-resolved`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify({ ticketId }),
+    signal: AbortSignal.timeout(30_000),
+  })
+  return handleResponse<TicketResponse>(res)
+}
+
+export async function apiSummarizeTicket(
+  ticketId: string,
+  onToken: (token: string) => void
+): Promise<void> {
+  const token = getAccessToken()
+  const res = await fetch(`${API_BASE}/api/ai/summarize`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify({ ticketId }),
+    signal: AbortSignal.timeout(180_000),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    let parsed: any
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      /* empty/error body */
+    }
+    throw Object.assign(
+      parsed || { message: `Summarize failed with status ${res.status}` },
+      { status: res.status }
+    )
+  }
+  const reader = res.body?.getReader()
+  if (!reader) throw new Error("No response stream")
+  const decoder = new TextDecoder()
+  let buffer = ""
+  let streamError: string | null = null
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n")
+    const events = buffer.split("\n\n")
+    buffer = events.pop() ?? ""
+    for (const raw of events) {
+      const dataLine = raw.split("\n").find((l) => l.startsWith("data:"))
+      if (!dataLine) continue
+      const data = dataLine.slice(5).trim()
+      if (!data) continue
+      let parsed: any
+      try {
+        parsed = JSON.parse(data)
+      } catch {
+        continue
+      }
+      if (typeof parsed.error === "string") streamError = parsed.error
+      if (typeof parsed.token === "string") onToken(parsed.token)
+    }
+  }
+  if (streamError) throw Object.assign(new Error(streamError), { status: 500 })
+}

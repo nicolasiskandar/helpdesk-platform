@@ -1,7 +1,14 @@
 import asyncio
 
 from qdrant_client import AsyncQdrantClient
-from qdrant_client.models import Distance, PointStruct, VectorParams
+from qdrant_client.models import (
+    Distance,
+    FieldCondition,
+    Filter,
+    MatchValue,
+    PointStruct,
+    VectorParams,
+)
 
 
 class VectorStore:
@@ -30,10 +37,24 @@ class VectorStore:
         if points:
             await self._client.upsert(collection_name=self._collection, points=points)
 
-    async def search(self, vector: list[float], top_k: int = 5) -> list:
+    async def search(
+        self,
+        vector: list[float],
+        top_k: int = 5,
+        *,
+        must_match: dict[str, str] | None = None,
+    ) -> list:
+        query_filter = None
+        if must_match:
+            conditions = [
+                FieldCondition(key=key, match=MatchValue(value=value))
+                for key, value in must_match.items()
+            ]
+            query_filter = Filter(must=conditions)
         resp = await self._client.query_points(
             collection_name=self._collection,
             query=vector,
             limit=top_k,
+            query_filter=query_filter,
         )
         return resp.points
