@@ -1,7 +1,8 @@
 # IT Help Desk & Ticketing Management System
 
 Microservices-based IT Help Desk platform. Employees submit tickets, IT agents resolve them,
-admins manage the system, and an AI assistant helps deflect and triage issues.
+admins manage the system, and an AI assistant helps deflect, triage, summarize, and suggest
+troubleshooting steps for issues.
 
 ## Quick Start
 
@@ -16,7 +17,8 @@ admins manage the system, and an AI assistant helps deflect and triage issues.
 ./scripts.sh setup
 ```
 
-This generates RSA keys in `infra/certs/` and creates `.env` from the example.
+This generates RSA keys in `infra/certs/`, creates `.env` from the example, and fills in a
+random `AI_SERVICE_KEY` (already-set values are kept).
 
 ### 2. Configure environment
 
@@ -25,6 +27,9 @@ This generates RSA keys in `infra/certs/` and creates `.env` from the example.
 vim .env
 ```
 
+`setup` already generated the RSA keys and `.env` with a random `AI_SERVICE_KEY`
+(shared secret used by the AI service's scoped ticket-close — `openssl rand -hex 32`).
+
 ### 3. Start the stack
 
 ```bash
@@ -32,11 +37,13 @@ docker compose up --build
 ```
 
 This will:
-- Pull SQL Server 2022 image
-- Build and start the Identity Service, Ticket Service, and API Gateway
+- Build and start the full stack: Identity, Ticket, Notification, AI, and the API Gateway
 - Run EF Core migrations automatically (Development mode)
 - Seed the Roles table (Admin, IT Support Agent, Employee, Manager)
-- Start RabbitMQ, Jaeger, OTel Collector, Prometheus, and Grafana
+- Start RabbitMQ, Jaeger, OTel Collector, Prometheus, Grafana, Ollama, Qdrant, and Mailpit
+- Pull the Ollama models (`llama3.2:3b` + `nomic-embed-text`) in the **background** on first
+  boot — the AI service returns 503 on `/health/ready` until they finish downloading
+  (can take a few minutes)
 
 The stack is available at:
 
@@ -46,13 +53,20 @@ The stack is available at:
 | API Gateway | http://localhost:5000 | Single entry point for all API calls |
 | Identity API | http://localhost:5010 | Direct access (bypass gateway) |
 | Ticket API | http://localhost:5011 | Direct access (bypass gateway) |
+| Notification API | http://localhost:5012 | Direct access (bypass gateway) |
+| AI Service | http://localhost:5090 | RAG chat, triage, summarization, troubleshooting |
 | Swagger (Identity) | http://localhost:5010/swagger | Identity API docs |
 | Swagger (Ticket) | http://localhost:5011/swagger | Ticket API docs |
+| Swagger (Notification) | http://localhost:5012/swagger | Notification API docs |
 | Jaeger UI | http://localhost:16686 | Distributed tracing |
 | Prometheus | http://localhost:9090 | Metrics |
 | Grafana | http://localhost:3001 | Dashboards (admin/admin) |
 | RabbitMQ | http://localhost:15672 | Message broker (guest/guest) |
-| SQL Server | localhost:1433 | Database |
+| SQL Server | localhost:1433 | Identity + Ticket databases |
+| Notification PostgreSQL | localhost:5433 | Notification database |
+| Mailpit | http://localhost:8025 | Dev email catcher (SMTP on 1025) |
+| Ollama | http://localhost:11434 | Local LLM server |
+| Qdrant | http://localhost:6333 | Vector store (dashboard on 6334) |
 
 ### 4. Verify health
 
@@ -65,6 +79,12 @@ curl http://localhost:5010/health/ready
 
 # Ticket Service (includes SQL Server + RabbitMQ checks)
 curl http://localhost:5011/health/ready
+
+# Notification Service (includes PostgreSQL + RabbitMQ checks)
+curl http://localhost:5012/health/ready
+
+# AI Service (includes Ollama + Qdrant + model checks; 503 until models are downloaded)
+curl http://localhost:5090/api/ai/health/ready
 ```
 
 ### 5. Explore
@@ -78,9 +98,13 @@ curl http://localhost:5011/health/ready
 
 All API calls go through the Gateway at `http://localhost:5000`. The gateway routes:
 
-- `/api/auth/*` → Identity Service
-- `/api/users/*` → Identity Service
-- `/api/tickets/*` → Ticket Service
+- `/api/auth/*`, `/api/users/*`, `/api/settings/*` → Identity Service
+- `/api/tickets/*`, `/api/kb-articles/*` → Ticket Service
+- `/api/notifications/*`, `/hubs/notifications/*` → Notification Service
+- `/api/ai/*` → AI Service
+
+Per-service Swagger is also proxied at `/identity/swagger`, `/ticket/swagger`, and
+`/notification/swagger`.
 
 ### POST /api/auth/register
 
@@ -507,36 +531,39 @@ helpdesk-platform/
 
 ## Testing
 
-Unit tests use **xUnit**, **Moq**, and **FluentAssertions**.
+Backend unit tests use **xUnit**, **Moq**, and **FluentAssertions**; the AI service uses
+**pytest** + **ruff**.
 
 ### Commands
 
 ```bash
-./scripts.sh setup            # Generate RSA keys and create .env
+./scripts.sh setup            # Generate RSA keys, create .env, fill in AI_SERVICE_KEY
 ./scripts.sh up               # Start all services
 ./scripts.sh down             # Stop all services
 ./scripts.sh logs             # Tail logs from all services
 ./scripts.sh frontend-dev     # Run frontend locally (no Docker)
-./scripts.sh test             # Run all unit tests (201 tests)
-./scripts.sh coverage         # Run tests and show code coverage
+./scripts.sh test             # Run all unit tests (Identity + Ticket + AI)
+./scripts.sh test-identity    # Run Identity Service tests only
+./scripts.sh test-ticket      # Run Ticket Service tests only
+./scripts.sh test-ai          # Run AI Service tests only (ruff + pytest)
+./scripts.sh coverage         # Run .NET tests and show code coverage
 ./scripts.sh clean            # Remove test results and build artifacts
 ./scripts.sh jenkins          # Start the Jenkins CI/CD controller
 ./scripts.sh help             # Show all available commands
 ```
 
+The first `./scripts.sh test` (or `test-ai`) run creates a Python virtualenv at
+`services/ai-service/.venv` (gitignored) and installs the AI service dev dependencies.
+
 ### Test breakdown
 
-| File | Tests | What's tested |
-|------|-------|---------------|
-| `AuthServiceTests.cs` | 23 | Register, login, refresh, logout, get-user, update-profile, change-password |
-| `UserServiceTests.cs` | 30 | User CRUD, single admin constraint, search/filter/paging |
-| `PasswordHasherTests.cs` | 4 | Hash, verify, salt uniqueness |
-| `JwtTokenServiceTests.cs` | 10 | Token generation, claims, validation, Name claim |
-| `AuthValidatorTests.cs` | 18 | All FluentValidation rules |
-| `UserValidatorTests.cs` | 27 | CreateUser, UpdateUser, UpdateProfile, ChangePassword validators |
-| `TicketBusinessServiceTests.cs` | 48 | Ticket CRUD, assignment, workflow, self-assignment, open unassigned query, unassign outbox, comment visibility, status transition validation |
-| `NotificationBusinessServiceTests.cs` | 16 | Event processing, preferences, notifications CRUD, SignalR, email delivery |
-| **Total** | **201** | |
+| Project | Tests | What's tested |
+|---------|-------|---------------|
+| `IdentityService.Tests` | 144 | Auth (register, login, refresh, logout, profile), user CRUD + single-admin constraint, password hashing, JWT (RS256, claims, Name claim), validators |
+| `TicketService.Tests` | 194 | Ticket CRUD, assignment/workflow, self-assignment, open-unassigned, pending-ticket access restriction, private comments + reply-recipient subsets, unassign outbox, KB articles, validators |
+| `NotificationService.Tests` | 20 | Event processing, preferences, notifications CRUD, SignalR, email delivery (not part of `./scripts.sh test` — run manually with `dotnet test tests/NotificationService.Tests/`) |
+| `ai-service` (pytest) | 82 | Chat, analyze/classifier, summarize, troubleshooting, similar-tickets, reindex, follow-up close, consumer/indexer dedup, vector store, JWT, model readiness |
+| **Total** | **440** | |
 
 ## Tech Stack
 

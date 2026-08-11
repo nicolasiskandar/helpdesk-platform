@@ -12,9 +12,10 @@ Commands:
   logs                   Tail logs from all services
   frontend-dev           Run frontend in dev mode (local, no Docker)
   frontend-build         Build frontend for production
-  test                   Run all unit tests
+  test                   Run all unit tests (Identity, Ticket, AI)
   test-identity          Run Identity Service tests only
   test-ticket            Run Ticket Service tests only
+  test-ai                Run AI Service tests only (ruff + pytest)
   coverage               Run tests and show code coverage
   clean                  Remove test results and build artifacts
   jenkins                Start the Jenkins CI/CD controller (Docker-in-Docker)
@@ -33,6 +34,19 @@ cmd_setup() {
     echo "Created .env from infra/.env.example — edit it before running docker compose up."
   else
     echo ".env already exists — skipping."
+  fi
+
+  local ai_service_key
+  ai_service_key="$(openssl rand -hex 32)"
+  if grep -q "^AI_SERVICE_KEY=change-me-generate-with-openssl-rand-hex-32" .env || ! grep -q "^AI_SERVICE_KEY=.\+" .env; then
+    if grep -q "^AI_SERVICE_KEY=" .env; then
+      sed -i "s|^AI_SERVICE_KEY=.*|AI_SERVICE_KEY=${ai_service_key}|" .env
+    else
+      printf "\nAI_SERVICE_KEY=%s\n" "${ai_service_key}" >> .env
+    fi
+    echo "AI_SERVICE_KEY generated and written to .env"
+  else
+    echo "AI_SERVICE_KEY already set — keeping it."
   fi
 }
 
@@ -79,6 +93,7 @@ cmd_frontend_build() {
 cmd_test() {
   dotnet test tests/IdentityService.Tests/
   dotnet test tests/TicketService.Tests/
+  cmd_test_ai
 }
 
 cmd_test_identity() {
@@ -87,6 +102,20 @@ cmd_test_identity() {
 
 cmd_test_ticket() {
   dotnet test tests/TicketService.Tests/
+}
+
+cmd_test_ai() {
+  local ai_dir="services/ai-service"
+  if [ ! -d "$ai_dir/.venv" ]; then
+    echo "Creating Python virtualenv for the AI service..."
+    python3 -m venv "$ai_dir/.venv"
+    "$ai_dir/.venv/bin/pip" install -q -e "$ai_dir[dev]"
+  fi
+  (
+    cd "$ai_dir"
+    .venv/bin/ruff check --no-cache app tests
+    .venv/bin/pytest -q
+  )
 }
 
 cmd_coverage() {
@@ -128,6 +157,7 @@ case "${1:-help}" in
   test)             cmd_test ;;
   test-identity)    cmd_test_identity ;;
   test-ticket)      cmd_test_ticket ;;
+  test-ai)          cmd_test_ai ;;
   coverage)         cmd_coverage ;;
   clean)            cmd_clean ;;
   jenkins)          cmd_jenkins ;;
