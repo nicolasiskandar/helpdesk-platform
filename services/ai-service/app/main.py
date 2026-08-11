@@ -6,7 +6,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import analyze, chat, followup, reindex, similar, summarize
+from app.api.routes import analyze, chat, followup, reindex, similar, summarize, troubleshooting
 from app.consumers.dedup import DedupStore
 from app.consumers.followup_store import FollowUpStore
 from app.consumers.index_consumer import IndexConsumer
@@ -146,6 +146,7 @@ def create_app() -> FastAPI:
     app.include_router(analyze.router)
     app.include_router(followup.router)
     app.include_router(summarize.router)
+    app.include_router(troubleshooting.router)
 
     @app.get("/health")
     async def health():

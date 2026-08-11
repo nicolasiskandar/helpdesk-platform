@@ -15,21 +15,26 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
-SUMMARY_TEMPERATURE = 0.2
+TROUBLESHOOTING_TEMPERATURE = 0.2
 
-SUMMARY_INSTRUCTIONS = (
-    "You are the Helpdesk AI assistant. Write a concise summary of the ticket "
-    "below. Cover the problem, what has been done so far, and the current "
-    "state. Use short plain-text bullet points. Do not invent facts that are "
-    "not in the ticket."
+TROUBLESHOOTING_INSTRUCTIONS = (
+    "You are the Helpdesk AI assistant for an IT help desk. Suggest concrete "
+    "troubleshooting steps to help resolve the ticket below. Return the steps "
+    "as a numbered plain-text list. Ground every step only in the provided "
+    "knowledge base articles, similar resolved tickets, and the ticket's own "
+    "description and comments. Do not invent steps or facts that are not "
+    "supported by the provided context. If there is not enough information to "
+    "give useful steps, say so and list what additional details are needed."
 )
 
 
-class SummarizeRequest(BaseModel):
+class TroubleshootingRequest(BaseModel):
     ticketId: str
 
 
-def build_summary_prompt(ticket: dict, comments: list[dict]) -> str:
+def build_troubleshooting_prompt(
+    ticket: dict, comments: list[dict], context: list[str], similar: list[dict]
+) -> str:
     ref = pick(ticket, "referenceNumber", "ReferenceNumber", "?")
     title = pick(ticket, "title", "Title", "(untitled)")
     description = pick(ticket, "description", "Description", "(no description)")
@@ -51,13 +56,27 @@ def build_summary_prompt(ticket: dict, comments: list[dict]) -> str:
             content = pick(comment, "content", "Content", "")
             if content:
                 lines.append(f"{i}. {content}")
+    if similar:
+        lines.append("")
+        lines.append("Similar resolved tickets:")
+        for i, s in enumerate(similar, 1):
+            title_ref = s.get("title") or "(untitled)"
+            excerpt = (s.get("excerpt") or "").strip()
+            lines.append(f"{i}. [{s.get('referenceNumber')}] {title_ref}")
+            if excerpt:
+                lines.append(f"   {excerpt}")
+    if context:
+        lines.append("")
+        lines.append("Knowledge base context:")
+        for i, chunk in enumerate(context, 1):
+            lines.append(f"[{i}] {chunk}")
     block = "\n".join(lines)
-    return f"{SUMMARY_INSTRUCTIONS}\n\nTicket content:\n{block}\n\nSummary:"
+    return f"{TROUBLESHOOTING_INSTRUCTIONS}\n\nTicket content:\n{block}\n\nTroubleshooting steps:"
 
 
-@router.post("/summarize")
-async def summarize(
-    req: SummarizeRequest,
+@router.post("/troubleshooting")
+async def troubleshooting(
+    req: TroubleshootingRequest,
     request: Request,
     _: JwtClaims = Depends(get_current_user),  # noqa: B008
 ):
@@ -67,6 +86,8 @@ async def summarize(
 
     settings: Settings = request.app.state.settings
     llm = request.app.state.llm
+    rag = request.app.state.rag
+    similarity = request.app.state.similarity
 
     models_ok, missing = await request.app.state.are_models_ready(settings)
     if not models_ok:
@@ -97,17 +118,32 @@ async def summarize(
         logger.warning("Failed to reach ticket service for %s: %s", ticket_id, exc)
         raise HTTPException(status_code=502, detail="Ticket service is unreachable.") from exc
 
-    prompt = build_summary_prompt(ticket, comments)
+    query = f"{pick(ticket, 'title', 'Title', '')} {pick(ticket, 'description', 'Description', '')}".strip()
+    context: list[str] = []
+    similar: list[dict] = []
+    try:
+        context = await rag.retrieve(query)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("RAG retrieval failed, grounding on ticket thread only: %s", exc)
+    try:
+        similar = await similarity.find_similar(query, exclude_ticket_id=ticket_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Similar-ticket lookup failed, continuing without it: %s", exc)
+
+    prompt = build_troubleshooting_prompt(ticket, comments, context, similar)
 
     async def event_stream():
-        yield {"event": "meta", "data": json.dumps({"comments": len(comments)})}
+        yield {
+            "event": "meta",
+            "data": json.dumps({"sources": len(context), "similarTickets": len(similar)}),
+        }
         try:
             async for token in llm.generate(
-                prompt, max_tokens=settings.max_tokens, temperature=SUMMARY_TEMPERATURE
+                prompt, max_tokens=settings.max_tokens, temperature=TROUBLESHOOTING_TEMPERATURE
             ):
                 yield {"event": "token", "data": json.dumps({"token": token})}
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Summary generation failed: %s", exc)
+            logger.warning("Troubleshooting generation failed: %s", exc)
             yield {"event": "error", "data": json.dumps({"error": str(exc)})}
         finally:
             yield {"event": "done", "data": ""}

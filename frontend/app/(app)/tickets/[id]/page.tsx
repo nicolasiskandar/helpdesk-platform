@@ -16,6 +16,7 @@ import {
   ReplyIcon,
   ChevronDownIcon,
   SparklesIcon,
+  WrenchIcon,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -59,11 +60,12 @@ import {
 import { StatusBadge, PriorityIndicator } from "@/components/ticket-badges"
 import { AttachmentUpload } from "@/components/attachment-upload"
 import { AttachmentPreview } from "@/components/attachment-preview"
+import { AiMarkdown } from "@/components/ai-markdown"
 import { useStore } from "@/lib/store"
 import { formatRelative, formatDateTime, formatDuration } from "@/lib/analytics"
 import type { Ticket, Comment, TicketStatus, TicketCategory, TicketPriority } from "@/lib/types"
 import type { AuditLogEntryResponse, AttachmentResponse, CategoryResponse, PriorityResponse, UserResponse } from "@/lib/api"
-import { apiGetTicketByReference, apiGetCategories, apiGetPriorities, apiAttachmentDownloadUrl, apiGetUsers, apiUnassignAgent, apiUploadAttachment, apiEscalateTicket, apiDeleteAttachment, apiCommentAttachmentDownloadUrl, apiDeleteCommentAttachment, apiSummarizeTicket } from "@/lib/api"
+import { apiGetTicketByReference, apiGetCategories, apiGetPriorities, apiAttachmentDownloadUrl, apiGetUsers, apiUnassignAgent, apiUploadAttachment, apiEscalateTicket, apiDeleteAttachment, apiCommentAttachmentDownloadUrl, apiDeleteCommentAttachment, apiSummarizeTicket, apiTroubleshootingSuggestions } from "@/lib/api"
 
 function initials(name: string) {
   return name
@@ -152,6 +154,10 @@ export default function TicketDetailPage() {
   const [summaryText, setSummaryText] = React.useState("")
   const [summarizing, setSummarizing] = React.useState(false)
 
+  const [suggestOpen, setSuggestOpen] = React.useState(false)
+  const [suggestText, setSuggestText] = React.useState("")
+  const [suggesting, setSuggesting] = React.useState(false)
+
   async function handleSummarize() {
     if (!ticket || summarizing) return
     setSummaryOpen(true)
@@ -179,6 +185,36 @@ export default function TicketDetailPage() {
       toast.success("Summary copied to clipboard")
     } catch {
       toast.error("Failed to copy summary.")
+    }
+  }
+
+  async function handleTroubleshoot() {
+    if (!ticket || suggesting) return
+    setSuggestOpen(true)
+    setSuggestText("")
+    setSuggesting(true)
+    try {
+      await apiTroubleshootingSuggestions(ticket.id, (token) => {
+        setSuggestText((prev) => prev + token)
+      })
+    } catch (err: any) {
+      if (err?.status === 403) {
+        toast.error("You don't have access to get suggestions for this ticket.")
+      } else {
+        toast.error(err?.message || "Failed to generate troubleshooting suggestions.")
+      }
+      setSuggestText("")
+    } finally {
+      setSuggesting(false)
+    }
+  }
+
+  async function handleCopySuggestions() {
+    try {
+      await navigator.clipboard.writeText(suggestText)
+      toast.success("Suggestions copied to clipboard")
+    } catch {
+      toast.error("Failed to copy suggestions.")
     }
   }
 
@@ -735,15 +771,26 @@ export default function TicketDetailPage() {
             <CardHeader>
               <div className="flex items-center justify-between gap-2">
                 <CardTitle>Description</CardTitle>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleSummarize}
-                  disabled={summarizing || !ticket}
-                >
-                  <SparklesIcon data-icon="inline-start" className="size-4" />
-                  {summarizing ? "Summarizing…" : "Summarize"}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleTroubleshoot}
+                    disabled={suggesting || !ticket}
+                  >
+                    <WrenchIcon data-icon="inline-start" className="size-4" />
+                    {suggesting ? "Suggesting…" : "Suggest troubleshooting"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSummarize}
+                    disabled={summarizing || !ticket}
+                  >
+                    <SparklesIcon data-icon="inline-start" className="size-4" />
+                    {summarizing ? "Summarizing…" : "Summarize"}
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -1362,13 +1409,11 @@ export default function TicketDetailPage() {
             </DialogDescription>
           </DialogHeader>
           <ScrollArea className="max-h-[50vh]">
-            <p className="whitespace-pre-wrap text-sm">
-              {summaryText
-                ? summaryText
-                : summarizing
-                  ? "Generating…"
-                  : "No summary available."}
-            </p>
+            {summaryText ? (
+              <AiMarkdown text={summaryText} className="text-sm" />
+            ) : (
+              <p className="text-sm">{summarizing ? "Generating…" : "No summary available."}</p>
+            )}
           </ScrollArea>
           <DialogFooter>
             <Button
@@ -1379,6 +1424,35 @@ export default function TicketDetailPage() {
               Copy
             </Button>
             <Button onClick={() => setSummaryOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={suggestOpen} onOpenChange={setSuggestOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>AI Troubleshooting Suggestions</DialogTitle>
+            <DialogDescription>
+              Step-by-step suggestions generated from the ticket, its comment thread, knowledge
+              base articles, and similar resolved tickets.
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="max-h-[50vh]">
+            {suggestText ? (
+              <AiMarkdown text={suggestText} className="text-sm" />
+            ) : (
+              <p className="text-sm">{suggesting ? "Generating…" : "No suggestions available."}</p>
+            )}
+          </ScrollArea>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={handleCopySuggestions}
+              disabled={suggesting || !suggestText}
+            >
+              Copy
+            </Button>
+            <Button onClick={() => setSuggestOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

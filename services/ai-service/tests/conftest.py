@@ -1,7 +1,7 @@
 import pytest
 from fastapi import FastAPI
 
-from app.api.routes import analyze, chat, followup, reindex, similar, summarize
+from app.api.routes import analyze, chat, followup, reindex, similar, summarize, troubleshooting
 from app.core.config import Settings
 from app.core.jwt import JwtClaims
 
@@ -38,6 +38,7 @@ def make_app():
         app.include_router(reindex.router)
         app.include_router(followup.router)
         app.include_router(summarize.router)
+        app.include_router(troubleshooting.router)
         app.state.settings = state.pop("settings", Settings(ai_service_key="test-key"))
         app.state.jwt_validator = state.pop("jwt_validator", FakeJwtValidator())
         app.state.are_models_ready = state.pop("are_models_ready", FakeAreModelsReady())
@@ -61,6 +62,17 @@ class FakeRag:
 
     def build_prompt(self, query: str, context: list[str]) -> str:
         return f"prompt for {query} with {len(context)} sources"
+
+
+class FakeSimilarity:
+    def __init__(self, results: list | None = None, error: bool = False):
+        self._results = results if results is not None else []
+        self._error = error
+
+    async def find_similar(self, query: str, **kwargs) -> list[dict]:
+        if self._error:
+            raise RuntimeError("vector store unavailable")
+        return self._results
 
 
 class FakeLlm:

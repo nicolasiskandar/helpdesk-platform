@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { AiMarkdown } from "@/components/ai-markdown"
 import { useAuth } from "@/lib/auth"
 import {
   apiAiStatus,
@@ -336,7 +337,11 @@ export default function AssistantPage() {
                       : "border bg-muted/50"
                   }`}
                 >
-                  {m.text || "…"}
+                  {m.role === "assistant" ? (
+                    <AiMarkdown text={m.text || "…"} />
+                  ) : (
+                    (m.text || "…")
+                  )}
                 </div>
                 {m.role === "user" && (
                   <div className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-muted">
