@@ -12,6 +12,7 @@ import {
   BookOpen,
   Search,
   X,
+  Loader2,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -35,12 +36,13 @@ import { useAuth } from "@/lib/auth"
 import {
   apiAiStatus,
   apiChat,
-  apiConfirmResolved,
   apiGetMyTickets,
+  apiGetTickets,
+  apiGetOpenUnassignedTickets,
   apiGetTicketById,
-  apiChangeStatus,
 } from "@/lib/api"
 import type { ChatMessage, TicketResponse } from "@/lib/api"
+import type { Role } from "@/lib/types"
 
 interface Message {
   id: string
@@ -75,6 +77,61 @@ const SUGGESTIONS = [
 let idCounter = 0
 const nextId = () => `msg-${++idCounter}`
 
+function normalizeRole(role: string): Role {
+  const normalized = role.toLowerCase()
+  if (normalized === "admin") return "admin"
+  if (normalized === "manager") return "manager"
+  if (normalized === "it support agent" || normalized === "agent") return "agent"
+  return "employee"
+}
+
+function statusVariant(
+  statusName: string
+): "default" | "secondary" | "destructive" | "outline" {
+  switch (statusName) {
+    case "Open":
+      return "default"
+    case "In Progress":
+      return "secondary"
+    case "Closed":
+    case "Resolved by AI":
+    case "Resolved - Pending Confirmation":
+      return "outline"
+    default:
+      return "secondary"
+  }
+}
+
+/** Load tickets visible to the given role */
+async function loadTicketsForRole(
+  role: Role,
+  userId: string
+): Promise<{ tickets: TicketResponse[]; sections: { label: string; tickets: TicketResponse[] }[] }> {
+  if (role === "admin" || role === "manager") {
+    const data = await apiGetTickets(1, 200)
+    return { tickets: data.tickets, sections: [{ label: "All tickets", tickets: data.tickets }] }
+  }
+
+  if (role === "agent") {
+    const [myData, openData] = await Promise.all([
+      apiGetMyTickets(1, 200),
+      apiGetOpenUnassignedTickets(1, 200),
+    ])
+    const myIds = new Set(myData.tickets.map((t) => t.id))
+    // Open-unassigned tickets that aren't already in "my tickets"
+    const openOnly = openData.tickets.filter((t) => !myIds.has(t.id))
+    const all = [...myData.tickets, ...openOnly]
+    const sections: { label: string; tickets: TicketResponse[] }[] = []
+    if (myData.tickets.length > 0) sections.push({ label: "Your tickets", tickets: myData.tickets })
+    if (openOnly.length > 0) sections.push({ label: "Open tickets", tickets: openOnly })
+    return { tickets: all, sections }
+  }
+
+  // Employee — own tickets only
+  const data = await apiGetMyTickets(1, 200)
+  return { tickets: data.tickets, sections: [{ label: "Your tickets", tickets: data.tickets }] }
+}
+
 function AssistantPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -86,33 +143,33 @@ function AssistantPageContent() {
   const [streamingId, setStreamingId] = React.useState<string | null>(null)
   const [waiting, setWaiting] = React.useState(false)
   const [live, setLive] = React.useState(false)
-  const [pendingConfirmations, setPendingConfirmations] = React.useState<TicketResponse[]>([])
-  const [confirmingId, setConfirmingId] = React.useState<string | null>(null)
+
   const [contextTicket, setContextTicket] = React.useState<TicketResponse | null>(null)
-  const [tickets, setTickets] = React.useState<TicketResponse[]>([])
+  const [ticketSections, setTicketSections] = React.useState<{ label: string; tickets: TicketResponse[] }[]>([])
+  const [allTickets, setAllTickets] = React.useState<TicketResponse[]>([])
+  const [ticketsLoading, setTicketsLoading] = React.useState(true)
   const [pickerOpen, setPickerOpen] = React.useState(false)
   const [pickerQuery, setPickerQuery] = React.useState("")
 
-  const loadPendingConfirmations = React.useCallback(async () => {
-    try {
-      const data = await apiGetMyTickets(1, 100)
-      setPendingConfirmations(
-        data.tickets.filter(
-          (t) => t.statusName === "Resolved - Pending Confirmation"
-        )
-      )
-    } catch {
-      setPendingConfirmations([])
-    }
-  }, [])
+  const role: Role = user ? normalizeRole(user.role) : "employee"
+  const currentUserId = user?.id || ""
 
+  // Load tickets based on role
   React.useEffect(() => {
     apiAiStatus().then(setLive)
-    loadPendingConfirmations()
-    apiGetMyTickets(1, 100)
-      .then((data) => setTickets(data.tickets))
-      .catch(() => setTickets([]))
-  }, [loadPendingConfirmations])
+    if (!user) return
+    setTicketsLoading(true)
+    loadTicketsForRole(role, currentUserId)
+      .then(({ tickets, sections }) => {
+        setAllTickets(tickets)
+        setTicketSections(sections)
+      })
+      .catch(() => {
+        setAllTickets([])
+        setTicketSections([])
+      })
+      .finally(() => setTicketsLoading(false))
+  }, [user, role, currentUserId])
 
   const autoTicketLoaded = React.useRef(false)
   React.useEffect(() => {
@@ -125,63 +182,26 @@ function AssistantPageContent() {
       .catch(() => {})
   }, [searchParams])
 
-  const filteredTickets = React.useMemo(() => {
+  // Filter sections by search query
+  const filteredSections = React.useMemo(() => {
     const q = pickerQuery.trim().toLowerCase()
-    if (!q) return tickets
-    return tickets.filter(
-      (t) =>
-        t.title.toLowerCase().includes(q) ||
-        t.referenceNumber.toLowerCase().includes(q) ||
-        (t.description || "").toLowerCase().includes(q)
-    )
-  }, [tickets, pickerQuery])
+    if (!q) return ticketSections
+    return ticketSections
+      .map((section) => ({
+        ...section,
+        tickets: section.tickets.filter(
+          (t) =>
+            t.title.toLowerCase().includes(q) ||
+            t.referenceNumber.toLowerCase().includes(q) ||
+            (t.description || "").toLowerCase().includes(q)
+        ),
+      }))
+      .filter((section) => section.tickets.length > 0)
+  }, [ticketSections, pickerQuery])
 
-  const confirmResolved = React.useCallback(
-    async (ticket: TicketResponse) => {
-      setConfirmingId(ticket.id)
-      try {
-        await apiConfirmResolved(ticket.id)
-        setPendingConfirmations((prev) =>
-          prev.filter((t) => t.id !== ticket.id)
-        )
-      } catch (err: any) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: nextId(),
-            role: "assistant",
-            text: `I couldn't confirm ticket ${ticket.referenceNumber} as resolved: ${err?.message || "unknown error"}`,
-          },
-        ])
-      } finally {
-        setConfirmingId(null)
-      }
-    },
-    []
-  )
-
-  const reopenTicket = React.useCallback(
-    async (ticket: TicketResponse) => {
-      setConfirmingId(ticket.id)
-      try {
-        await apiChangeStatus(ticket.id, 2, "Still experiencing the issue")
-        setPendingConfirmations((prev) =>
-          prev.filter((t) => t.id !== ticket.id)
-        )
-      } catch (err: any) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: nextId(),
-            role: "assistant",
-            text: `I couldn't reopen ticket ${ticket.referenceNumber}: ${err?.message || "unknown error"}`,
-          },
-        ])
-      } finally {
-        setConfirmingId(null)
-      }
-    },
-    []
+  const totalFiltered = React.useMemo(
+    () => filteredSections.reduce((sum, s) => sum + s.tickets.length, 0),
+    [filteredSections]
   )
 
   React.useEffect(() => {
@@ -253,57 +273,6 @@ function AssistantPageContent() {
           Get answers and take shortcuts without opening a ticket
         </p>
       </div>
-
-      {pendingConfirmations.length > 0 && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Sparkles className="size-4 text-primary" />
-              <CardTitle className="text-base">
-                Confirm your resolved tickets
-              </CardTitle>
-            </div>
-            <CardDescription>
-              A few of your tickets were marked resolved. Please confirm they&apos;re
-              fixed, or let us know if the issue persists.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            {pendingConfirmations.map((t) => (
-              <div
-                key={t.id}
-                className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-sm font-medium">
-                    {t.referenceNumber} — {t.title}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {t.categoryName} · {t.priorityName}
-                  </span>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={confirmingId !== null}
-                    onClick={() => reopenTicket(t)}
-                  >
-                    Still having issues
-                  </Button>
-                  <Button
-                    size="sm"
-                    disabled={confirmingId !== null}
-                    onClick={() => confirmResolved(t)}
-                  >
-                    {confirmingId === t.id ? "Confirming..." : "Confirm resolved"}
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
 
       <Card className="flex min-h-[560px] flex-col">
         <CardHeader className="border-b">
@@ -462,54 +431,94 @@ function AssistantPageContent() {
                 </button>
               </Badge>
             ) : (
-              <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+              <Popover open={pickerOpen} onOpenChange={(open) => {
+                setPickerOpen(open)
+                if (!open) setPickerQuery("")
+              }}>
                 <PopoverTrigger asChild>
                   <Button type="button" variant="outline" size="sm" className="gap-1.5">
                     <FileText className="size-3.5" />
                     Ask about a ticket
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent align="start" className="w-80 p-0">
+                <PopoverContent align="start" className="w-96 p-0" sideOffset={8}>
                   <div className="border-b p-2">
                     <div className="relative">
                       <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                       <Input
                         value={pickerQuery}
                         onChange={(e) => setPickerQuery(e.target.value)}
-                        placeholder="Search your tickets…"
+                        placeholder={
+                          role === "admin" || role === "manager"
+                            ? "Search all tickets…"
+                            : role === "agent"
+                              ? "Search your & open tickets…"
+                              : "Search your tickets…"
+                        }
                         className="pl-8"
                         autoFocus
                       />
                     </div>
                   </div>
-                  <ScrollArea className="max-h-72">
-                    <div className="flex flex-col gap-0.5 p-1">
-                      {filteredTickets.map((t) => (
-                        <button
-                          key={t.id}
-                          type="button"
-                          onClick={() => {
-                            setContextTicket(t)
-                            setPickerOpen(false)
-                            setPickerQuery("")
-                          }}
-                          className="flex flex-col items-start gap-0.5 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
-                        >
-                          <span className="font-medium">
-                            {t.referenceNumber} — {t.title}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {t.statusName} · {t.priorityName}
-                          </span>
-                        </button>
-                      ))}
-                      {filteredTickets.length === 0 && (
-                        <p className="px-2 py-4 text-sm text-muted-foreground">
-                          No tickets found.
-                        </p>
-                      )}
-                    </div>
-                  </ScrollArea>
+                  <div className="max-h-80 overflow-y-auto overscroll-contain">
+                    {ticketsLoading ? (
+                      <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+                        <Loader2 className="size-4 animate-spin" />
+                        Loading tickets…
+                      </div>
+                    ) : totalFiltered === 0 ? (
+                      <div className="px-3 py-8 text-center text-sm text-muted-foreground">
+                        {allTickets.length === 0
+                          ? "No tickets available."
+                          : "No tickets match your search."}
+                      </div>
+                    ) : (
+                      <div className="p-1">
+                        {filteredSections.map((section) => (
+                          <div key={section.label}>
+                            {filteredSections.length > 1 && (
+                              <div className="px-2 pb-1 pt-2 text-xs font-medium text-muted-foreground">
+                                {section.label}
+                              </div>
+                            )}
+                            {section.tickets.map((t) => (
+                              <button
+                                key={t.id}
+                                type="button"
+                                onClick={() => {
+                                  setContextTicket(t)
+                                  setPickerOpen(false)
+                                  setPickerQuery("")
+                                }}
+                                className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-muted"
+                              >
+                                <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                                  <div className="flex items-center gap-2">
+                                    <span className="truncate font-medium">
+                                      {t.referenceNumber}
+                                    </span>
+                                    <Badge
+                                      variant={statusVariant(t.statusName)}
+                                      className="shrink-0 text-[10px] px-1.5 py-0"
+                                    >
+                                      {t.statusName}
+                                    </Badge>
+                                  </div>
+                                  <span className="truncate text-muted-foreground">
+                                    {t.title}
+                                  </span>
+                                  <span className="text-xs text-muted-foreground/70">
+                                    {t.categoryName} · {t.priorityName}
+                                  </span>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </PopoverContent>
               </Popover>
             )}

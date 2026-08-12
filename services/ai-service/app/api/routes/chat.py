@@ -57,8 +57,8 @@ def build_ticket_chat_prompt(
         parts.append("")
         parts.append("Previous conversation:")
         for item in history:
-            role = getattr(item, "role", item.get("role", ""))
-            content = getattr(item, "content", item.get("content", ""))
+            role = item.role
+            content = item.content
             who = "User" if role == "user" else "Assistant"
             parts.append(f"{who}: {content}")
     block = "\n".join(parts)
