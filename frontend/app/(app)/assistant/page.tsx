@@ -1,8 +1,18 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
-import { Send, Bot, User, Sparkles, FileText, Inbox, BookOpen } from "lucide-react"
+import { useRouter, useSearchParams } from "next/navigation"
+import {
+  Send,
+  Bot,
+  User,
+  Sparkles,
+  FileText,
+  Inbox,
+  BookOpen,
+  Search,
+  X,
+} from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,6 +25,11 @@ import {
 } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { AiMarkdown } from "@/components/ai-markdown"
 import { useAuth } from "@/lib/auth"
 import {
@@ -22,9 +37,10 @@ import {
   apiChat,
   apiConfirmResolved,
   apiGetMyTickets,
+  apiGetTicketById,
   apiChangeStatus,
 } from "@/lib/api"
-import type { TicketResponse } from "@/lib/api"
+import type { ChatMessage, TicketResponse } from "@/lib/api"
 
 interface Message {
   id: string
@@ -59,8 +75,9 @@ const SUGGESTIONS = [
 let idCounter = 0
 const nextId = () => `msg-${++idCounter}`
 
-export default function AssistantPage() {
+function AssistantPageContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { user } = useAuth()
 
   const [messages, setMessages] = React.useState<Message[]>([])
@@ -71,6 +88,10 @@ export default function AssistantPage() {
   const [live, setLive] = React.useState(false)
   const [pendingConfirmations, setPendingConfirmations] = React.useState<TicketResponse[]>([])
   const [confirmingId, setConfirmingId] = React.useState<string | null>(null)
+  const [contextTicket, setContextTicket] = React.useState<TicketResponse | null>(null)
+  const [tickets, setTickets] = React.useState<TicketResponse[]>([])
+  const [pickerOpen, setPickerOpen] = React.useState(false)
+  const [pickerQuery, setPickerQuery] = React.useState("")
 
   const loadPendingConfirmations = React.useCallback(async () => {
     try {
@@ -88,7 +109,32 @@ export default function AssistantPage() {
   React.useEffect(() => {
     apiAiStatus().then(setLive)
     loadPendingConfirmations()
+    apiGetMyTickets(1, 100)
+      .then((data) => setTickets(data.tickets))
+      .catch(() => setTickets([]))
   }, [loadPendingConfirmations])
+
+  const autoTicketLoaded = React.useRef(false)
+  React.useEffect(() => {
+    if (autoTicketLoaded.current) return
+    const id = searchParams.get("ticket")
+    if (!id) return
+    autoTicketLoaded.current = true
+    apiGetTicketById(id)
+      .then(setContextTicket)
+      .catch(() => {})
+  }, [searchParams])
+
+  const filteredTickets = React.useMemo(() => {
+    const q = pickerQuery.trim().toLowerCase()
+    if (!q) return tickets
+    return tickets.filter(
+      (t) =>
+        t.title.toLowerCase().includes(q) ||
+        t.referenceNumber.toLowerCase().includes(q) ||
+        (t.description || "").toLowerCase().includes(q)
+    )
+  }, [tickets, pickerQuery])
 
   const confirmResolved = React.useCallback(
     async (ticket: TicketResponse) => {
@@ -151,6 +197,10 @@ export default function AssistantPage() {
     async (text: string) => {
       const trimmed = text.trim()
       if (!trimmed || thinking) return
+      const history: ChatMessage[] = messages
+        .slice(-8)
+        .map((m) => ({ role: m.role, content: m.text }))
+        .filter((m) => m.content.trim().length > 0)
       setMessages((prev) => [...prev, { id: nextId(), role: "user", text: trimmed }])
       setInput("")
       setThinking(true)
@@ -163,6 +213,9 @@ export default function AssistantPage() {
           setMessages((prev) =>
             prev.map((m) => (m.id === assistantId ? { ...m, text: m.text + token } : m))
           )
+        }, {
+          ticketId: contextTicket?.id,
+          history,
         })
         setLive(true)
       } catch (err: any) {
@@ -187,7 +240,7 @@ export default function AssistantPage() {
         setWaiting(false)
       }
     },
-    [thinking]
+    [thinking, messages, contextTicket]
   )
 
   const greeting = user?.fullName ? `Hi ${user.fullName.split(" ")[0]}` : "Hi there"
@@ -289,7 +342,8 @@ export default function AssistantPage() {
                 <div className="max-w-md">
                   <p className="font-medium">{greeting}! I'm your IT helpdesk assistant.</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Ask about a problem, or jump straight to a useful place.
+                    Ask about a problem, pick a ticket to ask about it, or jump
+                    straight to a useful place.
                   </p>
                 </div>
                 <div className="grid w-full max-w-md gap-2 sm:grid-cols-3">
@@ -317,6 +371,23 @@ export default function AssistantPage() {
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {contextTicket && (
+              <div className="flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-sm">
+                <FileText className="size-4 shrink-0 text-primary" />
+                <span className="truncate font-medium">
+                  Asking about {contextTicket.referenceNumber} — {contextTicket.title}
+                </span>
+                <button
+                  type="button"
+                  aria-label="Clear ticket context"
+                  onClick={() => setContextTicket(null)}
+                  className="ml-auto rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <X className="size-4" />
+                </button>
               </div>
             )}
 
@@ -374,6 +445,75 @@ export default function AssistantPage() {
         </ScrollArea>
 
         <div className="border-t p-3">
+          <div className="mb-2 flex items-center gap-2">
+            {contextTicket ? (
+              <Badge variant="secondary" className="max-w-full gap-1 pr-1">
+                <FileText className="size-3 shrink-0" />
+                <span className="truncate">
+                  {contextTicket.referenceNumber} — {contextTicket.title}
+                </span>
+                <button
+                  type="button"
+                  aria-label="Clear ticket context"
+                  onClick={() => setContextTicket(null)}
+                  className="ml-1 rounded-full p-0.5 hover:bg-muted"
+                >
+                  <X className="size-3" />
+                </button>
+              </Badge>
+            ) : (
+              <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5">
+                    <FileText className="size-3.5" />
+                    Ask about a ticket
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-80 p-0">
+                  <div className="border-b p-2">
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        value={pickerQuery}
+                        onChange={(e) => setPickerQuery(e.target.value)}
+                        placeholder="Search your tickets…"
+                        className="pl-8"
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+                  <ScrollArea className="max-h-72">
+                    <div className="flex flex-col gap-0.5 p-1">
+                      {filteredTickets.map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => {
+                            setContextTicket(t)
+                            setPickerOpen(false)
+                            setPickerQuery("")
+                          }}
+                          className="flex flex-col items-start gap-0.5 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
+                        >
+                          <span className="font-medium">
+                            {t.referenceNumber} — {t.title}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {t.statusName} · {t.priorityName}
+                          </span>
+                        </button>
+                      ))}
+                      {filteredTickets.length === 0 && (
+                        <p className="px-2 py-4 text-sm text-muted-foreground">
+                          No tickets found.
+                        </p>
+                      )}
+                    </div>
+                  </ScrollArea>
+                </PopoverContent>
+              </Popover>
+            )}
+          </div>
           <form
             className="flex gap-2"
             onSubmit={(e) => {
@@ -401,5 +541,13 @@ export default function AssistantPage() {
         </div>
       </Card>
     </div>
+  )
+}
+
+export default function AssistantPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <AssistantPageContent />
+    </React.Suspense>
   )
 }

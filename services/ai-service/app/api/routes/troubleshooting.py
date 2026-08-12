@@ -9,7 +9,12 @@ from sse_starlette.sse import EventSourceResponse
 from app.api.dependencies import get_current_user
 from app.core.config import Settings
 from app.core.jwt import JwtClaims
-from app.services.ticket_client import TicketServiceError, fetch_ticket_thread, pick
+from app.services.ticket_client import (
+    TicketServiceError,
+    fetch_ticket_thread,
+    pick,
+    render_ticket_thread,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,27 +40,7 @@ class TroubleshootingRequest(BaseModel):
 def build_troubleshooting_prompt(
     ticket: dict, comments: list[dict], context: list[str], similar: list[dict]
 ) -> str:
-    ref = pick(ticket, "referenceNumber", "ReferenceNumber", "?")
-    title = pick(ticket, "title", "Title", "(untitled)")
-    description = pick(ticket, "description", "Description", "(no description)")
-    status = pick(ticket, "statusName", "StatusName", "unknown")
-    category = pick(ticket, "categoryName", "CategoryName", "uncategorized")
-    priority = pick(ticket, "priorityName", "PriorityName", "medium")
-
-    lines = [
-        f"Ticket: {title} ({ref})",
-        f"Category: {category} · Priority: {priority} · Status: {status}",
-        "",
-        "Description:",
-        description,
-    ]
-    if comments:
-        lines.append("")
-        lines.append("Comments:")
-        for i, comment in enumerate(comments, 1):
-            content = pick(comment, "content", "Content", "")
-            if content:
-                lines.append(f"{i}. {content}")
+    lines = [render_ticket_thread(ticket, comments)]
     if similar:
         lines.append("")
         lines.append("Similar resolved tickets:")

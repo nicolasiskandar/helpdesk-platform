@@ -17,6 +17,7 @@ import {
   ChevronDownIcon,
   SparklesIcon,
   WrenchIcon,
+  MessageSquareTextIcon,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -780,6 +781,15 @@ export default function TicketDetailPage() {
                   >
                     <WrenchIcon data-icon="inline-start" className="size-4" />
                     {suggesting ? "Suggesting…" : "Suggest troubleshooting"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => router.push(`/assistant?ticket=${ticket.id}`)}
+                    disabled={!ticket}
+                  >
+                    <MessageSquareTextIcon data-icon="inline-start" className="size-4" />
+                    Ask AI
                   </Button>
                   <Button
                     variant="outline"

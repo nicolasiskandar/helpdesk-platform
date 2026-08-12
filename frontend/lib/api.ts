@@ -994,9 +994,15 @@ async function streamSseTokens(
   if (streamError) throw Object.assign(new Error(streamError), { status: 500 })
 }
 
+export interface ChatMessage {
+  role: "user" | "assistant"
+  content: string
+}
+
 export async function apiChat(
   message: string,
-  onToken: (token: string) => void
+  onToken: (token: string) => void,
+  opts?: { ticketId?: string; history?: ChatMessage[] }
 ): Promise<void> {
   const token = getAccessToken()
   return streamSseTokens(
@@ -1004,7 +1010,11 @@ export async function apiChat(
     {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeaders(token) },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({
+        message,
+        ticketId: opts?.ticketId || null,
+        history: opts?.history || [],
+      }),
       signal: AbortSignal.timeout(180_000),
     },
     onToken,
