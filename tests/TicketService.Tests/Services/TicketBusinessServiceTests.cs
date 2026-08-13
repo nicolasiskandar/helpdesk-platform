@@ -3302,6 +3302,9 @@ public class TicketBusinessServiceTests
         _auditLogRepoMock.Verify(r => r.DeleteAsync(auditLogs[0]), Times.Once);
         _assignmentRepoMock.Verify(r => r.DeleteAsync(assignments[0]), Times.Once);
         _ticketRepoMock.Verify(r => r.DeleteAsync(ticket), Times.Once);
+        _outboxRepoMock.Verify(r => r.AddAsync(It.Is<OutboxMessage>(message =>
+            message.EventType == "ticket.deleted" &&
+            message.Payload.Contains(ticketId.ToString()))), Times.Once);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -3893,5 +3896,73 @@ public class TicketBusinessServiceTests
         public override long Seek(long offset, SeekOrigin origin) => 0;
         public override void SetLength(long value) { }
         public override void Write(byte[] buffer, int offset, int count) { }
+    }
+
+    [Fact]
+    public async Task GetClosedForIndexAsync_MapsClosedTicketsWithClosedAtFromAudit()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var closedAt = new DateTime(2026, 8, 1, 10, 0, 0, DateTimeKind.Utc);
+        var ticket = new Ticket
+        {
+            Id = ticketId,
+            ReferenceNumber = "TKT-000001",
+            Title = "VPN unavailable",
+            Description = "The VPN client cannot connect.",
+            StatusId = 4,
+            Category = new Category { Id = 1, Name = "Network" },
+            Priority = new Priority { Id = 2, Name = "High", Level = 3 },
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        _ticketRepoMock.Setup(r => r.GetClosedTicketsAsync(1, 100)).ReturnsAsync(new List<Ticket> { ticket });
+        _ticketRepoMock.Setup(r => r.GetClosedTicketsCountAsync()).ReturnsAsync(1);
+        _auditLogRepoMock.Setup(r => r.GetStatusTransitionsAsync(ticketId)).ReturnsAsync(new List<TicketAuditLogEntry>
+        {
+            new() { NewValue = "In Progress", ChangedAt = DateTime.UtcNow },
+            new() { NewValue = "Closed", ChangedAt = closedAt }
+        });
+
+        // Act
+        var result = await _sut.GetClosedForIndexAsync(1, 100);
+
+        // Assert
+        result.TotalCount.Should().Be(1);
+        var item = result.Items.Should().ContainSingle().Subject;
+        item.Id.Should().Be(ticketId);
+        item.ReferenceNumber.Should().Be("TKT-000001");
+        item.CategoryName.Should().Be("Network");
+        item.PriorityName.Should().Be("High");
+        item.ClosedAt.Should().Be(closedAt);
+    }
+
+    [Fact]
+    public async Task GetClosedForIndexAsync_WhenNoClosedAuditTransition_FallsBackToUpdatedAt()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var updatedAt = new DateTime(2026, 8, 2, 9, 0, 0, DateTimeKind.Utc);
+        var ticket = new Ticket
+        {
+            Id = ticketId,
+            ReferenceNumber = "TKT-000002",
+            Title = "Printer jam",
+            Description = "Paper jam.",
+            StatusId = 4,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            UpdatedAt = updatedAt
+        };
+
+        _ticketRepoMock.Setup(r => r.GetClosedTicketsAsync(1, 100)).ReturnsAsync(new List<Ticket> { ticket });
+        _ticketRepoMock.Setup(r => r.GetClosedTicketsCountAsync()).ReturnsAsync(1);
+        _auditLogRepoMock.Setup(r => r.GetStatusTransitionsAsync(ticketId)).ReturnsAsync(new List<TicketAuditLogEntry>());
+
+        // Act
+        var result = await _sut.GetClosedForIndexAsync(1, 100);
+
+        // Assert
+        result.Items.Should().ContainSingle().Which.ClosedAt.Should().Be(updatedAt);
     }
 }

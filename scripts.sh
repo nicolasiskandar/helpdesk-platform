@@ -15,6 +15,7 @@ Commands:
   test                   Run all unit tests (Identity, Ticket, AI)
   test-identity          Run Identity Service tests only
   test-ticket            Run Ticket Service tests only
+  test-search            Run Search Service tests
   test-ai                Run AI Service tests only (ruff + pytest)
   coverage               Run tests and show code coverage
   clean                  Remove test results and build artifacts
@@ -48,6 +49,19 @@ cmd_setup() {
   else
     echo "AI_SERVICE_KEY already set — keeping it."
   fi
+
+  local search_service_key
+  search_service_key="$(openssl rand -hex 32)"
+  if grep -q "^SEARCH_SERVICE_KEY=change-me-generate-with-openssl-rand-hex-32" .env || ! grep -q "^SEARCH_SERVICE_KEY=.\+" .env; then
+    if grep -q "^SEARCH_SERVICE_KEY=" .env; then
+      sed -i "s|^SEARCH_SERVICE_KEY=.*|SEARCH_SERVICE_KEY=${search_service_key}|" .env
+    else
+      printf "\nSEARCH_SERVICE_KEY=%s\n" "${search_service_key}" >> .env
+    fi
+    echo "SEARCH_SERVICE_KEY generated and written to .env"
+  else
+    echo "SEARCH_SERVICE_KEY already set — keeping it."
+  fi
 }
 
 cmd_up() {
@@ -58,6 +72,7 @@ cmd_up() {
   echo "  API Gateway:    http://localhost:5000"
   echo "  Identity API:   http://localhost:5010 (direct)"
   echo "  Ticket API:     http://localhost:5011 (direct)"
+  echo "  Search API:     http://localhost:5013 (direct)"
   echo "  Swagger (ID):   http://localhost:5010/swagger"
   echo "  Swagger (TKT):  http://localhost:5011/swagger"
   echo "  Jaeger UI:      http://localhost:16686"
@@ -104,6 +119,10 @@ cmd_test_ticket() {
   dotnet test tests/TicketService.Tests/
 }
 
+cmd_test_search() {
+  dotnet test tests/SearchService.Tests/
+}
+
 cmd_test_ai() {
   local ai_dir="services/ai-service"
   if [ ! -d "$ai_dir/.venv" ]; then
@@ -136,6 +155,7 @@ cmd_clean() {
   rm -rf ./TestResults
   dotnet clean services/identity-service/src/IdentityService.Api/ > /dev/null 2>&1
   dotnet clean services/ticket-service/src/TicketService.Api/ > /dev/null 2>&1
+  dotnet clean services/search-service/src/SearchService.Api/ > /dev/null 2>&1
   echo "Cleaned."
 }
 
@@ -157,6 +177,7 @@ case "${1:-help}" in
   test)             cmd_test ;;
   test-identity)    cmd_test_identity ;;
   test-ticket)      cmd_test_ticket ;;
+  test-search)      cmd_test_search ;;
   test-ai)          cmd_test_ai ;;
   coverage)         cmd_coverage ;;
   clean)            cmd_clean ;;

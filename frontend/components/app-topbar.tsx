@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Bell, Search, LogOut, User as UserIcon, ChevronsUpDown } from "lucide-react"
+import { Bell, LogOut, User as UserIcon, ChevronsUpDown } from "lucide-react"
 
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { Separator } from "@/components/ui/separator"
@@ -19,11 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-} from "@/components/ui/input-group"
+import { GlobalSearch } from "@/components/global-search"
 import { useStore } from "@/lib/store"
 import { useAuth } from "@/lib/auth"
 
@@ -56,20 +52,7 @@ export function AppTopbar({ title }: { title: string }) {
 
       <div className="ml-auto flex items-center gap-1.5 md:gap-2">
         <div className="hidden lg:block">
-          <InputGroup className="w-64">
-            <InputGroupInput
-              placeholder="Search tickets, articles..."
-              aria-label="Search"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-                  router.push("/tickets")
-                }
-              }}
-            />
-            <InputGroupAddon>
-              <Search />
-            </InputGroupAddon>
-          </InputGroup>
+          <GlobalSearch />
         </div>
 
         <Button

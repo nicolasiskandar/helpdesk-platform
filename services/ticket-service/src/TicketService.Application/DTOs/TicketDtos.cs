@@ -45,3 +45,20 @@ public record TicketListResponse(
     int Page,
     int PageSize
 );
+
+public record TicketIndexDocument(
+    Guid Id,
+    string ReferenceNumber,
+    string Title,
+    string Description,
+    string CategoryName,
+    string PriorityName,
+    DateTime ClosedAt
+);
+
+public record TicketIndexListResponse(
+    IReadOnlyList<TicketIndexDocument> Items,
+    int TotalCount,
+    int Page,
+    int PageSize
+);

@@ -68,6 +68,29 @@ public class TicketsController : ControllerBase
     }
 
     /// <summary>
+    /// Internal scoped endpoint used by the Search Service to backfill the
+    /// closed-ticket index. Guarded by the shared SEARCH_SERVICE_KEY header
+    /// (same service-identity pattern as the AI service key), so no JWT needed.
+    /// </summary>
+    [HttpGet("index-sync")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(TicketIndexListResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetIndexSync([FromQuery] int page = 1, [FromQuery] int pageSize = 100)
+    {
+        var searchServiceKey = _configuration["SEARCH_SERVICE_KEY"];
+        var isSearchServiceCall = !string.IsNullOrEmpty(searchServiceKey)
+            && Request.Headers["X-Search-Service-Key"].ToString() == searchServiceKey;
+
+        if (!isSearchServiceCall)
+        {
+            return Unauthorized();
+        }
+
+        var result = await _ticketService.GetClosedForIndexAsync(page, Math.Min(pageSize, 100));
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Gets a ticket by ID.
     /// </summary>
     [HttpGet("{id:guid}")]

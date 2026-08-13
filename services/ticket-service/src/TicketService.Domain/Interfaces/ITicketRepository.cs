@@ -16,6 +16,8 @@ public interface ITicketRepository
     Task<int> GetOpenUnassignedTicketsCountAsync();
     Task<IReadOnlyList<Ticket>> GetForAnalyticsAsync(DateTime from, DateTime to);
     Task<int> GetUnassignedCountAsync(DateTime from, DateTime to);
+    Task<IReadOnlyList<Ticket>> GetClosedTicketsAsync(int page, int pageSize);
+    Task<int> GetClosedTicketsCountAsync();
     Task AddAsync(Ticket ticket);
     Task UpdateAsync(Ticket ticket);
     Task DeleteAsync(Ticket ticket);

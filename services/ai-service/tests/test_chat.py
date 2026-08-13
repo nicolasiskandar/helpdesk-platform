@@ -114,6 +114,18 @@ def test_build_ticket_chat_prompt_includes_thread_history_and_context():
     assert prompt.index("Replaced the power adapter") < prompt.index("hi")
 
 
+def test_build_ticket_chat_prompt_handles_partial_history_mappings():
+    prompt = build_ticket_chat_prompt(
+        TICKET,
+        COMMENTS,
+        "What happened?",
+        history=[{"role": "user"}, {"content": "I do not know."}],
+    )
+
+    assert "User: " in prompt
+    assert "Assistant: I do not know." in prompt
+
+
 def test_chat_with_empty_ticket_id_rejected(make_app):
     client = _client(make_app)
     resp = client.post(

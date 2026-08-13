@@ -68,6 +68,19 @@ pipeline {
                                 sh 'dotnet build services/gateway/src/Gateway/Gateway.csproj -c Release'
                             }
                         }
+                        stage('Search build') {
+                            agent {
+                                docker {
+                                    image 'mcr.microsoft.com/dotnet/sdk:9.0'
+                                    reuseNode true
+                                    args '-v nuget-cache:/root/.nuget/packages'
+                                }
+                            }
+                            steps {
+                                sh 'dotnet build services/search-service/SearchService.sln -c Release'
+                                sh 'dotnet test tests/SearchService.Tests/'
+                            }
+                        }
                         stage('Identity build + test') {
                             agent {
                                 docker {
@@ -145,7 +158,7 @@ pipeline {
         }
 
         // ------------------------------------------------------------------
-        // main + version tags: build the 6 images on the dind sidecar and push
+        // main + version tags: build the 7 images on the dind sidecar and push
         // them to GHCR (ghcr.io/nicolasiskandar/helpdesk-platform-*). All images
         // are built first, then pushed with retries — GHCR blob uploads can
         // stall on slow/flaky links, so a transient timeout must not abort the
@@ -167,6 +180,7 @@ pipeline {
                         [name: 'ticket-service',       context: 'services/ticket-service'],
                         [name: 'notification-service', context: 'services/notification-service'],
                         [name: 'ai-service',           context: 'services/ai-service'],
+                        [name: 'search-service',        context: 'services/search-service'],
                         [name: 'frontend',             context: 'frontend'],
                     ]
                     withCredentials([usernamePassword(

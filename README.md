@@ -383,7 +383,7 @@ Backend Services ──OTLP──▶ OTel Collector ──▶ Jaeger (traces)
 
 ### Distributed Tracing (Jaeger)
 
-All three backend services export traces to the OTel Collector via OTLP (gRPC on port 4317).
+The backend services export traces to the OTel Collector via OTLP (gRPC on port 4317).
 The collector forwards traces to Jaeger. Traces include HTTP requests, EF Core queries,
 outbound HTTP calls, and RabbitMQ publishes with W3C `traceparent`/`tracestate` propagation.
 The Gateway's `TraceContextTransform` injects trace context into proxied requests so
@@ -412,6 +412,7 @@ dashboard (request rate, p95 latency, active requests, HTTP status codes).
 | `/health` | All services | Liveness (always 200) |
 | `/health/ready` | Identity Service | SQL Server connectivity |
 | `/health/ready` | Ticket Service | SQL Server + RabbitMQ connectivity |
+| `/health/ready` | Search Service | Meilisearch + RabbitMQ connectivity |
 
 ### Request Logging
 
@@ -434,9 +435,9 @@ A declarative `Jenkinsfile` drives the CI/CD pipeline. Jenkins runs in Docker
 ./scripts.sh jenkins   # Start the Jenkins controller (UI at http://localhost:8080)
 ```
 
-Every branch/PR gets: backend build (gateway + identity + ticket + notification),
-all 3 xUnit test suites, and a frontend build. `main` and version tags
-additionally build & push the 5 Docker images to GHCR
+Every branch/PR gets: backend build (gateway + identity + ticket + notification + search),
+all 4 xUnit test suites, and a frontend build. `main` and version tags
+additionally build & push the 7 Docker images to GHCR
 (`ghcr.io/nicolasiskandar/helpdesk-platform-*`; `main` → `latest`, version tags → tag
 name) and deploy the stack on the host.
 
@@ -519,9 +520,9 @@ helpdesk-platform/
 │   ├── gateway/                  # YARP API Gateway
 │   ├── identity-service/         # Auth, user management
 │   ├── ticket-service/           # Ticket CRUD, workflow
-│   ├── ai-service/               # (planned)
-│   ├── notification-service/     # (planned)
-│   └── search-service/           # (planned)
+│   ├── ai-service/               # FastAPI RAG and semantic similarity
+│   ├── notification-service/     # Notifications, SignalR, and email
+│   └── search-service/           # .NET 8 Meilisearch-backed ticket search
 ├── frontend/                     # Next.js app
 ├── tests/
 │   ├── IdentityService.Tests/
@@ -545,6 +546,7 @@ Backend unit tests use **xUnit**, **Moq**, and **FluentAssertions**; the AI serv
 ./scripts.sh test             # Run all unit tests (Identity + Ticket + AI)
 ./scripts.sh test-identity    # Run Identity Service tests only
 ./scripts.sh test-ticket      # Run Ticket Service tests only
+./scripts.sh test-search      # Run Search Service tests
 ./scripts.sh test-ai          # Run AI Service tests only (ruff + pytest)
 ./scripts.sh coverage         # Run .NET tests and show code coverage
 ./scripts.sh clean            # Remove test results and build artifacts
@@ -562,8 +564,9 @@ The first `./scripts.sh test` (or `test-ai`) run creates a Python virtualenv at
 | `IdentityService.Tests` | 144 | Auth (register, login, refresh, logout, profile), user CRUD + single-admin constraint, password hashing, JWT (RS256, claims, Name claim), validators |
 | `TicketService.Tests` | 194 | Ticket CRUD, assignment/workflow, self-assignment, open-unassigned, pending-ticket access restriction, private comments + reply-recipient subsets, unassign outbox, KB articles, validators |
 | `NotificationService.Tests` | 20 | Event processing, preferences, notifications CRUD, SignalR, email delivery (not part of `./scripts.sh test` — run manually with `dotnet test tests/NotificationService.Tests/`) |
-| `ai-service` (pytest) | 82 | Chat, analyze/classifier, summarize, troubleshooting, similar-tickets, reindex, follow-up close, consumer/indexer dedup, vector store, JWT, model readiness |
-| **Total** | **440** | |
+| `SearchService.Tests` | 1 | Meilisearch request filtering and search-result mapping |
+| `ai-service` (pytest) | 91 | Chat, analyze/classifier, summarize, troubleshooting, similar-tickets, reindex, follow-up close, consumer/indexer dedup, vector store, JWT, model readiness |
+| **Total** | **450** | |
 
 ## Tech Stack
 
@@ -573,6 +576,7 @@ The first `./scripts.sh test` (or `test-ai`) run creates a Python virtualenv at
 - **Auth**: JWT RS256 (asymmetric), PasswordHasher from ASP.NET Core Identity
 - **Validation**: FluentValidation
 - **Messaging**: RabbitMQ (topic exchange, transactional outbox pattern with DLQ + retry limits)
+- **Keyword search**: Meilisearch (closed-ticket projection maintained by Search Service)
 - **Gateway**: YARP 2.1.0 (reverse proxy)
 - **Tracing**: OpenTelemetry → OTel Collector → Jaeger (OTLP gRPC)
 - **Metrics**: OpenTelemetry → OTel Collector → Prometheus → Grafana

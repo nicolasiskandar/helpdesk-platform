@@ -1,5 +1,6 @@
 import json
 import logging
+from collections.abc import Mapping
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -45,7 +46,7 @@ def build_ticket_chat_prompt(
     ticket: dict,
     comments: list[dict],
     query: str,
-    history: list[ChatMessage] | None = None,
+    history: list[ChatMessage | Mapping[str, str]] | None = None,
     context: list[str] | None = None,
 ) -> str:
     parts = [render_ticket_thread(ticket, comments)]
@@ -57,8 +58,12 @@ def build_ticket_chat_prompt(
         parts.append("")
         parts.append("Previous conversation:")
         for item in history:
-            role = item.role
-            content = item.content
+            if isinstance(item, Mapping):
+                role = item.get("role", "assistant")
+                content = item.get("content", "")
+            else:
+                role = item.role
+                content = item.content
             who = "User" if role == "user" else "Assistant"
             parts.append(f"{who}: {content}")
     block = "\n".join(parts)

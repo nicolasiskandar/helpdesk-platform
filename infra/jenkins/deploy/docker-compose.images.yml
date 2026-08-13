@@ -24,5 +24,8 @@ services:
   ai-service:
     image: ghcr.io/nicolasiskandar/helpdesk-platform-ai-service:${IMAGE_TAG:-latest}
 
+  search-service:
+    image: ghcr.io/nicolasiskandar/helpdesk-platform-search-service:${IMAGE_TAG:-latest}
+
   frontend:
     image: ghcr.io/nicolasiskandar/helpdesk-platform-frontend:${IMAGE_TAG:-latest}

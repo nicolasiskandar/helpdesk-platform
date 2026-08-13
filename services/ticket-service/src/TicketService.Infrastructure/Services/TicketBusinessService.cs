@@ -288,6 +288,14 @@ public class TicketBusinessService : ITicketService
             await _unitOfWork.TicketAssignments.DeleteAsync(assignment);
 
         await _unitOfWork.Tickets.DeleteAsync(ticket);
+
+        await _unitOfWork.Outbox.AddAsync(new OutboxMessage
+        {
+            Id = Guid.NewGuid(),
+            EventType = "ticket.deleted",
+            Payload = JsonSerializer.Serialize(new TicketDeletedEvent(ticket.Id, DateTime.UtcNow)),
+            CreatedAt = DateTime.UtcNow
+        });
         await _unitOfWork.SaveChangesAsync();
     }
 
@@ -400,7 +408,11 @@ public class TicketBusinessService : ITicketService
 
         await _unitOfWork.SaveChangesAsync();
 
-        return MapToResponse(ticket, ticket.Category, ticket.Priority, newStatus);
+        return MapToResponse(
+            ticket,
+            ticket.Category ?? throw new InvalidOperationException("Ticket category is missing."),
+            ticket.Priority ?? throw new InvalidOperationException("Ticket priority is missing."),
+            newStatus);
     }
 
     public async Task<IReadOnlyList<AssignmentResponse>> GetAssignmentsAsync(Guid ticketId)
@@ -1222,6 +1234,35 @@ public class TicketBusinessService : ITicketService
     {
         var statuses = await _unitOfWork.Statuses.GetAllAsync();
         return statuses.Select(s => new StatusResponse(s.Id, s.Name)).ToList();
+    }
+
+    public async Task<TicketIndexListResponse> GetClosedForIndexAsync(int page, int pageSize)
+    {
+        var tickets = await _unitOfWork.Tickets.GetClosedTicketsAsync(page, pageSize);
+        var totalCount = await _unitOfWork.Tickets.GetClosedTicketsCountAsync();
+
+        var items = new List<TicketIndexDocument>(tickets.Count);
+        foreach (var ticket in tickets)
+        {
+            var transitions = (await _unitOfWork.TicketAuditLogs.GetStatusTransitionsAsync(ticket.Id)) ?? Array.Empty<TicketAuditLogEntry>();
+            var closedAt = transitions
+                .Where(e => e.NewValue == "Closed")
+                .Select(e => (DateTime?)e.ChangedAt)
+                .OrderBy(t => t)
+                .FirstOrDefault() ?? ticket.UpdatedAt;
+
+            items.Add(new TicketIndexDocument(
+                ticket.Id,
+                ticket.ReferenceNumber,
+                ticket.Title,
+                ticket.Description,
+                ticket.Category?.Name ?? string.Empty,
+                ticket.Priority?.Name ?? string.Empty,
+                closedAt
+            ));
+        }
+
+        return new TicketIndexListResponse(items, totalCount, page, pageSize);
     }
 
     private static TicketResponse MapToResponse(Ticket ticket, Category category, Priority priority, Status status, long? timeWorkedMinutes = null, long? timeToCloseMinutes = null)

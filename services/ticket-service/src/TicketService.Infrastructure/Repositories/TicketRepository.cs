@@ -210,6 +210,31 @@ public class TicketRepository : ITicketRepository
             .CountAsync();
     }
 
+    public async Task<IReadOnlyList<Ticket>> GetClosedTicketsAsync(int page, int pageSize)
+    {
+        var closedStatus = await _context.Statuses.FirstOrDefaultAsync(s => s.Name == "Closed");
+
+        return await _context.Tickets
+            .Include(t => t.Category)
+            .Include(t => t.Priority)
+            .Include(t => t.Status)
+            .Include(t => t.Assignments)
+            .Where(t => closedStatus != null && t.StatusId == closedStatus.Id)
+            .OrderByDescending(t => t.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+    }
+
+    public async Task<int> GetClosedTicketsCountAsync()
+    {
+        var closedStatus = await _context.Statuses.FirstOrDefaultAsync(s => s.Name == "Closed");
+
+        return await _context.Tickets
+            .Where(t => closedStatus != null && t.StatusId == closedStatus.Id)
+            .CountAsync();
+    }
+
     public async Task AddAsync(Ticket ticket)
     {
         await _context.Tickets.AddAsync(ticket);

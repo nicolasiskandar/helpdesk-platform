@@ -814,6 +814,37 @@ export async function apiDeleteKbArticle(id: string): Promise<void> {
   return handleResponse<void>(res)
 }
 
+// ---------- Search API (Search Service — closed-ticket keyword index) ----------
+
+export interface SearchTicketResult {
+  ticketId: string
+  referenceNumber: string
+  title: string
+  excerpt: string
+  category?: string | null
+  priority?: string | null
+  closedAt: string
+}
+
+export interface SearchTicketResponse {
+  items: SearchTicketResult[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+export async function apiSearchTickets(
+  q: string,
+  pageSize = 8
+): Promise<SearchTicketResponse> {
+  const token = getAccessToken()
+  const params = new URLSearchParams({ q, pageSize: String(pageSize) })
+  const res = await fetch(`${API_BASE}/api/search/tickets?${params}`, {
+    headers: authHeaders(token),
+  })
+  return handleResponse<SearchTicketResponse>(res)
+}
+
 // ---------- Notification API ----------
 
 export interface NotificationResponse {

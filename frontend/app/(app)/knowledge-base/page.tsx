@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useSearchParams } from "next/navigation"
 import { Plus, Search, Pencil, Trash2, Eye, CalendarDays } from "lucide-react"
 import { toast } from "sonner"
 
@@ -107,6 +108,23 @@ export default function KnowledgeBasePage() {
     const timer = setTimeout(load, search ? 250 : 0)
     return () => clearTimeout(timer)
   }, [load, search])
+
+  const articleId = useSearchParams().get("article")
+  React.useEffect(() => {
+    if (!articleId) return
+    apiGetKbArticle(articleId)
+      .then((article) => {
+        setSelected(article)
+        setArticles((prev) =>
+          prev.some((a) => a.id === article.id)
+            ? prev.map((a) => (a.id === article.id ? article : a))
+            : prev
+        )
+      })
+      .catch(() => {
+        /* article may be a draft the user cannot see */
+      })
+  }, [articleId])
 
   async function openArticle(article: KbArticleResponse) {
     setSelected(article)

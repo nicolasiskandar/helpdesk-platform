@@ -66,6 +66,7 @@ services:
       - identity-service
       - ticket-service
       - notification-service
+      - search-service
       - otel-collector
     networks:
       - helpdesk-network
@@ -133,6 +134,7 @@ services:
       Outbox__BatchSize: "20"
       Outbox__PollIntervalSeconds: "5"
       AI_SERVICE_KEY: ${AI_SERVICE_KEY}
+      SEARCH_SERVICE_KEY: ${SEARCH_SERVICE_KEY}
       OTEL_SERVICE_NAME: helpdesk-ticket-service
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
     ports:
@@ -313,6 +315,67 @@ services:
       start_period: 20s
 
   # ---------------------------------------------------------------------------
+  # Meilisearch (keyword/full-text index for closed tickets)
+  # ---------------------------------------------------------------------------
+  meilisearch:
+    image: getmeili/meilisearch:v1.12
+    container_name: helpdesk-meilisearch
+    environment:
+      MEILI_ENV: development
+      MEILI_NO_ANALYTICS: "true"
+    ports:
+      - "7700:7700"
+    volumes:
+      - meilisearch-data:/meili_data
+    networks:
+      - helpdesk-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:7700/health | grep -q available"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # Search Service (Meilisearch projection — gateway routes /api/search/* here)
+  # ---------------------------------------------------------------------------
+  search-service:
+    build:
+      context: ./services/search-service
+      dockerfile: Dockerfile
+    container_name: helpdesk-search-service
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Jwt__PublicKeyPath: /app/certs/public.pem
+      Jwt__Issuer: ${JWT_ISSUER}
+      Jwt__Audience: ${JWT_AUDIENCE}
+      RabbitMQ__HostName: rabbitmq
+      RabbitMQ__Port: "5672"
+      RabbitMQ__ExchangeName: ticket.events
+      Meilisearch__Url: http://meilisearch:7700
+      TicketService:BaseUrl: http://ticket-service:8080
+      SearchService__ServiceKey: ${SEARCH_SERVICE_KEY}
+    ports:
+      - "5013:8080"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+      ticket-service:
+        condition: service_healthy
+    volumes:
+      - ./infra/certs:/app/certs:ro
+    networks:
+      - helpdesk-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
   # Jaeger (distributed tracing)
   # ---------------------------------------------------------------------------
   jaeger:
@@ -403,6 +466,7 @@ volumes:
   ollama-data:
   qdrant-data:
   ai-data:
+  meilisearch-data:
 
 networks:
   helpdesk-network:

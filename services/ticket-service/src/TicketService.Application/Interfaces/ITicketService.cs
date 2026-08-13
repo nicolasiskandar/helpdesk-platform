@@ -37,4 +37,5 @@ public interface ITicketService
     Task<IReadOnlyList<CategoryResponse>> GetCategoriesAsync();
     Task<IReadOnlyList<PriorityResponse>> GetPrioritiesAsync();
     Task<IReadOnlyList<StatusResponse>> GetStatusesAsync();
+    Task<TicketIndexListResponse> GetClosedForIndexAsync(int page, int pageSize);
 }
