@@ -30,7 +30,6 @@ uploads/
 .idea/
 *.swp
 *.sln.DotSettings.user
-docs/
 TestResults/
 
 .opencode
