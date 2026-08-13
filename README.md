@@ -55,6 +55,8 @@ The stack is available at:
 | Ticket API | http://localhost:5011 | Direct access (bypass gateway) |
 | Notification API | http://localhost:5012 | Direct access (bypass gateway) |
 | AI Service | http://localhost:5090 | RAG chat, triage, summarization, troubleshooting |
+| Search API | http://localhost:5013 | Meilisearch closed-ticket keyword search |
+| Meilisearch | http://localhost:7700 | Keyword/full-text index (closed-ticket projection) |
 | Swagger (Identity) | http://localhost:5010/swagger | Identity API docs |
 | Swagger (Ticket) | http://localhost:5011/swagger | Ticket API docs |
 | Swagger (Notification) | http://localhost:5012/swagger | Notification API docs |
@@ -93,6 +95,8 @@ curl http://localhost:5090/api/ai/health/ready
 - Open `http://localhost:16686` for Jaeger traces
 - Open `http://localhost:9090` for Prometheus metrics
 - Open `http://localhost:3001` for Grafana dashboards (admin/admin)
+- Use the **global search box** in the top-right of the app to keyword-search closed
+  tickets (Search Service) and published KB articles as you type
 
 ## API Endpoints
 
@@ -102,6 +106,7 @@ All API calls go through the Gateway at `http://localhost:5000`. The gateway rou
 - `/api/tickets/*`, `/api/kb-articles/*` → Ticket Service
 - `/api/notifications/*`, `/hubs/notifications/*` → Notification Service
 - `/api/ai/*` → AI Service
+- `/api/search/*` → Search Service (Meilisearch closed-ticket keyword search)
 
 Per-service Swagger is also proxied at `/identity/swagger`, `/ticket/swagger`, and
 `/notification/swagger`.
@@ -526,7 +531,9 @@ helpdesk-platform/
 ├── frontend/                     # Next.js app
 ├── tests/
 │   ├── IdentityService.Tests/
-│   └── TicketService.Tests/
+│   ├── TicketService.Tests/
+│   ├── NotificationService.Tests/
+│   └── SearchService.Tests/
 └── README.md
 ```
 

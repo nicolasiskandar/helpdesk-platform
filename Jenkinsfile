@@ -26,6 +26,7 @@ pipeline {
         // Controller's DOCKER_HOST points at the dind sidecar (tcp://docker:2375).
         // This is the daemon used for ephemeral build/test agents and image builds.
         DOCKER_HOST = 'tcp://docker:2375'
+        DOCKER_BUILDKIT = '1'
         GHCR_REGISTRY = 'ghcr.io/nicolasiskandar/helpdesk-platform'
         IMAGE_TAG = "${env.TAG_NAME ?: 'latest'}"
     }
