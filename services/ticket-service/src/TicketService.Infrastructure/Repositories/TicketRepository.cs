@@ -235,6 +235,24 @@ public class TicketRepository : ITicketRepository
             .CountAsync();
     }
 
+    public async Task<Ticket?> GetRecentDuplicateAsync(Guid createdByUserId, string title, string description, int categoryId, TimeSpan window)
+    {
+        var since = DateTime.UtcNow.Subtract(window);
+
+        return await _context.Tickets
+            .Include(t => t.Category)
+            .Include(t => t.Priority)
+            .Include(t => t.Status)
+            .Include(t => t.Assignments)
+            .Where(t => t.CreatedByUserId == createdByUserId
+                && t.CategoryId == categoryId
+                && t.CreatedAt >= since
+                && t.Title == title
+                && t.Description == description)
+            .OrderByDescending(t => t.CreatedAt)
+            .FirstOrDefaultAsync();
+    }
+
     public async Task AddAsync(Ticket ticket)
     {
         await _context.Tickets.AddAsync(ticket);
@@ -250,5 +268,16 @@ public class TicketRepository : ITicketRepository
     {
         _context.Tickets.Remove(ticket);
         return Task.CompletedTask;
+    }
+
+    public async Task<bool> TransitionStatusAsync(Guid ticketId, int fromStatusId, int toStatusId)
+    {
+        var affected = await _context.Tickets
+            .Where(t => t.Id == ticketId && t.StatusId == fromStatusId)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(t => t.StatusId, toStatusId)
+                .SetProperty(t => t.UpdatedAt, DateTime.UtcNow));
+
+        return affected > 0;
     }
 }

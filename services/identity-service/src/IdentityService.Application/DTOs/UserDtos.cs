@@ -20,3 +20,16 @@ public record UserListResponse(
     int Page,
     int PageSize
 );
+
+public record UserEmailsRequest(
+    IReadOnlyList<Guid> UserIds
+);
+
+public record UserEmailResponse(
+    Guid Id,
+    string Email
+);
+
+public record UserEmailsResponse(
+    IReadOnlyList<UserEmailResponse> Users
+);

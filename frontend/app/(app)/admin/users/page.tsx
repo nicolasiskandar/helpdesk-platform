@@ -7,7 +7,6 @@ import { PlusIcon, SearchIcon, PencilIcon, TrashIcon, UserMinusIcon, UserPlusIco
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -156,7 +155,7 @@ export default function UsersPage() {
           </div>
 
           <div className="flex flex-1 flex-wrap gap-3">
-            <Select items={ROLE_OPTIONS.reduce((acc, r) => ({ ...acc, [r.value]: r.label }), {} as Record<string, string>)} value={roleFilter} onValueChange={setRoleFilter}>
+            <Select items={ROLE_OPTIONS.reduce((acc, r) => ({ ...acc, [r.value]: r.label }), {} as Record<string, string>)} value={roleFilter} onValueChange={(v) => setRoleFilter(v ?? "")}>
               <SelectTrigger className="w-[160px]">
                 <SelectValue />
               </SelectTrigger>
@@ -170,7 +169,7 @@ export default function UsersPage() {
               </SelectContent>
             </Select>
 
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v ?? "")}>
               <SelectTrigger className="w-[140px]">
                 <SelectValue />
               </SelectTrigger>

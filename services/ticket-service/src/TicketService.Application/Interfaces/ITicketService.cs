@@ -11,7 +11,7 @@ public interface ITicketService
     Task<TicketListResponse> GetTicketsAsync(int page, int pageSize, DateTime? createdFrom = null, DateTime? createdTo = null, Guid? agentUserId = null);
     Task<TicketListResponse> GetMyTicketsAsync(Guid userId, int page, int pageSize, DateTime? createdFrom = null, DateTime? createdTo = null);
     Task<TicketResponse> UpdateTicketAsync(Guid id, UpdateTicketRequest request, Guid changedByUserId, string requestedByRole);
-    Task<TicketResponse> ChangeStatusAsync(Guid id, ChangeStatusRequest request, Guid changedByUserId, string changedByType = "User");
+    Task<TicketResponse> ChangeStatusAsync(Guid id, ChangeStatusRequest request, Guid changedByUserId, string changedByType = "User", string? requesterRole = null);
     Task DeleteTicketAsync(Guid id, Guid requestedByUserId, string requestedByRole);
     Task<TicketResponse> EscalateTicketAsync(Guid ticketId, Guid userId, string userName, string? reason);
 

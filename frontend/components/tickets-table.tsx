@@ -57,10 +57,10 @@ export function TicketsTable({
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead className="w-24">Ref</TableHead>
-            <TableHead className="min-w-[220px]">Subject</TableHead>
+            <TableHead className="min-w-0">Subject</TableHead>
             {!compact && <TableHead>Category</TableHead>}
             <TableHead>Priority</TableHead>
-            <TableHead>Status</TableHead>
+            <TableHead className="max-w-[220px]">Status</TableHead>
             {!compact && <TableHead>Assignee</TableHead>}
             <TableHead className="text-right">Updated</TableHead>
           </TableRow>
@@ -71,7 +71,7 @@ export function TicketsTable({
               <TableCell className="font-mono text-xs text-muted-foreground">
                 {ticket.reference}
               </TableCell>
-              <TableCell>
+              <TableCell className="whitespace-normal">
                 <Link
                   href={`/tickets/${ticket.id}`}
                   className="font-medium underline-offset-4 hover:underline"
@@ -80,26 +80,26 @@ export function TicketsTable({
                 </Link>
               </TableCell>
               {!compact && (
-                <TableCell className="text-sm text-muted-foreground">
-                  {ticket.category}
+                <TableCell className="max-w-[150px] whitespace-normal text-sm text-muted-foreground">
+                  <span className="line-clamp-1">{ticket.category}</span>
                 </TableCell>
               )}
               <TableCell>
                 <PriorityIndicator priority={ticket.priority} />
               </TableCell>
-              <TableCell>
+              <TableCell className="max-w-[220px] whitespace-normal">
                 <StatusBadge status={ticket.status} />
               </TableCell>
               {!compact && (
-                <TableCell>
+                <TableCell className="max-w-[180px]">
                   {ticket.assigneeName ? (
-                    <div className="flex items-center gap-2">
-                      <Avatar className="size-6">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <Avatar className="size-6 shrink-0">
                         <AvatarFallback className="bg-muted text-[10px]">
                           {initials(ticket.assigneeName)}
                         </AvatarFallback>
                       </Avatar>
-                      <span className="text-sm">
+                      <span className="truncate text-sm">
                         {ticket.assigneeName}
                       </span>
                     </div>

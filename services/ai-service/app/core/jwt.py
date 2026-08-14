@@ -17,18 +17,22 @@ class JwtClaims(BaseModel):
 class JwtValidator:
     """Decodes RS256 JWTs signed by the Identity service using the shared public key."""
 
-    def __init__(self, public_key_path: str, audience: str):
+    def __init__(self, public_key_path: str, audience: str, issuer: str = ""):
         self._public_key = Path(public_key_path).read_text()
         self._audience = audience
+        self._issuer = issuer
 
     def decode(self, token: str) -> JwtClaims:
+        kwargs: dict = {
+            "token": token,
+            "key": self._public_key,
+            "algorithms": ["RS256"],
+            "audience": self._audience,
+        }
+        if self._issuer:
+            kwargs["issuer"] = self._issuer
         try:
-            claims = jwt.decode(
-                token,
-                self._public_key,
-                algorithms=["RS256"],
-                audience=self._audience,
-            )
+            claims = jwt.decode(**kwargs)
         except JWTError as exc:
             raise ValueError("Invalid token") from exc
         return JwtClaims(

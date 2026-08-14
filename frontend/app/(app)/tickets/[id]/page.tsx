@@ -68,40 +68,6 @@ import type { Ticket, Comment, TicketStatus, TicketCategory, TicketPriority } fr
 import type { AuditLogEntryResponse, AttachmentResponse, CategoryResponse, PriorityResponse, UserResponse } from "@/lib/api"
 import { apiGetTicketByReference, apiGetCategories, apiGetPriorities, apiAttachmentDownloadUrl, apiGetUsers, apiUnassignAgent, apiUploadAttachment, apiEscalateTicket, apiDeleteAttachment, apiCommentAttachmentDownloadUrl, apiDeleteCommentAttachment, apiSummarizeTicket, apiTroubleshootingSuggestions } from "@/lib/api"
 
-function initials(name: string) {
-  return name
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2)
-}
-
-const STATUS_IDS: Record<TicketStatus, number> = {
-  Open: 1,
-  "In Progress": 2,
-  "Pending Resolution": 3,
-  Resolved: 5,
-  Closed: 4,
-}
-
-const CATEGORY_IDS: Record<TicketCategory, number> = {
-  Hardware: 1,
-  Software: 2,
-  Network: 3,
-  Access: 4,
-  Other: 5,
-}
-
-const PRIORITY_IDS: Record<TicketPriority, number> = {
-  Low: 1,
-  Medium: 2,
-  High: 3,
-  Critical: 4,
-}
-
 export default function TicketDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -154,21 +120,26 @@ export default function TicketDetailPage() {
   const [summaryOpen, setSummaryOpen] = React.useState(false)
   const [summaryText, setSummaryText] = React.useState("")
   const [summarizing, setSummarizing] = React.useState(false)
+  const summaryAbortRef = React.useRef<AbortController | null>(null)
 
   const [suggestOpen, setSuggestOpen] = React.useState(false)
   const [suggestText, setSuggestText] = React.useState("")
   const [suggesting, setSuggesting] = React.useState(false)
+  const suggestAbortRef = React.useRef<AbortController | null>(null)
 
   async function handleSummarize() {
     if (!ticket || summarizing) return
     setSummaryOpen(true)
     setSummaryText("")
     setSummarizing(true)
+    const controller = new AbortController()
+    summaryAbortRef.current = controller
     try {
       await apiSummarizeTicket(ticket.id, (token) => {
         setSummaryText((prev) => prev + token)
-      })
+      }, controller.signal)
     } catch (err: any) {
+      if (err?.name === "AbortError") return
       if (err?.status === 403) {
         toast.error("You don't have access to summarize this ticket.")
       } else {
@@ -177,6 +148,7 @@ export default function TicketDetailPage() {
       setSummaryText("")
     } finally {
       setSummarizing(false)
+      summaryAbortRef.current = null
     }
   }
 
@@ -194,11 +166,14 @@ export default function TicketDetailPage() {
     setSuggestOpen(true)
     setSuggestText("")
     setSuggesting(true)
+    const controller = new AbortController()
+    suggestAbortRef.current = controller
     try {
       await apiTroubleshootingSuggestions(ticket.id, (token) => {
         setSuggestText((prev) => prev + token)
-      })
+      }, controller.signal)
     } catch (err: any) {
+      if (err?.name === "AbortError") return
       if (err?.status === 403) {
         toast.error("You don't have access to get suggestions for this ticket.")
       } else {
@@ -207,6 +182,7 @@ export default function TicketDetailPage() {
       setSuggestText("")
     } finally {
       setSuggesting(false)
+      suggestAbortRef.current = null
     }
   }
 
@@ -410,8 +386,8 @@ export default function TicketDetailPage() {
   async function handleResolve() {
     if (!ticket) return
     try {
-      await updateTicket(ticket.id, { status: "Pending Resolution" })
-      setTicket({ ...ticket, status: "Pending Resolution" })
+      await updateTicket(ticket.id, { status: "Resolved - Pending Confirmation" })
+      setTicket({ ...ticket, status: "Resolved - Pending Confirmation" })
       toast.success("Ticket marked as resolved — awaiting confirmation")
     } catch {
       toast.error("Failed to resolve ticket")
@@ -503,7 +479,7 @@ export default function TicketDetailPage() {
     }
   }
 
-  async function handleAssign(agentId: string) {
+  async function handleAssign(agentId: string | null) {
     if (!ticket || !agentId || assigning) return
     setAssigning(true)
     try {
@@ -554,7 +530,7 @@ export default function TicketDetailPage() {
         ...ticket,
         assigneeId: assigneeIds[0] ?? null,
         assigneeIds,
-        status: "Open",
+        status: assigneeIds.length === 0 ? "Open" : ticket.status,
       })
       setEscalateReason("")
       setEscalateOpen(false)
@@ -620,9 +596,14 @@ export default function TicketDetailPage() {
   const isAdmin = role === "admin"
   const canEdit = isOpen && (isCreator || isAdmin)
   const canDelete = isOpen && (isCreator || isAdmin)
+  const canReopen =
+    (ticket.status === "Closed" || ticket.status === "Resolved by AI") &&
+    (isCreator || role === "admin" || role === "manager")
   const canManageAssignments = role === "admin" || role === "manager"
-  const canManageTicketAttachments =
-    role === "admin" || (role === "employee" && isCreator && isOpen)
+  const canUploadAttachments =
+    role === "admin" || role === "agent" || role === "manager" || isCreator
+  const canDeleteAttachment = (attachment: AttachmentResponse) =>
+    role === "admin" || isCreator || attachment.uploadedByUserId === currentUserId
   const activeAssigneeIds = ticket.assigneeIds.length > 0
     ? ticket.assigneeIds
     : ticket.assigneeId
@@ -826,7 +807,7 @@ export default function TicketDetailPage() {
                         fileName={a.fileName}
                         size={a.size}
                       />
-                      {canManageTicketAttachments && (
+                      {canDeleteAttachment(a) && (
                         <button
                           type="button"
                           onClick={() => handleDeleteAttachment(a.id)}
@@ -840,7 +821,7 @@ export default function TicketDetailPage() {
                   ))}
                 </div>
               )}
-              {canManageTicketAttachments && (
+              {canUploadAttachments && (
                 <div className="flex flex-col gap-2 border-t pt-3">
                   <AttachmentUpload
                     files={uploadFiles}
@@ -1105,7 +1086,7 @@ export default function TicketDetailPage() {
                   )}
                 </div>
               )}
-              {canChangeStatus && ticket.status === "Pending Resolution" && role === "admin" && (
+              {canChangeStatus && ticket.status === "Resolved - Pending Confirmation" && role === "admin" && (
                 <div className="flex gap-2">
                   <Button
                     size="sm"
@@ -1127,7 +1108,7 @@ export default function TicketDetailPage() {
               )}
 
               {/* Employee (ticket creator) action buttons */}
-              {!canChangeStatus && ticket.status === "Pending Resolution" && isCreator && (
+              {!canChangeStatus && ticket.status === "Resolved - Pending Confirmation" && isCreator && (
                 <div className="flex gap-2">
                   <Button
                     size="sm"
@@ -1137,6 +1118,20 @@ export default function TicketDetailPage() {
                   >
                     Confirm Resolved
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleReopenTicket}
+                    className="flex-1"
+                  >
+                    Reopen
+                  </Button>
+                </div>
+              )}
+
+              {/* Reopen a Closed or AI-resolved ticket (creator, admin, or manager only) */}
+              {canReopen && (
+                <div className="flex gap-2">
                   <Button
                     size="sm"
                     variant="outline"
@@ -1336,7 +1331,7 @@ export default function TicketDetailPage() {
                 </Select>
               </div>
             </div>
-            {canManageTicketAttachments && (
+            {canUploadAttachments && (
               <div className="flex flex-col gap-2">
                 <AttachmentUpload files={editFiles} onChange={setEditFiles} allowDragAndDrop={false} />
               </div>
@@ -1410,7 +1405,13 @@ export default function TicketDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={summaryOpen} onOpenChange={setSummaryOpen}>
+      <Dialog
+        open={summaryOpen}
+        onOpenChange={(open) => {
+          if (!open) summaryAbortRef.current?.abort()
+          setSummaryOpen(open)
+        }}
+      >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>AI Summary</DialogTitle>
@@ -1433,12 +1434,25 @@ export default function TicketDetailPage() {
             >
               Copy
             </Button>
-            <Button onClick={() => setSummaryOpen(false)}>Close</Button>
+            <Button
+              onClick={() => {
+                summaryAbortRef.current?.abort()
+                setSummaryOpen(false)
+              }}
+            >
+              Close
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={suggestOpen} onOpenChange={setSuggestOpen}>
+      <Dialog
+        open={suggestOpen}
+        onOpenChange={(open) => {
+          if (!open) suggestAbortRef.current?.abort()
+          setSuggestOpen(open)
+        }}
+      >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>AI Troubleshooting Suggestions</DialogTitle>
@@ -1462,7 +1476,14 @@ export default function TicketDetailPage() {
             >
               Copy
             </Button>
-            <Button onClick={() => setSuggestOpen(false)}>Close</Button>
+            <Button
+              onClick={() => {
+                suggestAbortRef.current?.abort()
+                setSuggestOpen(false)
+              }}
+            >
+              Close
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

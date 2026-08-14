@@ -7,9 +7,13 @@ from tests.conftest import FakeJwtValidator
 class FakeIndexer:
     def __init__(self, indexed: int = 7):
         self._indexed = indexed
+        self.wiped = False
 
     async def index_kb_articles(self, articles: list[dict]) -> int:
         return self._indexed
+
+    async def wipe_kb(self) -> None:
+        self.wiped = True
 
 
 def test_reindex_requires_auth(make_app):
@@ -43,7 +47,9 @@ def test_reindex_success(make_app, monkeypatch):
         return [{"id": "k1"}]
 
     monkeypatch.setattr("app.api.routes.reindex.fetch_published_kb", one_article)
-    client = TestClient(make_app(indexer=FakeIndexer(indexed=9), jwt_validator=FakeJwtValidator(role="Admin")))
+    indexer = FakeIndexer(indexed=9)
+    client = TestClient(make_app(indexer=indexer, jwt_validator=FakeJwtValidator(role="Admin")))
     resp = client.post("/api/ai/reindex", headers={"Authorization": "Bearer xyz"})
     assert resp.status_code == 200
     assert resp.json() == {"indexed": 9}
+    assert indexer.wiped is True

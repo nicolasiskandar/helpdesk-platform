@@ -52,5 +52,8 @@ async def reindex(request: Request, user: JwtClaims = Depends(get_current_user))
     except httpx.HTTPError as exc:
         logger.exception("Failed to fetch KB articles")
         raise HTTPException(status_code=502, detail=f"Failed to fetch KB articles: {exc}") from exc
+    # Wipe stale KB vectors first: edits/unpublishes would otherwise leave
+    # orphaned points that surface in RAG retrieval forever.
+    await indexer.wipe_kb()
     indexed = await indexer.index_kb_articles(articles)
     return ReindexResponse(indexed=indexed)

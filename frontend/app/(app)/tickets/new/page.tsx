@@ -46,8 +46,8 @@ export default function NewTicketPage() {
 
   const [subject, setSubject] = React.useState("")
   const [description, setDescription] = React.useState("")
-  const [category, setCategory] = React.useState<TicketCategory>("")
-  const [priority, setPriority] = React.useState<TicketPriority>("")
+  const [category, setCategory] = React.useState<TicketCategory | "">("")
+  const [priority, setPriority] = React.useState<TicketPriority | "">("")
   const [files, setFiles] = React.useState<File[]>([])
   const [submitting, setSubmitting] = React.useState(false)
 

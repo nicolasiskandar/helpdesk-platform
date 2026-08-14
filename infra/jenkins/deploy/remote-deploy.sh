@@ -40,7 +40,7 @@ fi
 # Fail fast if the .env doesn't actually carry the keys the stack needs — a
 # stale/empty 'helpdesk-env' credential would otherwise surface as blank
 # passwords and connection failures at runtime.
-for k in MSSQL_SA_PASSWORD MSSQL_DATABASE JWT_ISSUER JWT_AUDIENCE JWT_ACCESS_TOKEN_EXPIRY_MINUTES JWT_REFRESH_TOKEN_EXPIRY_DAYS; do
+for k in MSSQL_SA_PASSWORD MSSQL_DATABASE JWT_ISSUER JWT_AUDIENCE JWT_ACCESS_TOKEN_EXPIRY_MINUTES JWT_REFRESH_TOKEN_EXPIRY_DAYS AI_SERVICE_KEY SEARCH_SERVICE_KEY NOTIFICATION_SERVICE_KEY; do
   grep -q "^${k}=." .env || {
     echo "ERROR: $REPO_ROOT/.env is missing '${k}='. Update the 'helpdesk-env' Jenkins credential with your full .env contents." >&2
     exit 1

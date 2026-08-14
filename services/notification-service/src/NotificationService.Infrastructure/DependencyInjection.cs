@@ -23,6 +23,13 @@ public static class DependencyInjection
         services.AddScoped<INotificationService, NotificationBusinessService>();
         services.AddScoped<IEmailSender, SmtpEmailSender>();
 
+        services.AddHttpClient<IUserEmailResolver, IdentityUserEmailResolver>(client =>
+        {
+            client.BaseAddress = new Uri(
+                configuration["IdentityService:BaseUrl"] ?? "http://identity-service:8080");
+            client.Timeout = TimeSpan.FromSeconds(10);
+        });
+
         services.AddHostedService<RabbitMQConsumer>();
 
         return services;

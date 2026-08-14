@@ -33,6 +33,14 @@ public class UserService : IUserService
         return MapToResponse(user);
     }
 
+    public async Task<UserEmailsResponse> GetEmailsByIdsAsync(IReadOnlyList<Guid> ids)
+    {
+        var users = await _unitOfWork.Users.GetEmailsByIdsAsync(ids);
+        return new UserEmailsResponse(
+            users.Select(u => new UserEmailResponse(u.Id, u.Email)).ToList()
+        );
+    }
+
     public async Task<UserResponse> CreateUserAsync(CreateUserRequest request)
     {
         if (await _unitOfWork.Users.EmailExistsAsync(request.Email))
@@ -67,6 +75,8 @@ public class UserService : IUserService
         var user = await _unitOfWork.Users.GetByIdAsync(id)
             ?? throw new KeyNotFoundException("User not found.");
 
+        var wasActiveAdmin = user.RoleId == 1 && user.IsActive;
+
         if (request.Email is not null && request.Email != user.Email)
         {
             if (await _unitOfWork.Users.EmailExistsAsync(request.Email))
@@ -88,6 +98,12 @@ public class UserService : IUserService
             user.Role = role;
         }
 
+        var removesLastAdmin = wasActiveAdmin
+            && ((request.RoleId.HasValue && request.RoleId.Value != 1) || request.IsActive == false)
+            && await _unitOfWork.Users.GetActiveAdminCountAsync() <= 1;
+        if (removesLastAdmin)
+            throw new InvalidOperationException("Cannot demote or deactivate the last active admin.");
+
         if (request.IsActive.HasValue)
             user.IsActive = request.IsActive.Value;
 
@@ -101,6 +117,9 @@ public class UserService : IUserService
     {
         var user = await _unitOfWork.Users.GetByIdAsync(id)
             ?? throw new KeyNotFoundException("User not found.");
+
+        if (user.RoleId == 1 && user.IsActive && await _unitOfWork.Users.GetActiveAdminCountAsync() <= 1)
+            throw new InvalidOperationException("Cannot deactivate the last active admin.");
 
         user.IsActive = false;
         await _unitOfWork.Users.UpdateAsync(user);

@@ -38,7 +38,7 @@ export default function RootLayout({
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} bg-background`}>
       <body className="font-sans antialiased">
         <AuthProvider>
-          <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
+          <TooltipProvider delay={200}>{children}</TooltipProvider>
         </AuthProvider>
         <Toaster position="top-right" />
       </body>

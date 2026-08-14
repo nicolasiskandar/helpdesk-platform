@@ -140,6 +140,19 @@ class Indexer:
         logger.info("Indexed comment %s (%d chunks)", comment_id, len(chunks))
         return len(chunks)
 
+    async def delete_ticket(self, ticket_id: str) -> None:
+        await self._store.delete_by_filter({"doc_type": "ticket", "doc_id": ticket_id})
+        await self._store.delete_by_filter({"doc_type": "comment", "ticket_id": ticket_id})
+        logger.info("Deleted vectors for ticket %s", ticket_id)
+
+    async def set_ticket_status(self, ticket_id: str, status: str) -> None:
+        await self._store.set_payload({"doc_type": "ticket", "doc_id": ticket_id}, {"status": status})
+        logger.info("Set status=%s for ticket %s", status, ticket_id)
+
+    async def wipe_kb(self) -> None:
+        await self._store.delete_by_filter({"doc_type": "kb"})
+        logger.info("Wiped KB vectors")
+
     async def index_kb_articles(self, articles: list[dict]) -> int:
         total = 0
         for article in articles:

@@ -5,6 +5,7 @@ services:
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
     container_name: helpdesk-sqlserver
+    restart: unless-stopped
     environment:
       ACCEPT_EULA: "Y"
       MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
@@ -32,6 +33,7 @@ services:
   rabbitmq:
     image: rabbitmq:3-management
     container_name: helpdesk-rabbitmq
+    restart: unless-stopped
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -56,6 +58,7 @@ services:
       context: ./services/gateway
       dockerfile: Dockerfile
     container_name: helpdesk-gateway
+    restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       OTEL_SERVICE_NAME: helpdesk-gateway
@@ -85,6 +88,7 @@ services:
       context: ./services/identity-service
       dockerfile: Dockerfile
     container_name: helpdesk-identity-service
+    restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__DefaultConnection: "Server=sqlserver;Database=${MSSQL_DATABASE};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;"
@@ -94,6 +98,7 @@ services:
       Jwt__Audience: ${JWT_AUDIENCE}
       Jwt__AccessTokenExpiryMinutes: ${JWT_ACCESS_TOKEN_EXPIRY_MINUTES}
       Jwt__RefreshTokenExpiryDays: ${JWT_REFRESH_TOKEN_EXPIRY_DAYS}
+      NOTIFICATION_SERVICE_KEY: ${NOTIFICATION_SERVICE_KEY}
       OTEL_SERVICE_NAME: helpdesk-identity-service
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
     ports:
@@ -122,6 +127,7 @@ services:
       context: ./services/ticket-service
       dockerfile: Dockerfile
     container_name: helpdesk-ticket-service
+    restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__DefaultConnection: "Server=sqlserver;Database=TicketDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;"
@@ -164,6 +170,7 @@ services:
   notification-postgres:
     image: postgres:16-alpine
     container_name: helpdesk-notification-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_DB: NotificationDb
       POSTGRES_USER: postgres
@@ -186,6 +193,7 @@ services:
   mailpit:
     image: axllent/mailpit:latest
     container_name: helpdesk-mailpit
+    restart: unless-stopped
     ports:
       - "8025:8025"   # Web UI
       - "1025:1025"   # SMTP
@@ -200,6 +208,7 @@ services:
       context: ./services/notification-service
       dockerfile: Dockerfile
     container_name: helpdesk-notification-service
+    restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__DefaultConnection: "Host=notification-postgres;Port=5432;Database=NotificationDb;Username=postgres;Password=postgres"
@@ -211,6 +220,7 @@ services:
       RabbitMQ__ExchangeName: ticket.events
       Email__SmtpHost: mailpit
       Email__SmtpPort: "1025"
+      NOTIFICATION_SERVICE_KEY: ${NOTIFICATION_SERVICE_KEY}
       OTEL_SERVICE_NAME: helpdesk-notification-service
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
     ports:
@@ -239,6 +249,7 @@ services:
   ollama:
     image: ollama/ollama:latest
     container_name: helpdesk-ollama
+    restart: unless-stopped
     ports:
       - "11434:11434"
     volumes:
@@ -258,6 +269,7 @@ services:
   qdrant:
     image: qdrant/qdrant:latest
     container_name: helpdesk-qdrant
+    restart: unless-stopped
     ports:
       - "6333:6333"
       - "6334:6334"
@@ -280,6 +292,7 @@ services:
       context: ./services/ai-service
       dockerfile: Dockerfile
     container_name: helpdesk-ai-service
+    restart: unless-stopped
     environment:
       OLLAMA_URL: http://ollama:11434
       QDRANT_URL: http://qdrant:6333
@@ -290,9 +303,11 @@ services:
       AI_CHAT_MODEL: llama3.2:3b
       AI_EMBEDDING_MODEL: nomic-embed-text
       JWT_PUBLIC_KEY_PATH: /app/certs/public.pem
+      JWT_ISSUER: ${JWT_ISSUER}
       TICKET_SERVICE_BASE_URL: http://ticket-service:8080
       AI_SERVICE_KEY: ${AI_SERVICE_KEY}
       OTEL_SERVICE_NAME: helpdesk-ai-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
     ports:
       - "5090:8080"
     depends_on:
@@ -320,6 +335,7 @@ services:
   meilisearch:
     image: getmeili/meilisearch:v1.12
     container_name: helpdesk-meilisearch
+    restart: unless-stopped
     environment:
       MEILI_ENV: development
       MEILI_NO_ANALYTICS: "true"
@@ -344,6 +360,7 @@ services:
       context: ./services/search-service
       dockerfile: Dockerfile
     container_name: helpdesk-search-service
+    restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       Jwt__PublicKeyPath: /app/certs/public.pem
@@ -353,7 +370,7 @@ services:
       RabbitMQ__Port: "5672"
       RabbitMQ__ExchangeName: ticket.events
       Meilisearch__Url: http://meilisearch:7700
-      TicketService:BaseUrl: http://ticket-service:8080
+      TicketService__BaseUrl: http://ticket-service:8080
       SearchService__ServiceKey: ${SEARCH_SERVICE_KEY}
     ports:
       - "5013:8080"
@@ -381,6 +398,7 @@ services:
   jaeger:
     image: jaegertracing/jaeger:latest
     container_name: helpdesk-jaeger
+    restart: unless-stopped
     command: ["--config", "/etc/jaeger/jaeger.yml"]
     volumes:
       - ./infra/jaeger/jaeger.yml:/etc/jaeger/jaeger.yml:ro
@@ -395,6 +413,7 @@ services:
   otel-collector:
     image: otel/opentelemetry-collector-contrib:latest
     container_name: helpdesk-otel-collector
+    restart: unless-stopped
     command: ["--config=/etc/otel-collector/otel-collector.yml"]
     volumes:
       - ./infra/otel-collector/otel-collector.yml:/etc/otel-collector/otel-collector.yml:ro
@@ -409,6 +428,7 @@ services:
   prometheus:
     image: prom/prometheus:v2.54.1
     container_name: helpdesk-prometheus
+    restart: unless-stopped
     volumes:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
@@ -423,6 +443,7 @@ services:
   grafana:
     image: grafana/grafana:11.2.2
     container_name: helpdesk-grafana
+    restart: unless-stopped
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
@@ -446,9 +467,12 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5000}
     container_name: helpdesk-frontend
+    restart: unless-stopped
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:5000
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5000}
     ports:
       - "3000:3000"
     depends_on:

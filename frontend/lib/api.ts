@@ -484,7 +484,6 @@ export async function apiGetAttachments(
 }
 
 export function apiAttachmentDownloadUrl(ticketId: string, attachmentId: string): string {
-  const token = getAccessToken()
   return `${API_BASE}/api/tickets/${ticketId}/attachments/${attachmentId}`
 }
 
@@ -980,9 +979,15 @@ async function streamSseTokens(
   url: string,
   init: RequestInit,
   onToken: (token: string) => void,
-  errorLabel: string
+  errorLabel: string,
+  signal?: AbortSignal
 ): Promise<void> {
-  const res = await fetch(url, init)
+  const abortSignal = signal
+    ? init.signal
+      ? AbortSignal.any([signal, init.signal])
+      : signal
+    : init.signal
+  const res = await fetch(url, { ...init, signal: abortSignal })
   if (!res.ok) {
     const text = await res.text()
     let parsed: any
@@ -1113,7 +1118,8 @@ export async function apiConfirmResolved(ticketId: string): Promise<TicketRespon
 
 export async function apiSummarizeTicket(
   ticketId: string,
-  onToken: (token: string) => void
+  onToken: (token: string) => void,
+  signal?: AbortSignal
 ): Promise<void> {
   const token = getAccessToken()
   return streamSseTokens(
@@ -1125,13 +1131,15 @@ export async function apiSummarizeTicket(
       signal: AbortSignal.timeout(180_000),
     },
     onToken,
-    "Summarize"
+    "Summarize",
+    signal
   )
 }
 
 export async function apiTroubleshootingSuggestions(
   ticketId: string,
-  onToken: (token: string) => void
+  onToken: (token: string) => void,
+  signal?: AbortSignal
 ): Promise<void> {
   const token = getAccessToken()
   return streamSseTokens(
@@ -1143,6 +1151,7 @@ export async function apiTroubleshootingSuggestions(
       signal: AbortSignal.timeout(180_000),
     },
     onToken,
-    "Troubleshooting suggestions"
+    "Troubleshooting suggestions",
+    signal
   )
 }

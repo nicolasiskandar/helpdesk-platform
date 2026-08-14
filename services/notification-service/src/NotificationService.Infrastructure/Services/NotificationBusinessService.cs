@@ -17,6 +17,7 @@ public class NotificationBusinessService : INotificationService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IHubContext<Hub> _hubContext;
     private readonly IEmailSender _emailSender;
+    private readonly IUserEmailResolver _userEmailResolver;
     private readonly ILogger<NotificationBusinessService> _logger;
 
     public NotificationBusinessService(
@@ -26,6 +27,7 @@ public class NotificationBusinessService : INotificationService
         IUnitOfWork unitOfWork,
         IHubContext<Hub> hubContext,
         IEmailSender emailSender,
+        IUserEmailResolver userEmailResolver,
         ILogger<NotificationBusinessService> logger)
     {
         _notificationRepo = notificationRepo;
@@ -34,6 +36,7 @@ public class NotificationBusinessService : INotificationService
         _unitOfWork = unitOfWork;
         _hubContext = hubContext;
         _emailSender = emailSender;
+        _userEmailResolver = userEmailResolver;
         _logger = logger;
     }
 
@@ -41,6 +44,11 @@ public class NotificationBusinessService : INotificationService
     {
         var notifications = await _notificationRepo.GetByUserIdAsync(userId, page, pageSize, unreadOnly);
         return notifications.Select(MapToResponse).ToList();
+    }
+
+    public async Task<int> GetCountAsync(Guid userId, bool? unreadOnly = null)
+    {
+        return await _notificationRepo.GetCountByUserIdAsync(userId, unreadOnly);
     }
 
     public async Task<int> GetUnreadCountAsync(Guid userId)
@@ -193,16 +201,27 @@ public class NotificationBusinessService : INotificationService
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         if (evt == null) return;
 
+        var isReply = evt.ParentCommentId.HasValue;
         var recipientIds = evt.RecipientUserIds ?? Array.Empty<Guid>();
 
         foreach (var recipientId in recipientIds.Distinct())
         {
             if (recipientId == evt.AuthorUserId) continue;
 
-            await CreateAndDeliverAsync(recipientId, "comment",
-                $"{evt.AuthorName} commented on {evt.ReferenceNumber}",
-                $"{(evt.IsPrivate ? "Private comment" : "Comment")} on ticket {evt.ReferenceNumber}: \"{evt.Content}\"",
-                evt.TicketId, evt.ReferenceNumber, evt.CommentId);
+            if (isReply)
+            {
+                await CreateAndDeliverAsync(recipientId, "reply",
+                    $"{evt.AuthorName} replied on {evt.ReferenceNumber}",
+                    $"Reply on ticket {evt.ReferenceNumber}: \"{evt.Content}\"",
+                    evt.TicketId, evt.ReferenceNumber, evt.CommentId);
+            }
+            else
+            {
+                await CreateAndDeliverAsync(recipientId, "comment",
+                    $"{evt.AuthorName} commented on {evt.ReferenceNumber}",
+                    $"{(evt.IsPrivate ? "Private comment" : "Comment")} on ticket {evt.ReferenceNumber}: \"{evt.Content}\"",
+                    evt.TicketId, evt.ReferenceNumber, evt.CommentId);
+            }
         }
     }
 
@@ -258,7 +277,11 @@ public class NotificationBusinessService : INotificationService
             try
             {
                 var emailBody = BuildEmailBody(title, message, ticketRef);
-                await _emailSender.SendAsync($"{recipientUserId}@helpdesk.local", title, emailBody);
+                var resolvedEmail = await _userEmailResolver.GetEmailAsync(recipientUserId);
+                var to = string.IsNullOrWhiteSpace(resolvedEmail)
+                    ? $"{recipientUserId}@helpdesk.local"
+                    : resolvedEmail;
+                await _emailSender.SendAsync(to, title, emailBody);
                 delivery.Status = "sent";
                 delivery.SentAt = DateTime.UtcNow;
             }
@@ -284,6 +307,7 @@ public class NotificationBusinessService : INotificationService
         "status_changed" => (pref.TicketStatusChangedInApp, pref.TicketStatusChangedEmail),
         "closed" => (pref.TicketStatusChangedInApp, pref.TicketStatusChangedEmail),
         "comment" => (pref.TicketCommentedInApp, pref.TicketCommentedEmail),
+        "reply" => (pref.TicketCommentedInApp, pref.TicketCommentedEmail),
         _ => (true, true)
     };
 

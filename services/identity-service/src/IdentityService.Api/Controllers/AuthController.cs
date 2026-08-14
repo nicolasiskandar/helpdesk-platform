@@ -1,11 +1,13 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.Json;
+using IdentityService.Api.Services;
 using IdentityService.Application.DTOs;
 using IdentityService.Application.Interfaces;
 using IdentityService.Domain.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 
 namespace IdentityService.Api.Controllers;
@@ -34,6 +36,7 @@ public class AuthController : ControllerBase
     /// Password must be at least 8 characters with uppercase, lowercase, digit, and special character.
     /// </remarks>
     [HttpPost("register")]
+    [EnableRateLimiting(RateLimitPolicies.Register)]
     [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Register([FromBody] RegisterRequest request)
@@ -52,6 +55,7 @@ public class AuthController : ControllerBase
     /// and revokes the old one.
     /// </remarks>
     [HttpPost("login")]
+    [EnableRateLimiting(RateLimitPolicies.Login)]
     [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status401Unauthorized)]
@@ -70,6 +74,7 @@ public class AuthController : ControllerBase
     /// and a new pair (access + refresh) is returned. Reusing a revoked token fails.
     /// </remarks>
     [HttpPost("refresh")]
+    [EnableRateLimiting(RateLimitPolicies.Refresh)]
     [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Refresh([FromBody] RefreshRequest request)
@@ -146,6 +151,7 @@ public class AuthController : ControllerBase
     /// </summary>
     [Authorize]
     [HttpPost("change-password")]
+    [EnableRateLimiting(RateLimitPolicies.ChangePassword)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -170,6 +176,7 @@ public class AuthController : ControllerBase
     /// Request a password reset email.
     /// </summary>
     [HttpPost("forgot-password")]
+    [EnableRateLimiting(RateLimitPolicies.Password)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
     {
@@ -181,6 +188,7 @@ public class AuthController : ControllerBase
     /// Reset password using a token from the reset email.
     /// </summary>
     [HttpPost("reset-password")]
+    [EnableRateLimiting(RateLimitPolicies.Password)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)

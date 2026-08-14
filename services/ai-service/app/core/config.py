@@ -20,6 +20,7 @@ class Settings(BaseSettings):
 
     jwt_public_key_path: str = "/app/certs/public.pem"
     jwt_audience: str = "it-helpdesk-api"
+    jwt_issuer: str = "it-helpdesk-identity"
     ticket_service_base_url: str = "http://ticket-service:8080"
     ai_service_key: str = ""
 
@@ -32,6 +33,10 @@ class Settings(BaseSettings):
 
     dedup_db_path: str = "/data/dedup.db"
     dedup_ttl_seconds: int = 604800
+
+    max_redeliveries: int = 5
+
+    otel_exporter_otlp_endpoint: str = "http://otel-collector:4317"
 
 
 @lru_cache

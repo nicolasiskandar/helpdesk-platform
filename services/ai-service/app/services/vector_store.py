@@ -58,3 +58,23 @@ class VectorStore:
             query_filter=query_filter,
         )
         return resp.points
+
+    def _filter(self, must_match: dict[str, str]) -> Filter:
+        conditions = [
+            FieldCondition(key=key, match=MatchValue(value=value))
+            for key, value in must_match.items()
+        ]
+        return Filter(must=conditions)
+
+    async def delete_by_filter(self, must_match: dict[str, str]) -> None:
+        await self._client.delete(
+            collection_name=self._collection,
+            points_selector=self._filter(must_match),
+        )
+
+    async def set_payload(self, must_match: dict[str, str], payload: dict) -> None:
+        await self._client.set_payload(
+            collection_name=self._collection,
+            payload=payload,
+            points=self._filter(must_match),
+        )

@@ -41,8 +41,9 @@ pipeline {
         // ------------------------------------------------------------------
         // Build + tests. Backend uses dotnet/sdk:9.0 (tests target net9.0
         // while services target net8.0 — the 9.0 SDK builds both). Frontend
-        // uses node:20-alpine with corepack/pnpm. ESLint is not installed in
-        // the frontend, so CI only runs `pnpm build`.
+        // uses node:20-alpine with corepack/pnpm; ESLint is installed and the
+        // flat config (eslint.config.mjs) passes with 0 errors, so CI runs
+        // `pnpm lint` in addition to `pnpm build`.
         //
         // The backend services run SEQUENTIALLY (not in parallel) because they
         // all share the single `nuget-cache` volume mounted at
@@ -151,6 +152,7 @@ pipeline {
                         sh 'corepack enable && COREPACK_HOME=/root/.cache/node/corepack corepack prepare pnpm@9 --activate'
                         dir('frontend') {
                             sh 'pnpm install --frozen-lockfile --store-dir /pnpm/store'
+                            sh 'pnpm lint'
                             sh 'pnpm build'
                         }
                     }
@@ -184,6 +186,20 @@ pipeline {
                         [name: 'search-service',        context: 'services/search-service'],
                         [name: 'frontend',             context: 'frontend'],
                     ]
+                    // NEXT_PUBLIC_API_URL is inlined into the client bundle at
+                    // build time, so it must be a build arg (the compose
+                    // runtime env var only affects the server side). Read it
+                    // from the same helpdesk-env credential used for deploy.
+                    def nextPublicApiUrl = 'http://localhost:5000'
+                    withCredentials([string(
+                        credentialsId: 'helpdesk-env',
+                        variable: 'HELPDESK_ENV'
+                    )]) {
+                        nextPublicApiUrl = sh(
+                            script: "printf '%s\\n' \"\$HELPDESK_ENV\" | base64 -d | grep '^NEXT_PUBLIC_API_URL=' | cut -d= -f2- || echo 'http://localhost:5000'",
+                            returnStdout: true
+                        ).trim()
+                    }
                     withCredentials([usernamePassword(
                         credentialsId: 'ghcr',
                         usernameVariable: 'GHCR_USER',
@@ -195,7 +211,8 @@ pipeline {
                         //    wastes the other builds.
                         images.each { img ->
                             def repo = "${GHCR_REGISTRY}-${img.name}"
-                            sh "docker build -t ${repo}:${tag} ${img.context}"
+                            def buildArgs = img.name == 'frontend' ? "--build-arg NEXT_PUBLIC_API_URL=${nextPublicApiUrl}" : ''
+                            sh "docker build ${buildArgs} -t ${repo}:${tag} ${img.context}"
                         }
 
                         // 2) Push each image with retries.
@@ -249,7 +266,7 @@ pipeline {
                         # raw multi-line .env gets its newlines stripped on
                         # paste. Decode it, then sanity-check the result.
                         printf '%s\\n' "$HELPDESK_ENV" | base64 -d > "$DEPLOY_DIR/.env"
-                        for k in MSSQL_SA_PASSWORD MSSQL_DATABASE JWT_ISSUER JWT_AUDIENCE JWT_ACCESS_TOKEN_EXPIRY_MINUTES JWT_REFRESH_TOKEN_EXPIRY_DAYS; do
+                        for k in MSSQL_SA_PASSWORD MSSQL_DATABASE JWT_ISSUER JWT_AUDIENCE JWT_ACCESS_TOKEN_EXPIRY_MINUTES JWT_REFRESH_TOKEN_EXPIRY_DAYS AI_SERVICE_KEY SEARCH_SERVICE_KEY NOTIFICATION_SERVICE_KEY; do
                             grep -q "^${k}=." "$DEPLOY_DIR/.env" || {
                                 echo "ERROR: decoded .env is missing '${k}='. Set the 'helpdesk-env' credential to the output of: base64 -w 0 .env" >&2
                                 exit 1

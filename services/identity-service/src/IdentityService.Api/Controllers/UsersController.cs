@@ -12,10 +12,12 @@ namespace IdentityService.Api.Controllers;
 public class UsersController : ControllerBase
 {
     private readonly IUserService _userService;
+    private readonly IConfiguration _configuration;
 
-    public UsersController(IUserService userService)
+    public UsersController(IUserService userService, IConfiguration configuration)
     {
         _userService = userService;
+        _configuration = configuration;
     }
 
     /// <summary>
@@ -46,6 +48,40 @@ public class UsersController : ControllerBase
     {
         var user = await _userService.GetUserByIdAsync(id);
         return Ok(user);
+    }
+
+    /// <summary>
+    /// Resolves email addresses for a batch of user IDs. Intended for trusted service-to-service
+    /// calls (e.g. the Notification Service) and guarded by the shared NOTIFICATION_SERVICE_KEY.
+    /// </summary>
+    [HttpPost("emails")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(UserEmailsResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetEmailsByIds([FromBody] UserEmailsRequest request)
+    {
+        var serviceKey = _configuration["NOTIFICATION_SERVICE_KEY"];
+        var isTrustedCaller = !string.IsNullOrEmpty(serviceKey)
+            && Request.Headers["X-Notification-Service-Key"].ToString() == serviceKey;
+
+        if (!isTrustedCaller)
+        {
+            return Unauthorized();
+        }
+
+        var userIds = request?.UserIds?.Distinct().ToList() ?? new List<Guid>();
+        if (userIds.Count == 0)
+        {
+            return BadRequest(new ErrorResponse("At least one user ID is required."));
+        }
+        if (userIds.Count > 100)
+        {
+            return BadRequest(new ErrorResponse("Too many user IDs. The maximum is 100."));
+        }
+
+        var result = await _userService.GetEmailsByIdsAsync(userIds);
+        return Ok(result);
     }
 
     /// <summary>

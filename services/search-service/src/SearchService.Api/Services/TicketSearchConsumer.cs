@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 using RabbitMQ.Client;
@@ -13,6 +14,9 @@ public sealed class TicketSearchConsumer : BackgroundService
     private readonly string _hostName;
     private readonly int _port;
     private readonly string _exchange;
+    private readonly int _maxRedeliveries;
+    private readonly ConcurrentDictionary<string, long> _seenMessageIds = new();
+    private readonly TimeSpan _dedupTtl = TimeSpan.FromHours(1);
     private IConnection? _connection;
     private IModel? _channel;
 
@@ -23,6 +27,7 @@ public sealed class TicketSearchConsumer : BackgroundService
         _hostName = configuration["RabbitMQ:HostName"] ?? "rabbitmq";
         _port = int.Parse(configuration["RabbitMQ:Port"] ?? "5672");
         _exchange = configuration["RabbitMQ:ExchangeName"] ?? "ticket.events";
+        _maxRedeliveries = int.TryParse(configuration["RabbitMQ:MaxRedeliveries"], out var max) ? max : 5;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -46,17 +51,85 @@ public sealed class TicketSearchConsumer : BackgroundService
         {
             try
             {
+                var messageId = eventArgs.BasicProperties?.MessageId ?? string.Empty;
+                if (IsDuplicate(messageId))
+                {
+                    _logger.LogInformation("Duplicate message {MessageId}, skipping", messageId);
+                    _channel.BasicAck(eventArgs.DeliveryTag, false);
+                    return;
+                }
+
                 await ProcessAsync(eventArgs.RoutingKey, Encoding.UTF8.GetString(eventArgs.Body.ToArray()), stoppingToken);
+                if (!string.IsNullOrEmpty(messageId))
+                    _seenMessageIds.TryAdd(messageId, DateTimeOffset.UtcNow.Add(_dedupTtl).ToUnixTimeSeconds());
                 _channel.BasicAck(eventArgs.DeliveryTag, false);
             }
             catch (Exception exception)
             {
-                _logger.LogError(exception, "Unable to process search event {RoutingKey}", eventArgs.RoutingKey);
-                _channel.BasicNack(eventArgs.DeliveryTag, false, true);
+                var redeliveries = GetRedeliveryCount(eventArgs);
+                _logger.LogError(exception, "Unable to process search event {RoutingKey} (redelivery {Redeliveries}/{MaxRedeliveries})",
+                    eventArgs.RoutingKey, redeliveries + 1, _maxRedeliveries);
+
+                if (redeliveries >= _maxRedeliveries)
+                {
+                    // Upserts/deletes are idempotent by ticket id, so dropping a
+                    // poison message can't corrupt the index — it just leaves the
+                    // last state stale. Ack-with-drop to avoid an infinite loop.
+                    _logger.LogWarning("Poison search event {RoutingKey} dropped after {Redeliveries} redeliveries",
+                        eventArgs.RoutingKey, redeliveries);
+                    _channel.BasicNack(eventArgs.DeliveryTag, false, false);
+                }
+                else
+                {
+                    _channel.BasicNack(eventArgs.DeliveryTag, false, true);
+                }
             }
         };
         _channel.BasicConsume(queue, false, consumer);
         await Task.Delay(Timeout.Infinite, stoppingToken);
+    }
+
+    private bool IsDuplicate(string messageId)
+    {
+        if (string.IsNullOrEmpty(messageId)) return false;
+        SweepExpired();
+
+        if (_seenMessageIds.TryGetValue(messageId, out var expiry))
+            return expiry > DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+        return false;
+    }
+
+    private void SweepExpired()
+    {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        foreach (var (id, expiry) in _seenMessageIds)
+        {
+            if (expiry <= now) _seenMessageIds.TryRemove(id, out _);
+        }
+    }
+
+    private static int GetRedeliveryCount(BasicDeliverEventArgs eventArgs)
+    {
+        if (!eventArgs.Redelivered || eventArgs.BasicProperties.Headers == null
+            || !eventArgs.BasicProperties.Headers.TryGetValue("x-death", out var xDeath)
+            || xDeath is not List<object> entries)
+        {
+            return 0;
+        }
+
+        var total = 0L;
+        foreach (var entry in entries)
+        {
+            if (entry is Dictionary<string, object> table
+                && table.TryGetValue("count", out var count)
+                && count is long c)
+            {
+                total += c;
+            }
+        }
+
+        return (int)total;
     }
 
     private async Task BackfillClosedTicketsAsync(IServiceProvider scopeServices, MeilisearchClient meilisearchClient, CancellationToken cancellationToken)

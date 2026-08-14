@@ -35,7 +35,14 @@ public class UserRepository : IUserRepository
 
     public async Task<bool> HasAdminAsync()
     {
-        return await _context.Users.AnyAsync(u => u.RoleId == 1);
+        // Only ACTIVE admins count: a deactivated admin must not block the
+        // creation of a replacement (admin lockout otherwise).
+        return await _context.Users.AnyAsync(u => u.RoleId == 1 && u.IsActive);
+    }
+
+    public async Task<int> GetActiveAdminCountAsync()
+    {
+        return await _context.Users.CountAsync(u => u.RoleId == 1 && u.IsActive);
     }
 
     public async Task<IReadOnlyList<User>> GetAllAsync(string? search, int? roleId, bool? isActive, int page, int pageSize)
@@ -80,6 +87,18 @@ public class UserRepository : IUserRepository
             query = query.Where(u => u.IsActive == isActive.Value);
 
         return await query.CountAsync();
+    }
+
+    public async Task<IReadOnlyList<(Guid Id, string Email)>> GetEmailsByIdsAsync(IReadOnlyList<Guid> ids)
+    {
+        if (ids.Count == 0) return Array.Empty<(Guid, string)>();
+
+        var emails = await _context.Users
+            .Where(u => ids.Contains(u.Id) && u.IsActive)
+            .Select(u => new { u.Id, u.Email })
+            .ToListAsync();
+
+        return emails.Select(e => (e.Id, e.Email)).ToList();
     }
 
     public async Task AddAsync(User user)

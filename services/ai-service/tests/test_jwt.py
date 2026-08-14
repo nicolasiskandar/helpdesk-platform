@@ -65,3 +65,30 @@ def test_decode_rejects_bad_token(tmp_path):
     _, pem = _key_pair()
     with pytest.raises(ValueError):
         JwtValidator(_public_key_file(tmp_path, pem), AUDIENCE).decode("not-a-token")
+
+
+def test_decode_verifies_issuer_when_configured(tmp_path):
+    private_key, pem = _key_pair()
+    token = jwt.encode(
+        {"sub": "user-123", "aud": AUDIENCE, "iss": "it-helpdesk-identity"},
+        private_key,
+        algorithm="RS256",
+    )
+    validator = JwtValidator(
+        _public_key_file(tmp_path, pem), AUDIENCE, issuer="it-helpdesk-identity"
+    )
+    assert validator.decode(token).user_id == "user-123"
+
+
+def test_decode_rejects_wrong_issuer(tmp_path):
+    private_key, pem = _key_pair()
+    token = jwt.encode(
+        {"sub": "user-123", "aud": AUDIENCE, "iss": "evil-issuer"},
+        private_key,
+        algorithm="RS256",
+    )
+    validator = JwtValidator(
+        _public_key_file(tmp_path, pem), AUDIENCE, issuer="it-helpdesk-identity"
+    )
+    with pytest.raises(ValueError):
+        validator.decode(token)

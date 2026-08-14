@@ -6,22 +6,27 @@ from app.consumers.index_consumer import IndexConsumer
 from app.core.config import Settings
 
 
-class FakeProcess:
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *args):
-        return False
-
-
 class FakeMessage:
-    def __init__(self, message_id: str, routing_key: str, body: dict):
+    def __init__(self, message_id: str, routing_key: str, body: dict, *, redelivered: bool = False, headers: dict | None = None):
         self.message_id = message_id
         self.routing_key = routing_key
         self.body = json.dumps(body).encode()
+        self.redelivered = redelivered
+        self.headers = headers or {}
+        self.acked = False
+        self.rejected = False
+        self.reject_requeue: bool | None = None
 
-    def process(self):
-        return FakeProcess()
+    async def ack(self):
+        self.acked = True
+
+    async def nack(self, requeue=True):
+        self.rejected = True
+        self.reject_requeue = requeue
+
+    async def reject(self, requeue=False):
+        self.rejected = True
+        self.reject_requeue = requeue
 
 
 class FakeIterator:
@@ -85,8 +90,10 @@ class FakeConnection:
 
 
 def _run(monkeypatch, messages, dedup_db_path, handler):
+    conn = FakeConnection(messages)
+
     async def fake_connect(url):
-        return FakeConnection(messages)
+        return conn
 
     monkeypatch.setattr(
         "app.consumers.index_consumer.aio_pika.connect_robust",
@@ -95,7 +102,8 @@ def _run(monkeypatch, messages, dedup_db_path, handler):
     settings = Settings(rabbitmq_url="amqp://guest:guest@rabbitmq:5672/", dedup_db_path=dedup_db_path)
     dedup = DedupStore(dedup_db_path)
     consumer = IndexConsumer(settings, dedup, handler)
-    return asyncio.run(consumer.run(asyncio.Event()))
+    asyncio.run(consumer.run(asyncio.Event()))
+    return conn
 
 
 def test_consumer_binds_expected_keys(monkeypatch, tmp_path):
@@ -112,6 +120,7 @@ def test_consumer_binds_expected_keys(monkeypatch, tmp_path):
     assert sorted(conn._channel.queue.bind_keys) == [
         "ticket.commented",
         "ticket.created",
+        "ticket.deleted",
         "ticket.resolved",
         "ticket.status_changed",
     ]
@@ -147,3 +156,42 @@ def test_consumer_skips_duplicate_after_restart(monkeypatch, tmp_path):
     _run(monkeypatch, [FakeMessage("m2", "ticket.resolved", payload)], str(tmp_path / "d.db"), handler)
     _run(monkeypatch, [FakeMessage("m2", "ticket.resolved", payload)], str(tmp_path / "d.db"), handler)
     assert len(calls) == 1
+
+
+def test_consumer_acknowledges_duplicate_skip(monkeypatch, tmp_path):
+    payload = {"TicketId": "t3", "Title": "X", "Description": "y"}
+    calls = []
+
+    async def handler(routing_key, body):
+        calls.append((routing_key, body))
+
+    msg1 = FakeMessage("dup", "ticket.created", payload)
+    msg2 = FakeMessage("dup", "ticket.created", payload)
+    _run(monkeypatch, [msg1, msg2], str(tmp_path / "d.db"), handler)
+    assert len(calls) == 1
+    assert msg1.acked is True
+    assert msg2.acked is True
+
+
+def test_consumer_requeues_failure_below_cap(monkeypatch, tmp_path):
+    payload = {"TicketId": "t4", "Title": "X", "Description": "y"}
+
+    async def handler(routing_key, body):
+        raise ValueError("boom")
+
+    msg = FakeMessage("m4", "ticket.created", payload, redelivered=True, headers={"x-death": [{"count": 1}]})
+    _run(monkeypatch, [msg], str(tmp_path / "d.db"), handler)
+    assert msg.rejected is True
+    assert msg.reject_requeue is True
+
+
+def test_consumer_drops_poison_message_at_cap(monkeypatch, tmp_path):
+    payload = {"TicketId": "t5", "Title": "X", "Description": "y"}
+
+    async def handler(routing_key, body):
+        raise ValueError("boom")
+
+    msg = FakeMessage("m5", "ticket.created", payload, redelivered=True, headers={"x-death": [{"count": 5}]})
+    _run(monkeypatch, [msg], str(tmp_path / "d.db"), handler)
+    assert msg.rejected is True
+    assert msg.reject_requeue is False

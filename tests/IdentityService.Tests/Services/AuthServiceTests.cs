@@ -28,6 +28,7 @@ public class AuthServiceTests
     public AuthServiceTests()
     {
         _configMock.Setup(c => c["Jwt:RefreshTokenExpiryDays"]).Returns("7");
+        _configMock.Setup(c => c["NOTIFICATION_SERVICE_KEY"]).Returns("test-notification-key");
         _jwtTokenServiceMock.Setup(j => j.GenerateRefreshToken()).Returns("test-refresh-token");
         _unitOfWorkMock.Setup(u => u.ActivityLogs).Returns(_activityLogRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.RefreshTokens).Returns(_refreshTokenRepoMock.Object);
@@ -200,6 +201,7 @@ public class AuthServiceTests
         };
 
         _unitOfWorkMock.Setup(u => u.RefreshTokens.GetByTokenAsync(It.IsAny<string>())).ReturnsAsync(storedToken);
+        _unitOfWorkMock.Setup(u => u.RefreshTokens.RevokeIfActiveAsync(It.IsAny<string>())).ReturnsAsync(true);
         _jwtTokenServiceMock.Setup(j => j.GenerateAccessToken(userId, "test@example.com", "Employee", It.IsAny<string>())).Returns("new-jwt");
 
         var request = new RefreshRequest("old-refresh-token");
@@ -211,7 +213,34 @@ public class AuthServiceTests
         result.AccessToken.Should().Be("new-jwt");
         result.RefreshToken.Should().Be("test-refresh-token");
 
-        _unitOfWorkMock.Verify(u => u.RefreshTokens.RevokeAsync(storedToken), Times.Once);
+        _unitOfWorkMock.Verify(u => u.RefreshTokens.RevokeIfActiveAsync(It.IsAny<string>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RefreshAsync_TokenAlreadyUsedConcurrently_Throws()
+    {
+        // A second refresh with the same token (e.g. two tabs / a replay) loses
+        // the atomic revoke race and must be rejected instead of minting a
+        // second pair.
+        var userId = Guid.NewGuid();
+        var storedToken = new RefreshToken
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            Token = "hashed-old-token",
+            ExpiresAt = DateTime.UtcNow.AddDays(7),
+            User = new User { IsActive = true, Role = new Role { Name = "Employee" } }
+        };
+
+        _unitOfWorkMock.Setup(u => u.RefreshTokens.GetByTokenAsync(It.IsAny<string>())).ReturnsAsync(storedToken);
+        _unitOfWorkMock.Setup(u => u.RefreshTokens.RevokeIfActiveAsync(It.IsAny<string>())).ReturnsAsync(false);
+
+        var request = new RefreshRequest("old-refresh-token");
+
+        var act = () => _sut.RefreshAsync(request, "127.0.0.1");
+
+        await act.Should().ThrowAsync<UnauthorizedAccessException>()
+            .WithMessage("*expired or has been revoked*");
     }
 
     [Fact]
@@ -638,6 +667,9 @@ public class AuthServiceTests
         captured.Should().NotBeNull();
         captured!.Method.Should().Be(HttpMethod.Post);
         captured.RequestUri!.AbsolutePath.Should().Be("/api/email/send");
+        captured.Headers.TryGetValues("X-Notification-Service-Key", out var headerValues)
+            .Should().BeTrue();
+        headerValues!.FirstOrDefault().Should().Be("test-notification-key");
     }
 
     [Fact]

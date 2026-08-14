@@ -62,6 +62,26 @@ cmd_setup() {
   else
     echo "SEARCH_SERVICE_KEY already set — keeping it."
   fi
+
+  local notification_service_key
+  notification_service_key="$(openssl rand -hex 32)"
+  if grep -q "^NOTIFICATION_SERVICE_KEY=change-me-generate-with-openssl-rand-hex-32" .env || ! grep -q "^NOTIFICATION_SERVICE_KEY=.\+" .env; then
+    if grep -q "^NOTIFICATION_SERVICE_KEY=" .env; then
+      sed -i "s|^NOTIFICATION_SERVICE_KEY=.*|NOTIFICATION_SERVICE_KEY=${notification_service_key}|" .env
+    else
+      printf "\nNOTIFICATION_SERVICE_KEY=%s\n" "${notification_service_key}" >> .env
+    fi
+    echo "NOTIFICATION_SERVICE_KEY generated and written to .env"
+  else
+    echo "NOTIFICATION_SERVICE_KEY already set — keeping it."
+  fi
+
+  if ! grep -q "^NEXT_PUBLIC_API_URL=" .env; then
+    printf "\nNEXT_PUBLIC_API_URL=http://localhost:5000\n" >> .env
+    echo "NEXT_PUBLIC_API_URL default added to .env"
+  else
+    echo "NEXT_PUBLIC_API_URL already set — keeping it."
+  fi
 }
 
 cmd_up() {
@@ -72,6 +92,7 @@ cmd_up() {
   echo "  API Gateway:    http://localhost:5000"
   echo "  Identity API:   http://localhost:5010 (direct)"
   echo "  Ticket API:     http://localhost:5011 (direct)"
+  echo "  Notification:   http://localhost:5012 (direct)"
   echo "  Search API:     http://localhost:5013 (direct)"
   echo "  Swagger (ID):   http://localhost:5010/swagger"
   echo "  Swagger (TKT):  http://localhost:5011/swagger"
@@ -80,6 +101,9 @@ cmd_up() {
   echo "  Grafana:        http://localhost:3001 (admin/admin)"
   echo "  RabbitMQ:       http://localhost:15672 (guest/guest)"
   echo "  SQL Server:     localhost:1433"
+  echo "  PostgreSQL:     localhost:5433 (NotificationDb)"
+  echo "  Meilisearch:    http://localhost:7700"
+  echo "  Mailpit:        http://localhost:8025"
 }
 
 cmd_down() {

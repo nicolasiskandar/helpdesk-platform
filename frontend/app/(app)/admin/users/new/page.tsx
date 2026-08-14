@@ -151,7 +151,7 @@ export default function CreateUserPage() {
 
           <div className="flex flex-col gap-2">
             <Label>Role *</Label>
-            <Select items={roleOptions.reduce((acc, r) => ({ ...acc, [r.value]: r.label }), {} as Record<string, string>)} value={roleId} onValueChange={(v) => { setRoleId(v); setFieldErrors((p) => { const n = { ...p }; delete n.RoleId; return n }) }}>
+            <Select items={roleOptions.reduce((acc, r) => ({ ...acc, [r.value]: r.label }), {} as Record<string, string>)} value={roleId} onValueChange={(v) => { if (v) { setRoleId(v); setFieldErrors((p) => { const n = { ...p }; delete n.RoleId; return n }) } }}>
               <SelectTrigger className={fieldError("RoleId") ? "border-destructive" : ""}>
                 <SelectValue />
               </SelectTrigger>

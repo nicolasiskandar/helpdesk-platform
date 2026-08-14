@@ -532,6 +532,7 @@ public class UserServiceTests
 
         _userRepoMock.Setup(r => r.GetByIdAsync(user.Id)).ReturnsAsync(user);
         _roleRepoMock.Setup(r => r.GetByIdAsync(3)).ReturnsAsync(newRole);
+        _userRepoMock.Setup(r => r.GetActiveAdminCountAsync()).ReturnsAsync(2);
 
         var request = new UpdateUserRequest(FullName: null, Email: null, RoleId: 3, IsActive: null);
 
@@ -539,6 +540,108 @@ public class UserServiceTests
 
         result.Role.Should().Be("Employee");
         _userRepoMock.Verify(r => r.HasAdminAsync(), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateUserAsync_DemoteLastActiveAdmin_Throws()
+    {
+        var user = new User
+        {
+            Id = Guid.NewGuid(), Email = "admin@test.com", FullName = "Admin",
+            RoleId = 1, IsActive = true, CreatedAt = DateTime.UtcNow,
+            Role = new Role { Id = 1, Name = "Admin" }
+        };
+        var newRole = new Role { Id = 3, Name = "Employee" };
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(user.Id)).ReturnsAsync(user);
+        _roleRepoMock.Setup(r => r.GetByIdAsync(3)).ReturnsAsync(newRole);
+        _userRepoMock.Setup(r => r.GetActiveAdminCountAsync()).ReturnsAsync(1);
+
+        var request = new UpdateUserRequest(FullName: null, Email: null, RoleId: 3, IsActive: null);
+
+        var act = () => _sut.UpdateUserAsync(user.Id, request);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*last active admin*");
+    }
+
+    [Fact]
+    public async Task UpdateUserAsync_DeactivateLastActiveAdmin_Throws()
+    {
+        var user = new User
+        {
+            Id = Guid.NewGuid(), Email = "admin@test.com", FullName = "Admin",
+            RoleId = 1, IsActive = true, CreatedAt = DateTime.UtcNow,
+            Role = new Role { Id = 1, Name = "Admin" }
+        };
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(user.Id)).ReturnsAsync(user);
+        _userRepoMock.Setup(r => r.GetActiveAdminCountAsync()).ReturnsAsync(1);
+
+        var request = new UpdateUserRequest(FullName: null, Email: null, RoleId: null, IsActive: false);
+
+        var act = () => _sut.UpdateUserAsync(user.Id, request);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*last active admin*");
+    }
+
+    // ---------- DeactivateUserAsync ----------
+
+    [Fact]
+    public async Task DeactivateUserAsync_LastActiveAdmin_Throws()
+    {
+        var user = new User
+        {
+            Id = Guid.NewGuid(), Email = "admin@test.com", FullName = "Admin",
+            RoleId = 1, IsActive = true, CreatedAt = DateTime.UtcNow,
+            Role = new Role { Id = 1, Name = "Admin" }
+        };
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(user.Id)).ReturnsAsync(user);
+        _userRepoMock.Setup(r => r.GetActiveAdminCountAsync()).ReturnsAsync(1);
+
+        var act = () => _sut.DeactivateUserAsync(user.Id);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*last active admin*");
+        _userRepoMock.Verify(r => r.UpdateAsync(It.IsAny<User>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeactivateUserAsync_NonLastAdmin_Succeeds()
+    {
+        var user = new User
+        {
+            Id = Guid.NewGuid(), Email = "admin@test.com", FullName = "Admin",
+            RoleId = 1, IsActive = true, CreatedAt = DateTime.UtcNow,
+            Role = new Role { Id = 1, Name = "Admin" }
+        };
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(user.Id)).ReturnsAsync(user);
+        _userRepoMock.Setup(r => r.GetActiveAdminCountAsync()).ReturnsAsync(2);
+
+        await _sut.DeactivateUserAsync(user.Id);
+
+        user.IsActive.Should().BeFalse();
+        _userRepoMock.Verify(r => r.UpdateAsync(It.Is<User>(u => u.IsActive == false)), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateUserAsync_AdminWhenOnlyAdminInactive_Succeeds()
+    {
+        var role = new Role { Id = 1, Name = "Admin" };
+        _userRepoMock.Setup(r => r.EmailExistsAsync("newadmin@test.com")).ReturnsAsync(false);
+        _userRepoMock.Setup(r => r.HasAdminAsync()).ReturnsAsync(false);
+        _roleRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(role);
+        _passwordHasherMock.Setup(p => p.HashPassword("Pass123!")).Returns("hashed");
+
+        var request = new CreateUserRequest("newadmin@test.com", "Pass123!", "New Admin", 1);
+
+        var result = await _sut.CreateUserAsync(request);
+
+        result.Role.Should().Be("Admin");
+        _userRepoMock.Verify(r => r.AddAsync(It.Is<User>(u => u.RoleId == 1)), Times.Once);
     }
 
     // ---------- GetUsersAsync filter cases ----------
@@ -625,5 +728,37 @@ public class UserServiceTests
 
         result.Users.Should().BeEmpty();
         result.TotalCount.Should().Be(0);
+    }
+
+    // ---------- GetEmailsByIdsAsync ----------
+
+    [Fact]
+    public async Task GetEmailsByIdsAsync_ReturnsMappedEmails()
+    {
+        var id1 = Guid.NewGuid();
+        var id2 = Guid.NewGuid();
+        _userRepoMock.Setup(r => r.GetEmailsByIdsAsync(It.IsAny<IReadOnlyList<Guid>>()))
+            .ReturnsAsync(new List<(Guid Id, string Email)>
+            {
+                (id1, "alice@test.com"),
+                (id2, "bob@test.com")
+            });
+
+        var result = await _sut.GetEmailsByIdsAsync(new List<Guid> { id1, id2 });
+
+        result.Users.Should().HaveCount(2);
+        result.Users.Should().Contain(u => u.Id == id1 && u.Email == "alice@test.com");
+        result.Users.Should().Contain(u => u.Id == id2 && u.Email == "bob@test.com");
+    }
+
+    [Fact]
+    public async Task GetEmailsByIdsAsync_NoMatches_ReturnsEmptyList()
+    {
+        _userRepoMock.Setup(r => r.GetEmailsByIdsAsync(It.IsAny<IReadOnlyList<Guid>>()))
+            .ReturnsAsync(new List<(Guid Id, string Email)>());
+
+        var result = await _sut.GetEmailsByIdsAsync(new List<Guid> { Guid.NewGuid() });
+
+        result.Users.Should().BeEmpty();
     }
 }

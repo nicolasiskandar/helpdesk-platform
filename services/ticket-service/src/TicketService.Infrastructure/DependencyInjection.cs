@@ -21,7 +21,7 @@ public static class DependencyInjection
 
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped<IReferenceNumberGenerator, ReferenceNumberGenerator>();
-        services.AddScoped<IEventPublisher, RabbitMQPublisher>();
+        services.AddSingleton<IEventPublisher, RabbitMQPublisher>();
         services.AddScoped<ITicketService, TicketBusinessService>();
         services.AddScoped<IKbArticleService, KbArticleService>();
 

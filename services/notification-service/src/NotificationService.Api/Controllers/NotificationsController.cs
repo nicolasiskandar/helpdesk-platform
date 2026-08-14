@@ -27,7 +27,7 @@ public class NotificationsController : ControllerBase
     {
         var userId = GetUserIdFromClaims();
         var notifications = await _notificationService.GetNotificationsAsync(userId, page, pageSize, unreadOnly);
-        var totalCount = await _notificationService.GetUnreadCountAsync(userId);
+        var totalCount = await _notificationService.GetCountAsync(userId, unreadOnly);
         return Ok(new NotificationListResponse(notifications, totalCount, page, pageSize));
     }
 

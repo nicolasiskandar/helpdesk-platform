@@ -6,6 +6,7 @@ using System.Text.Json;
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using IdentityService.Api.Middleware;
+using IdentityService.Api.Services;
 using IdentityService.Application.DTOs;
 using IdentityService.Application.Validators;
 using IdentityService.Domain.Entities;
@@ -158,6 +159,8 @@ try
 
     builder.Services.AddInfrastructure(builder.Configuration);
 
+    RateLimitPolicies.Configure(builder.Services);
+
     builder.Services.AddHttpClient("NotificationService", client =>
     {
         client.BaseAddress = new Uri("http://notification-service:8080");
@@ -237,6 +240,7 @@ try
 
     app.UseMiddleware<RequestLoggingMiddleware>();
     app.UseCors("AllowAll");
+    app.UseRateLimiter();
     app.UseMiddleware<ErrorHandlingMiddleware>();
     app.UseAuthentication();
     app.UseAuthorization();

@@ -121,7 +121,7 @@ export function EditUserDialog({ user, open, onOpenChange, onUpdated }: EditUser
           </div>
           <div className="flex flex-col gap-2">
             <Label>Role</Label>
-            <Select items={roleOptions.reduce((acc, r) => ({ ...acc, [r.value]: r.label }), {} as Record<string, string>)} value={roleId} onValueChange={setRoleId}>
+            <Select items={roleOptions.reduce((acc, r) => ({ ...acc, [r.value]: r.label }), {} as Record<string, string>)} value={roleId} onValueChange={(v) => v && setRoleId(v)}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>

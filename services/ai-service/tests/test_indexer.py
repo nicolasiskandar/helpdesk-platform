@@ -48,9 +48,17 @@ class FakeEmbeddings:
 class FakeStore:
     def __init__(self):
         self.points = []
+        self.deleted = []
+        self.payload_sets = []
 
     async def upsert(self, points):
         self.points.extend(points)
+
+    async def delete_by_filter(self, must_match):
+        self.deleted.append(must_match)
+
+    async def set_payload(self, must_match, payload):
+        self.payload_sets.append((must_match, payload))
 
 
 async def test_index_ticket_reads_pascal_case_payload():
@@ -124,3 +132,25 @@ async def test_index_comment_public():
     assert payload["doc_id"] == "c1"
     assert payload["ticket_id"] == "t1"
     assert payload["author_name"] == "Jane"
+
+
+async def test_delete_ticket_removes_ticket_and_comment_vectors():
+    store = FakeStore()
+    indexer = Indexer(store, FakeEmbeddings())
+    await indexer.delete_ticket("t1")
+    assert {"doc_type": "ticket", "doc_id": "t1"} in store.deleted
+    assert {"doc_type": "comment", "ticket_id": "t1"} in store.deleted
+
+
+async def test_set_ticket_status_updates_payload():
+    store = FakeStore()
+    indexer = Indexer(store, FakeEmbeddings())
+    await indexer.set_ticket_status("t1", "open")
+    assert store.payload_sets == [({"doc_type": "ticket", "doc_id": "t1"}, {"status": "open"})]
+
+
+async def test_wipe_kb_deletes_kb_points():
+    store = FakeStore()
+    indexer = Indexer(store, FakeEmbeddings())
+    await indexer.wipe_kb()
+    assert store.deleted == [{"doc_type": "kb"}]

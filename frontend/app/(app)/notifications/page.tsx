@@ -5,10 +5,9 @@ import { CheckCheck, Settings } from "lucide-react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useStore } from "@/lib/store"
-import { useSignalR, type RealtimeNotification } from "@/lib/signalr"
-import { Badge } from "@/components/ui/badge"
+import { useSignalR } from "@/lib/signalr"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 
@@ -47,13 +46,13 @@ export default function NotificationsPage() {
   }, [refreshNotifications])
 
   const handleRealtimeNotification = React.useCallback(
-    (_n: RealtimeNotification) => {
+    () => {
       refreshNotifications()
     },
     [refreshNotifications]
   )
 
-  const handleRealtimeUnreadCount = React.useCallback((_count: number) => {
+  const handleRealtimeUnreadCount = React.useCallback(() => {
     refreshNotifications()
   }, [refreshNotifications])
 

@@ -17,6 +17,7 @@ public class AuthService : IAuthService
     private readonly IJwtTokenService _jwtTokenService;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<AuthService> _logger;
+    private readonly IConfiguration _configuration;
     private readonly int _refreshTokenExpiryDays;
 
     public AuthService(
@@ -32,6 +33,7 @@ public class AuthService : IAuthService
         _jwtTokenService = jwtTokenService;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
+        _configuration = configuration;
 
         if (!int.TryParse(configuration["Jwt:RefreshTokenExpiryDays"], out _refreshTokenExpiryDays))
             _refreshTokenExpiryDays = 7;
@@ -118,8 +120,12 @@ public class AuthService : IAuthService
         if (!user.IsActive)
             throw new UnauthorizedAccessException("This account has been deactivated.");
 
-        // Single-use rotation: revoke the old token
-        await _unitOfWork.RefreshTokens.RevokeAsync(storedToken);
+        // Single-use rotation must be atomic: without it, two concurrent
+        // refreshes carrying the same token would both pass the IsActive check
+        // and mint two access/refresh pairs (token duplication).
+        if (!await _unitOfWork.RefreshTokens.RevokeIfActiveAsync(hashedToken))
+            throw new UnauthorizedAccessException("Refresh token is expired or has been revoked.");
+
         await LogActivityAsync(user.Id, "TokenRefresh", ipAddress);
 
         var accessToken = _jwtTokenService.GenerateAccessToken(user.Id, user.Email, user.Role.Name, user.FullName);
@@ -245,7 +251,14 @@ public class AuthService : IAuthService
             };
 
             var client = _httpClientFactory.CreateClient("NotificationService");
-            var response = await client.PostAsJsonAsync("/api/email/send", emailRequest);
+            var emailHttpRequest = new HttpRequestMessage(HttpMethod.Post, "/api/email/send")
+            {
+                Content = JsonContent.Create(emailRequest)
+            };
+            emailHttpRequest.Headers.TryAddWithoutValidation(
+                "X-Notification-Service-Key",
+                _configuration["NOTIFICATION_SERVICE_KEY"]);
+            var response = await client.SendAsync(emailHttpRequest);
             response.EnsureSuccessStatusCode();
         }
         catch (Exception ex)

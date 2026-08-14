@@ -7,7 +7,6 @@ import { SaveIcon, RefreshCwIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { RoleGuard } from "@/components/role-guard"
 import {
   Select,
@@ -128,7 +127,7 @@ export default function AdminSettingsPage() {
             label="Default Priority"
             description={setting("default_ticket_priority")?.description ?? ""}
             value={values["default_ticket_priority"] ?? "Medium"}
-            onChange={(v) => set("default_ticket_priority", v)}
+            onChange={(v) => set("default_ticket_priority", v ?? "Medium")}
             options={[
               { value: "Low", label: "Low" },
               { value: "Medium", label: "Medium" },
@@ -204,7 +203,7 @@ function SelectField({
   label: string
   description: string
   value: string
-  onChange: (v: string) => void
+  onChange: (v: string | null) => void
   options: { value: string; label: string }[]
 }) {
   const items = React.useMemo(() => {

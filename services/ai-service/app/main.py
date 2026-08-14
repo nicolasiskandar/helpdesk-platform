@@ -12,6 +12,7 @@ from app.consumers.followup_store import FollowUpStore
 from app.consumers.index_consumer import IndexConsumer
 from app.core.config import Settings, get_settings
 from app.core.jwt import JwtValidator
+from app.core.telemetry import setup_telemetry
 from app.services.classifier import Classifier
 from app.services.embeddings import EmbeddingClient
 from app.services.indexer import Indexer, pick, resolved_index_status
@@ -51,7 +52,7 @@ def build_services(settings: Settings):
     similarity = SimilarityService(settings, store, embeddings)
     classifier = Classifier(settings)
     indexer = Indexer(store, embeddings, settings.chunk_size, settings.chunk_overlap)
-    jwt_validator = JwtValidator(settings.jwt_public_key_path, settings.jwt_audience)
+    jwt_validator = JwtValidator(settings.jwt_public_key_path, settings.jwt_audience, settings.jwt_issuer)
     dedup = DedupStore(settings.dedup_db_path, settings.dedup_ttl_seconds)
     followups = FollowUpStore(settings.dedup_db_path)
     return store, llm, rag, similarity, classifier, indexer, jwt_validator, dedup, followups, embeddings
@@ -72,15 +73,30 @@ async def lifespan(app: FastAPI):
             await indexer.index_ticket(payload, status=resolved_index_status(payload))
         elif routing_key == "ticket.commented":
             await indexer.index_comment(payload)
-        elif (
-            routing_key == "ticket.status_changed"
-            and pick(payload, "newStatus", "NewStatus") == "Resolved - Pending Confirmation"
-        ):
-            followups.record(
-                str(pick(payload, "ticketId", "TicketId")),
-                str(pick(payload, "referenceNumber", "ReferenceNumber") or ""),
-                [str(u) for u in (pick(payload, "recipientUserIds", "RecipientUserIds") or [])],
-            )
+        elif routing_key == "ticket.deleted":
+            ticket_id = str(pick(payload, "ticketId", "TicketId") or "")
+            if ticket_id:
+                await indexer.delete_ticket(ticket_id)
+                followups.remove(ticket_id)
+        elif routing_key == "ticket.status_changed":
+            new_status = pick(payload, "newStatus", "NewStatus")
+            ticket_id = str(pick(payload, "ticketId", "TicketId") or "")
+            if not ticket_id:
+                return
+            if new_status == "Resolved - Pending Confirmation":
+                followups.record(
+                    ticket_id,
+                    str(pick(payload, "referenceNumber", "ReferenceNumber") or ""),
+                    [str(u) for u in (pick(payload, "recipientUserIds", "RecipientUserIds") or [])],
+                )
+            else:
+                # Any transition away from pending confirmation clears the
+                # follow-up (human close 3->4 or reopen 3->2). Reopened tickets
+                # must also shed their stale "resolved" vector tag so they no
+                # longer masquerade as closed/resolved.
+                followups.remove(ticket_id)
+                if new_status in ("Open", "In Progress"):
+                    await indexer.set_ticket_status(ticket_id, "open")
 
     consumer = IndexConsumer(settings, dedup, on_event)
     consumer_task = asyncio.create_task(consumer.run(asyncio.Event()))
@@ -147,6 +163,7 @@ def create_app() -> FastAPI:
     app.include_router(followup.router)
     app.include_router(summarize.router)
     app.include_router(troubleshooting.router)
+    setup_telemetry(app, get_settings())
 
     @app.get("/health")
     async def health():

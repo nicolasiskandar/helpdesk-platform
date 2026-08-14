@@ -44,6 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = React.useState<UserResponse | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
   const refreshTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scheduleRefreshRef = React.useRef<(expiresAt: string) => void>(() => {})
 
   const scheduleRefresh = React.useCallback((expiresAt: string) => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
@@ -55,13 +56,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const newAuth = await apiRefresh(tokens.refreshToken)
         saveTokens(newAuth)
-        scheduleRefresh(newAuth.expiresAt)
+        scheduleRefreshRef.current(newAuth.expiresAt)
       } catch {
         clearTokens()
         setUser(null)
       }
     }, delay)
   }, [])
+
+  React.useEffect(() => {
+    scheduleRefreshRef.current = scheduleRefresh
+  }, [scheduleRefresh])
 
   const loadUser = React.useCallback(
     async (accessToken: string) => {

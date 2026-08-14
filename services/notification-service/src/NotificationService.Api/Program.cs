@@ -61,7 +61,9 @@ try
             name: "rabbitmq",
             tags: ["messaging", "ready"]);
 
-    builder.Services.AddControllers();
+    builder.Services.AddControllers().AddJsonOptions(options =>
+        options.JsonSerializerOptions.Converters.Add(
+            new NotificationService.Api.Serialization.UtcDateTimeConverter()));
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen(options =>
     {
@@ -173,6 +175,7 @@ try
     }
 
     app.UseMiddleware<RequestLoggingMiddleware>();
+    app.UseMiddleware<ErrorHandlingMiddleware>();
     app.UseCors("AllowAll");
     app.UseAuthentication();
     app.UseAuthorization();

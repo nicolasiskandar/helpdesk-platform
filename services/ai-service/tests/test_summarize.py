@@ -62,6 +62,21 @@ def test_build_summary_prompt_includes_thread():
     assert prompt.index("Asked for the charger model") < prompt.index("Replaced the power adapter")
 
 
+def test_build_summary_prompt_caps_comment_count_and_content():
+    from app.services.ticket_client import MAX_CONTENT_CHARS
+
+    many = [{"id": f"c{i}", "content": f"comment {i}"} for i in range(60)]
+    prompt = build_summary_prompt(TICKET, many)
+    assert "showing the last 30 of 60 comments" in prompt
+    assert "comment 59" in prompt
+    assert "comment 0" not in prompt
+
+    huge = [{"id": "c1", "content": "x" * (MAX_CONTENT_CHARS + 500)}]
+    prompt = build_summary_prompt(TICKET, huge)
+    assert "[... truncated]" in prompt
+    assert len(prompt) < MAX_CONTENT_CHARS * 3
+
+
 async def test_fetch_ticket_thread_success(monkeypatch):
     fake_client = FakeGetClient(
         FakeResp(200, TICKET), FakeResp(200, COMMENTS)

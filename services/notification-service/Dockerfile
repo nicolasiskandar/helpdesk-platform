@@ -22,5 +22,6 @@ RUN adduser --disabled-password --gecos '' appuser
 COPY --from=build /app/publish .
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
+USER appuser
 EXPOSE 8080
 ENTRYPOINT ["/app/entrypoint.sh"]

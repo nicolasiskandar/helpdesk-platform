@@ -104,8 +104,7 @@ function statusVariant(
 
 /** Load tickets visible to the given role */
 async function loadTicketsForRole(
-  role: Role,
-  userId: string
+  role: Role
 ): Promise<{ tickets: TicketResponse[]; sections: { label: string; tickets: TicketResponse[] }[] }> {
   if (role === "admin" || role === "manager") {
     const data = await apiGetTickets(1, 200)
@@ -152,14 +151,13 @@ function AssistantPageContent() {
   const [pickerQuery, setPickerQuery] = React.useState("")
 
   const role: Role = user ? normalizeRole(user.role) : "employee"
-  const currentUserId = user?.id || ""
 
   // Load tickets based on role
   React.useEffect(() => {
     apiAiStatus().then(setLive)
     if (!user) return
     setTicketsLoading(true)
-    loadTicketsForRole(role, currentUserId)
+    loadTicketsForRole(role)
       .then(({ tickets, sections }) => {
         setAllTickets(tickets)
         setTicketSections(sections)
@@ -169,7 +167,7 @@ function AssistantPageContent() {
         setTicketSections([])
       })
       .finally(() => setTicketsLoading(false))
-  }, [user, role, currentUserId])
+  }, [user, role])
 
   const autoTicketLoaded = React.useRef(false)
   React.useEffect(() => {
@@ -309,7 +307,7 @@ function AssistantPageContent() {
                   <Sparkles className="size-6 text-primary" />
                 </div>
                 <div className="max-w-md">
-                  <p className="font-medium">{greeting}! I'm your IT helpdesk assistant.</p>
+                  <p className="font-medium">{greeting}! I&apos;m your IT helpdesk assistant.</p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     Ask about a problem, pick a ticket to ask about it, or jump
                     straight to a useful place.
@@ -435,11 +433,9 @@ function AssistantPageContent() {
                 setPickerOpen(open)
                 if (!open) setPickerQuery("")
               }}>
-                <PopoverTrigger asChild>
-                  <Button type="button" variant="outline" size="sm" className="gap-1.5">
-                    <FileText className="size-3.5" />
-                    Ask about a ticket
-                  </Button>
+                <PopoverTrigger render={<Button type="button" variant="outline" size="sm" className="gap-1.5" />}>
+                  <FileText className="size-3.5" />
+                  Ask about a ticket
                 </PopoverTrigger>
                 <PopoverContent align="start" className="w-96 p-0" sideOffset={8}>
                   <div className="border-b p-2">

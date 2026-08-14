@@ -26,9 +26,9 @@ import Link from "next/link"
 const STATUSES: TicketStatus[] = [
   "Open",
   "In Progress",
-  "Pending Resolution",
-  "Resolved",
+  "Resolved - Pending Confirmation",
   "Closed",
+  "Resolved by AI",
 ]
 const PRIORITIES: TicketPriority[] = ["Critical", "High", "Medium", "Low"]
 const CATEGORIES: TicketCategory[] = [
@@ -210,7 +210,7 @@ export default function TicketsPage() {
           </InputGroup>
 
           <div className="flex flex-1 flex-wrap gap-3">
-            <Select items={PRIORITY_ITEMS} value={priority} onValueChange={setPriority}>
+            <Select items={PRIORITY_ITEMS} value={priority} onValueChange={(v) => setPriority(v ?? "")}>
               <SelectTrigger className="w-[140px]">
                 <SelectValue />
               </SelectTrigger>
@@ -224,7 +224,7 @@ export default function TicketsPage() {
               </SelectContent>
             </Select>
 
-            <Select items={CATEGORY_ITEMS} value={category} onValueChange={setCategory}>
+            <Select items={CATEGORY_ITEMS} value={category} onValueChange={(v) => setCategory(v ?? "")}>
               <SelectTrigger className="w-[150px]">
                 <SelectValue />
               </SelectTrigger>
@@ -239,7 +239,7 @@ export default function TicketsPage() {
             </Select>
 
             <Select items={DATE_RANGE_ITEMS} value={dateRange} onValueChange={(v) => {
-              setDateRange(v)
+              setDateRange(v ?? "")
               if (v !== "custom") {
                 setCustomFrom("")
                 setCustomTo("")

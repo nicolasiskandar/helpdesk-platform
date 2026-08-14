@@ -9,7 +9,6 @@ import {
   AlertTriangle,
   UserPlus,
   ArrowRight,
-  Activity,
   Hand,
 } from "lucide-react"
 
@@ -35,16 +34,7 @@ import {
   byCategory,
   byPriority,
   agentPerformance,
-  formatRelative,
 } from "@/lib/analytics"
-
-function initials(name: string) {
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .slice(0, 2)
-    .join("")
-}
 
 export default function DashboardPage() {
   const { tickets, role, currentUserId, ticketsLoading, userMap } = useStore()

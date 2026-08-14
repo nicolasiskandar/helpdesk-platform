@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { useStore, statusBadgeClass } from "@/lib/store"
+import { useStore } from "@/lib/store"
 import { RoleGuard } from "@/components/role-guard"
 import type { Ticket } from "@/lib/types"
 import { Button } from "@/components/ui/button"
@@ -19,7 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { HandIcon, ArrowRightIcon } from "lucide-react"
 import { toast } from "sonner"
 import { formatRelative } from "@/lib/analytics"
-import { PriorityIndicator, StatusBadge } from "@/components/ticket-badges"
+import { PriorityIndicator } from "@/components/ticket-badges"
 import {
   Empty,
   EmptyHeader,

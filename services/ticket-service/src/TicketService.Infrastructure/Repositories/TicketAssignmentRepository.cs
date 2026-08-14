@@ -28,6 +28,12 @@ public class TicketAssignmentRepository : ITicketAssignmentRepository
             .FirstOrDefaultAsync(a => a.TicketId == ticketId && a.AgentUserId == agentUserId && a.UnassignedAt == null);
     }
 
+    public async Task<bool> HasActiveAssignmentAsync(Guid ticketId)
+    {
+        return await _context.TicketAssignments
+            .AnyAsync(a => a.TicketId == ticketId && a.UnassignedAt == null);
+    }
+
     public async Task AddAsync(TicketAssignment assignment)
     {
         await _context.TicketAssignments.AddAsync(assignment);

@@ -22,6 +22,32 @@ public class TicketBusinessService : ITicketService
 
     private const long MaxAttachmentSizeBytes = 10 * 1024 * 1024;
 
+    /// <summary>
+    /// How far back the idempotent-create check looks for an identical ticket.
+    /// </summary>
+    private static readonly TimeSpan CreateDedupWindow = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Collapses whitespace runs to a single space and trims, so copy-paste or
+    /// formatting differences don't defeat the create-dedup check.
+    /// </summary>
+    private static string Normalize(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return value;
+        return string.Join(' ', value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    /// <summary>
+    /// Reopen permission: Admin/Manager always, otherwise the ticket creator.
+    /// </summary>
+    private static bool CanReopen(Ticket ticket, Guid changedByUserId, string? requesterRole)
+    {
+        if (requesterRole is "Admin" or "Manager")
+            return true;
+        return changedByUserId != Guid.Empty && ticket.CreatedByUserId == changedByUserId;
+    }
+
     private static void ValidateUploadFile(string fileName, long size)
     {
         var extension = Path.GetExtension(fileName).ToLowerInvariant();
@@ -63,6 +89,18 @@ public class TicketBusinessService : ITicketService
 
         var openStatus = await _unitOfWork.Statuses.GetByNameAsync("Open")
             ?? throw new InvalidOperationException("Open status not found.");
+
+        // Idempotent create: if this user already submitted an identical ticket
+        // (same title, description, and category) within the dedup window, return
+        // the existing ticket instead of creating a duplicate. This absorbs
+        // double-clicks and network retries of the create form. Exact whitespace
+        // differences (trailing spaces, doubled spaces) are ignored.
+        var normalizedTitle = Normalize(request.Title);
+        var normalizedDescription = Normalize(request.Description);
+        var duplicate = await _unitOfWork.Tickets.GetRecentDuplicateAsync(
+            createdByUserId, normalizedTitle, normalizedDescription, request.CategoryId, CreateDedupWindow);
+        if (duplicate is not null)
+            return MapToResponse(duplicate, duplicate.Category!, duplicate.Priority!, duplicate.Status!);
 
         var referenceNumber = await _referenceNumberGenerator.GenerateAsync();
 
@@ -277,11 +315,25 @@ public class TicketBusinessService : ITicketService
 
         var attachments = await _unitOfWork.TicketAttachments.GetByTicketIdAsync(id);
         foreach (var attachment in attachments)
+        {
+            await _fileStorage.DeleteFileAsync(attachment.FileUrl);
             await _unitOfWork.TicketAttachments.DeleteAsync(attachment);
+        }
 
-        var auditLogs = await _unitOfWork.TicketAuditLogs.GetByTicketIdAsync(id, 1, 1000);
-        foreach (var auditLog in auditLogs)
-            await _unitOfWork.TicketAuditLogs.DeleteAsync(auditLog);
+        var commentAttachments = await _unitOfWork.CommentAttachments.GetByTicketIdAsync(id);
+        foreach (var commentAttachment in commentAttachments)
+        {
+            await _fileStorage.DeleteFileAsync(commentAttachment.FileUrl);
+            await _unitOfWork.CommentAttachments.DeleteAsync(commentAttachment);
+        }
+
+        var auditLogCount = await _unitOfWork.TicketAuditLogs.GetCountByTicketIdAsync(id);
+        for (var auditPage = 1; auditPage <= Math.Max(1, (int)Math.Ceiling(auditLogCount / 1000.0)); auditPage++)
+        {
+            var auditLogs = await _unitOfWork.TicketAuditLogs.GetByTicketIdAsync(id, auditPage, 1000);
+            foreach (var auditLog in auditLogs)
+                await _unitOfWork.TicketAuditLogs.DeleteAsync(auditLog);
+        }
 
         var assignments = await _unitOfWork.TicketAssignments.GetByTicketIdAsync(id);
         foreach (var assignment in assignments)
@@ -299,7 +351,7 @@ public class TicketBusinessService : ITicketService
         await _unitOfWork.SaveChangesAsync();
     }
 
-    public async Task<TicketResponse> ChangeStatusAsync(Guid id, ChangeStatusRequest request, Guid changedByUserId, string changedByType = "User")
+    public async Task<TicketResponse> ChangeStatusAsync(Guid id, ChangeStatusRequest request, Guid changedByUserId, string changedByType = "User", string? requesterRole = null)
     {
         var ticket = await _unitOfWork.Tickets.GetByIdAsync(id)
             ?? throw new KeyNotFoundException("Ticket not found.");
@@ -312,6 +364,8 @@ public class TicketBusinessService : ITicketService
             [1] = new() { 2 },                          // Open → In Progress
             [2] = new() { 1, 3 },                       // In Progress → Open, Pending Confirmation
             [3] = new() { 2, 4 },                       // Pending Confirmation → In Progress, Closed
+            [4] = new() { 2 },                          // Closed → In Progress (reopen)
+            [5] = new() { 2 },                          // Resolved by AI → In Progress (reopen)
         };
 
         if (allowedTransitions.TryGetValue(ticket.StatusId, out var allowed) && !allowed.Contains(request.StatusId))
@@ -319,9 +373,13 @@ public class TicketBusinessService : ITicketService
             throw new InvalidOperationException($"Cannot transition from '{ticket.Status.Name}' to '{newStatus.Name}'.");
         }
 
-        if (ticket.StatusId == 4 || ticket.StatusId == 5)
+        // Reopening a closed or AI-resolved ticket is restricted to the ticket
+        // creator, Admin, or Manager — regular viewers may not resurrect a
+        // finished ticket. changedByUserId == Guid.Empty means a scoped
+        // service-identity call (AI), which can only ever do the 3→4 close.
+        if ((ticket.StatusId == 4 || ticket.StatusId == 5) && !CanReopen(ticket, changedByUserId, requesterRole))
         {
-            throw new InvalidOperationException($"Cannot change status from '{ticket.Status.Name}'.");
+            throw new UnauthorizedAccessException("Only the ticket creator, Admin, or Manager can reopen a resolved ticket.");
         }
 
         var oldStatusName = ticket.Status.Name;
@@ -639,12 +697,20 @@ public class TicketBusinessService : ITicketService
         if (ticket.StatusId != openStatus.Id)
             throw new InvalidOperationException("Only open tickets can be claimed.");
 
-        var existing = await _unitOfWork.TicketAssignments.GetActiveAssignmentAsync(ticketId, userId);
-        if (existing != null)
+        if (await _unitOfWork.TicketAssignments.HasActiveAssignmentAsync(ticketId))
             throw new InvalidOperationException("Ticket is already assigned.");
 
         var inProgressStatus = await _unitOfWork.Statuses.GetByNameAsync("In Progress")
             ?? throw new InvalidOperationException("In Progress status not found.");
+
+        var oldStatusName = ticket.Status.Name;
+
+        // Atomic guard: only one concurrent claim may flip the ticket Open -> In
+        // Progress. If another claim won the race the conditional UPDATE affects
+        // 0 rows and we bail before inserting a duplicate assignment.
+        var transitioned = await _unitOfWork.Tickets.TransitionStatusAsync(ticketId, openStatus.Id, inProgressStatus.Id);
+        if (!transitioned)
+            throw new InvalidOperationException("Ticket was already claimed by another user.");
 
         var assignment = new TicketAssignment
         {
@@ -656,11 +722,6 @@ public class TicketBusinessService : ITicketService
         };
 
         await _unitOfWork.TicketAssignments.AddAsync(assignment);
-
-        var oldStatusName = ticket.Status.Name;
-        ticket.StatusId = inProgressStatus.Id;
-        ticket.UpdatedAt = DateTime.UtcNow;
-        await _unitOfWork.Tickets.UpdateAsync(ticket);
 
         var assignmentAudit = CreateAuditEntry(ticketId, userId, "Assignment", null, $"Assigned to {userName}");
         await _unitOfWork.TicketAuditLogs.AddAsync(assignmentAudit);

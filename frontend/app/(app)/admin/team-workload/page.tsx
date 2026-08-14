@@ -55,7 +55,6 @@ import type {
   AgentWorkloadResponse,
   AgentWorkloadTicketResponse,
   TicketResponse,
-  UserResponse,
 } from "@/lib/api"
 import type { TicketPriority, TicketStatus } from "@/lib/types"
 
@@ -71,13 +70,13 @@ const EMPTY_WORKLOAD: Omit<AgentWorkloadResponse, "agentUserId"> = {
   resolvedTickets: [],
 }
 
-const STATUS_MAP: Record<string, TicketStatus> = {
-  Open: "Open",
-  "In Progress": "In Progress",
-  "Resolved - Pending Confirmation": "Pending",
-  Closed: "Closed",
-  "Resolved by AI": "Resolved",
-}
+const KNOWN_STATUSES: TicketStatus[] = [
+  "Open",
+  "In Progress",
+  "Resolved - Pending Confirmation",
+  "Closed",
+  "Resolved by AI",
+]
 
 function initials(name: string) {
   return name
@@ -90,7 +89,9 @@ function initials(name: string) {
 }
 
 function statusName(name: string): TicketStatus {
-  return STATUS_MAP[name] || "Open"
+  return (KNOWN_STATUSES as string[]).includes(name)
+    ? (name as TicketStatus)
+    : "Open"
 }
 
 function ticketPriority(name: string): TicketPriority {
@@ -372,7 +373,7 @@ export default function TeamWorkloadPage() {
                           items={agentItems}
                           value={targetAgents[ticket.id] ?? ""}
                           onValueChange={(agentId) =>
-                            setTargetAgents((current) => ({ ...current, [ticket.id]: agentId }))
+                            setTargetAgents((current) => ({ ...current, [ticket.id]: agentId ?? "" }))
                           }
                         >
                           <SelectTrigger className="w-full">

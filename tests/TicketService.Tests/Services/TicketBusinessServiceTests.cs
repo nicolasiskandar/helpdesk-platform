@@ -178,6 +178,106 @@ public class TicketBusinessServiceTests
     }
 
     [Fact]
+    public async Task CreateTicketAsync_DuplicateWithinWindow_ReturnsExistingTicket()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var existingTicket = new Ticket
+        {
+            Id = Guid.NewGuid(),
+            ReferenceNumber = "TKT-000001",
+            Title = "Printer jammed",
+            Description = "The office printer is jammed again",
+            CategoryId = 1,
+            PriorityId = 1,
+            StatusId = 1,
+            CreatedByUserId = userId,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 1, Name = "Open" }
+        };
+
+        _categoryRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(existingTicket.Category);
+        _priorityRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(existingTicket.Priority);
+        _statusRepoMock.Setup(r => r.GetByNameAsync("Open")).ReturnsAsync(existingTicket.Status);
+        _ticketRepoMock
+            .Setup(r => r.GetRecentDuplicateAsync(userId, "Printer jammed", "The office printer is jammed again", 1, It.IsAny<TimeSpan>()))
+            .ReturnsAsync(existingTicket);
+
+        // Act
+        var result = await _sut.CreateTicketAsync(
+            new CreateTicketRequest("Printer jammed", "The office printer is jammed again", 1, 1), userId);
+
+        // Assert — no new ticket, audit entry, or outbox event created.
+        result.Id.Should().Be(existingTicket.Id);
+        result.ReferenceNumber.Should().Be("TKT-000001");
+        _ticketRepoMock.Verify(r => r.AddAsync(It.IsAny<Ticket>()), Times.Never);
+        _auditLogRepoMock.Verify(r => r.AddAsync(It.IsAny<TicketAuditLogEntry>()), Times.Never);
+        _outboxRepoMock.Verify(r => r.AddAsync(It.Is<OutboxMessage>(m => m.EventType == "ticket.created")), Times.Never);
+        _referenceNumberGeneratorMock.Verify(g => g.GenerateAsync(), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateTicketAsync_DuplicateIgnoresWhitespaceDifferences()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var existingTicket = new Ticket
+        {
+            Id = Guid.NewGuid(),
+            ReferenceNumber = "TKT-000001",
+            Title = "Printer jammed",
+            Description = "The office printer is jammed",
+            CategoryId = 1,
+            PriorityId = 1,
+            StatusId = 1,
+            CreatedByUserId = userId,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 1, Name = "Open" }
+        };
+
+        _categoryRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(existingTicket.Category);
+        _priorityRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(existingTicket.Priority);
+        _statusRepoMock.Setup(r => r.GetByNameAsync("Open")).ReturnsAsync(existingTicket.Status);
+        _ticketRepoMock
+            .Setup(r => r.GetRecentDuplicateAsync(userId, "Printer jammed", "The office printer is jammed", 1, It.IsAny<TimeSpan>()))
+            .ReturnsAsync(existingTicket);
+
+        // Act — "  Printer  jammed  " normalizes to "Printer jammed".
+        var result = await _sut.CreateTicketAsync(
+            new CreateTicketRequest("  Printer  jammed  ", "The office printer is jammed", 1, 1), userId);
+
+        result.Id.Should().Be(existingTicket.Id);
+        _ticketRepoMock.Verify(r => r.AddAsync(It.IsAny<Ticket>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateTicketAsync_NoDuplicate_CreatesNewTicket()
+    {
+        // Arrange
+        var request = new CreateTicketRequest("Test Title", "Test Description", 1, 1);
+        var userId = Guid.NewGuid();
+
+        _categoryRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(new Category { Id = 1, Name = "Hardware" });
+        _priorityRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(new Priority { Id = 1, Name = "Low", Level = 1 });
+        _statusRepoMock.Setup(r => r.GetByNameAsync("Open")).ReturnsAsync(new Status { Id = 1, Name = "Open" });
+        _referenceNumberGeneratorMock.Setup(g => g.GenerateAsync()).ReturnsAsync("TKT-000001");
+        _ticketRepoMock
+            .Setup(r => r.GetRecentDuplicateAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<TimeSpan>()))
+            .ReturnsAsync((Ticket?)null);
+
+        // Act
+        var result = await _sut.CreateTicketAsync(request, userId);
+
+        // Assert
+        result.ReferenceNumber.Should().Be("TKT-000001");
+        _ticketRepoMock.Verify(r => r.AddAsync(It.IsAny<Ticket>()), Times.Once);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task CreateTicketAsync_InvalidCategory_ThrowsInvalidOperationException()
     {
         // Arrange
@@ -2218,13 +2318,90 @@ public class TicketBusinessServiceTests
     }
 
     [Fact]
-    public async Task ChangeStatusAsync_TerminalState_ClosedToInProgress_ThrowsInvalidOperationException()
+    public async Task ChangeStatusAsync_Reopen_ClosedToInProgress_ByCreator_Succeeds()
+    {
+        var ticketId = Guid.NewGuid();
+        var creatorId = Guid.NewGuid();
+        var ticket = new Ticket
+        {
+            Id = ticketId, ReferenceNumber = "TKT-000001", Title = "Test",
+            CategoryId = 1, PriorityId = 1, StatusId = 4,
+            CreatedByUserId = creatorId,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 4, Name = "Closed" }
+        };
+        var inProgressStatus = new Status { Id = 2, Name = "In Progress" };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _statusRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(inProgressStatus);
+
+        var result = await _sut.ChangeStatusAsync(ticketId, new ChangeStatusRequest(2, null), creatorId);
+
+        result.StatusName.Should().Be("In Progress");
+        ticket.StatusId.Should().Be(2);
+        _outboxRepoMock.Verify(
+            m => m.AddAsync(It.Is<OutboxMessage>(o => o.EventType == "ticket.status_changed")),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ChangeStatusAsync_Reopen_ClosedToInProgress_ByAdmin_Succeeds()
+    {
+        var ticketId = Guid.NewGuid();
+        var adminId = Guid.NewGuid();
+        var ticket = new Ticket
+        {
+            Id = ticketId, ReferenceNumber = "TKT-000001", Title = "Test",
+            CategoryId = 1, PriorityId = 1, StatusId = 4,
+            CreatedByUserId = Guid.NewGuid(),
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 4, Name = "Closed" }
+        };
+        var inProgressStatus = new Status { Id = 2, Name = "In Progress" };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _statusRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(inProgressStatus);
+
+        var result = await _sut.ChangeStatusAsync(ticketId, new ChangeStatusRequest(2, null), adminId, "User", "Admin");
+
+        result.StatusName.Should().Be("In Progress");
+    }
+
+    [Fact]
+    public async Task ChangeStatusAsync_Reopen_ResolvedByAi_ByCreator_Succeeds()
+    {
+        var ticketId = Guid.NewGuid();
+        var creatorId = Guid.NewGuid();
+        var ticket = new Ticket
+        {
+            Id = ticketId, ReferenceNumber = "TKT-000001", Title = "Test",
+            CategoryId = 1, PriorityId = 1, StatusId = 5,
+            CreatedByUserId = creatorId,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 5, Name = "Resolved by AI" }
+        };
+        var inProgressStatus = new Status { Id = 2, Name = "In Progress" };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _statusRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(inProgressStatus);
+
+        var result = await _sut.ChangeStatusAsync(ticketId, new ChangeStatusRequest(2, null), creatorId);
+
+        result.StatusName.Should().Be("In Progress");
+    }
+
+    [Fact]
+    public async Task ChangeStatusAsync_Reopen_ClosedToInProgress_ByNonCreator_ThrowsUnauthorizedAccessException()
     {
         var ticketId = Guid.NewGuid();
         var ticket = new Ticket
         {
             Id = ticketId, ReferenceNumber = "TKT-000001", Title = "Test",
             CategoryId = 1, PriorityId = 1, StatusId = 4,
+            CreatedByUserId = Guid.NewGuid(),
             Category = new Category { Id = 1, Name = "Hardware" },
             Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
             Status = new Status { Id = 4, Name = "Closed" }
@@ -2236,8 +2413,33 @@ public class TicketBusinessServiceTests
 
         var act = () => _sut.ChangeStatusAsync(ticketId, new ChangeStatusRequest(2, null), Guid.NewGuid());
 
+        await act.Should().ThrowAsync<UnauthorizedAccessException>()
+            .WithMessage("*Only the ticket creator, Admin, or Manager can reopen*");
+    }
+
+    [Fact]
+    public async Task ChangeStatusAsync_Reopen_ClosedToOpen_ThrowsInvalidOperationException()
+    {
+        var ticketId = Guid.NewGuid();
+        var creatorId = Guid.NewGuid();
+        var ticket = new Ticket
+        {
+            Id = ticketId, ReferenceNumber = "TKT-000001", Title = "Test",
+            CategoryId = 1, PriorityId = 1, StatusId = 4,
+            CreatedByUserId = creatorId,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 4, Name = "Closed" }
+        };
+        var openStatus = new Status { Id = 1, Name = "Open" };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _statusRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(openStatus);
+
+        var act = () => _sut.ChangeStatusAsync(ticketId, new ChangeStatusRequest(1, null), creatorId);
+
         await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*Cannot change status*");
+            .WithMessage("*Cannot transition*");
     }
 
     [Fact]
@@ -3101,8 +3303,10 @@ public class TicketBusinessServiceTests
         _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
         _statusRepoMock.Setup(r => r.GetByNameAsync("Open")).ReturnsAsync(new Status { Id = 1, Name = "Open" });
         _statusRepoMock.Setup(r => r.GetByNameAsync("In Progress")).ReturnsAsync(new Status { Id = 2, Name = "In Progress" });
-        _assignmentRepoMock.Setup(r => r.GetActiveAssignmentAsync(ticketId, userId))
-            .ReturnsAsync((TicketAssignment?)null);
+        _assignmentRepoMock.Setup(r => r.HasActiveAssignmentAsync(ticketId))
+            .ReturnsAsync(false);
+        _ticketRepoMock.Setup(r => r.TransitionStatusAsync(ticketId, 1, 2))
+            .ReturnsAsync(true);
 
         // Act
         var result = await _sut.ClaimTicketAsync(ticketId, userId, "Test User");
@@ -3112,7 +3316,7 @@ public class TicketBusinessServiceTests
         result.AssignedByUserId.Should().Be(userId);
         result.UnassignedAt.Should().BeNull();
 
-        ticket.StatusId.Should().Be(2);
+        _ticketRepoMock.Verify(r => r.TransitionStatusAsync(ticketId, 1, 2), Times.Once);
 
         _assignmentRepoMock.Verify(r => r.AddAsync(It.Is<TicketAssignment>(a =>
             a.TicketId == ticketId &&
@@ -3207,8 +3411,8 @@ public class TicketBusinessServiceTests
 
         _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
         _statusRepoMock.Setup(r => r.GetByNameAsync("Open")).ReturnsAsync(new Status { Id = 1, Name = "Open" });
-        _assignmentRepoMock.Setup(r => r.GetActiveAssignmentAsync(ticketId, userId))
-            .ReturnsAsync(new TicketAssignment { Id = Guid.NewGuid(), TicketId = ticketId, AgentUserId = userId });
+        _assignmentRepoMock.Setup(r => r.HasActiveAssignmentAsync(ticketId))
+            .ReturnsAsync(true);
 
         // Act
         var act = () => _sut.ClaimTicketAsync(ticketId, userId, "Test User");
@@ -3216,6 +3420,42 @@ public class TicketBusinessServiceTests
         // Assert
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*already assigned*");
+    }
+
+    [Fact]
+    public async Task ClaimTicketAsync_ConcurrentClaimLoses_ThrowsAndSkipsAssignment()
+    {
+        // Arrange
+        var ticketId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+
+        var ticket = new Ticket
+        {
+            Id = ticketId,
+            ReferenceNumber = "TKT-000001",
+            Title = "Test",
+            CategoryId = 1,
+            PriorityId = 1,
+            StatusId = 1,
+            Category = new Category { Id = 1, Name = "Hardware" },
+            Priority = new Priority { Id = 1, Name = "Low", Level = 1 },
+            Status = new Status { Id = 1, Name = "Open" }
+        };
+
+        _ticketRepoMock.Setup(r => r.GetByIdAsync(ticketId)).ReturnsAsync(ticket);
+        _statusRepoMock.Setup(r => r.GetByNameAsync("Open")).ReturnsAsync(new Status { Id = 1, Name = "Open" });
+        _statusRepoMock.Setup(r => r.GetByNameAsync("In Progress")).ReturnsAsync(new Status { Id = 2, Name = "In Progress" });
+        _assignmentRepoMock.Setup(r => r.HasActiveAssignmentAsync(ticketId)).ReturnsAsync(false);
+        _ticketRepoMock.Setup(r => r.TransitionStatusAsync(ticketId, 1, 2)).ReturnsAsync(false);
+
+        // Act
+        var act = () => _sut.ClaimTicketAsync(ticketId, userId, "Test User");
+
+        // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*already claimed*");
+        _assignmentRepoMock.Verify(r => r.AddAsync(It.IsAny<TicketAssignment>()), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -3290,6 +3530,8 @@ public class TicketBusinessServiceTests
         _statusRepoMock.Setup(r => r.GetByNameAsync("Open")).ReturnsAsync(new Status { Id = 1, Name = "Open" });
         _commentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId, adminId, "Admin", creatorId, It.IsAny<HashSet<Guid>>())).ReturnsAsync(comments);
         _attachmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(attachments);
+        _commentAttachmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(new List<CommentAttachment>());
+        _auditLogRepoMock.Setup(r => r.GetCountByTicketIdAsync(ticketId)).ReturnsAsync(auditLogs.Count);
         _auditLogRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId, 1, 1000)).ReturnsAsync(auditLogs);
         _assignmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(assignments);
 
@@ -3299,6 +3541,7 @@ public class TicketBusinessServiceTests
         // Assert
         _commentRepoMock.Verify(r => r.DeleteAsync(comments[0]), Times.Once);
         _attachmentRepoMock.Verify(r => r.DeleteAsync(attachments[0]), Times.Once);
+        _fileStorageMock.Verify(f => f.DeleteFileAsync(attachments[0].FileUrl), Times.Once);
         _auditLogRepoMock.Verify(r => r.DeleteAsync(auditLogs[0]), Times.Once);
         _assignmentRepoMock.Verify(r => r.DeleteAsync(assignments[0]), Times.Once);
         _ticketRepoMock.Verify(r => r.DeleteAsync(ticket), Times.Once);
@@ -3332,6 +3575,8 @@ public class TicketBusinessServiceTests
         _statusRepoMock.Setup(r => r.GetByNameAsync("Open")).ReturnsAsync(new Status { Id = 1, Name = "Open" });
         _commentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId, creatorId, "Admin", creatorId, It.IsAny<HashSet<Guid>>())).ReturnsAsync(new List<TicketComment>());
         _attachmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(new List<TicketAttachment>());
+        _commentAttachmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(new List<CommentAttachment>());
+        _auditLogRepoMock.Setup(r => r.GetCountByTicketIdAsync(ticketId)).ReturnsAsync(0);
         _auditLogRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId, 1, 1000)).ReturnsAsync(new List<TicketAuditLogEntry>());
         _assignmentRepoMock.Setup(r => r.GetByTicketIdAsync(ticketId)).ReturnsAsync(new List<TicketAssignment>());
 

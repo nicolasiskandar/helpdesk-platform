@@ -1,5 +1,6 @@
 import type { Ticket } from "./types"
 import type { TicketCategory, TicketPriority } from "./types"
+import { RESOLVED_STATUSES } from "./types"
 
 const CATEGORIES: TicketCategory[] = [
   "Hardware",
@@ -11,15 +12,15 @@ const CATEGORIES: TicketCategory[] = [
 
 const PRIORITIES: TicketPriority[] = ["Low", "Medium", "High", "Critical"]
 
+const RESOLVED = new Set<Ticket["status"]>(RESOLVED_STATUSES)
+
 export function ticketStats(tickets: Ticket[]) {
   const open = tickets.filter((t) => t.status === "Open").length
   const inProgress = tickets.filter((t) => t.status === "In Progress").length
-  const pending = tickets.filter((t) => t.status === "Pending").length
-  const resolved = tickets.filter(
-    (t) => t.status === "Resolved" || t.status === "Closed"
-  ).length
+  const pending = tickets.filter((t) => t.status === "Resolved - Pending Confirmation").length
+  const resolved = tickets.filter((t) => RESOLVED.has(t.status)).length
   const critical = tickets.filter(
-    (t) => t.priority === "Critical" && t.status !== "Closed" && t.status !== "Resolved"
+    (t) => t.priority === "Critical" && !RESOLVED.has(t.status)
   ).length
   const unassigned = tickets.filter((t) => !t.assigneeId).length
   return { open, inProgress, pending, resolved, critical, unassigned, total: tickets.length }
@@ -41,11 +42,11 @@ export function byPriority(tickets: Ticket[]) {
 
 export function byStatus(tickets: Ticket[]) {
   return [
-    { status: "Open", key: "open" },
-    { status: "In Progress", key: "inProgress" },
-    { status: "Pending", key: "pending" },
-    { status: "Resolved", key: "resolved" },
-    { status: "Closed", key: "closed" },
+    { status: "Open" as const, key: "open" },
+    { status: "In Progress" as const, key: "inProgress" },
+    { status: "Resolved - Pending Confirmation" as const, key: "pending" },
+    { status: "Closed" as const, key: "closed" },
+    { status: "Resolved by AI" as const, key: "resolved" },
   ].map(({ status }) => ({
     status,
     count: tickets.filter((t) => t.status === status).length,
@@ -59,7 +60,7 @@ export function agentPerformance(tickets: Ticket[], userMap: Record<string, stri
     if (!t.assigneeId) continue
     const existing = assignees.get(t.assigneeId) || { assigned: 0, resolved: 0 }
     existing.assigned++
-    if (t.status === "Resolved" || t.status === "Closed") existing.resolved++
+    if (RESOLVED.has(t.status)) existing.resolved++
     assignees.set(t.assigneeId, existing)
   }
   return Array.from(assignees.entries()).map(([id, stats]) => ({

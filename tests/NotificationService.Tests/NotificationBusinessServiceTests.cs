@@ -21,6 +21,7 @@ public class NotificationBusinessServiceTests
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IHubContext<Hub>> _hubContext = new();
     private readonly Mock<IEmailSender> _emailSender = new();
+    private readonly Mock<IUserEmailResolver> _userEmailResolver = new();
     private readonly Mock<ILogger<NotificationBusinessService>> _logger = new();
     private readonly Mock<IClientProxy> _clientProxy = new();
 
@@ -30,7 +31,8 @@ public class NotificationBusinessServiceTests
         mockClients.Setup(c => c.Group(It.IsAny<string>())).Returns(_clientProxy.Object);
         _hubContext.Setup(h => h.Clients).Returns(mockClients.Object);
         return new(_notificationRepo.Object, _preferenceRepo.Object, _processedMessageRepo.Object,
-            _unitOfWork.Object, _hubContext.Object, _emailSender.Object, _logger.Object);
+            _unitOfWork.Object, _hubContext.Object, _emailSender.Object, _userEmailResolver.Object,
+            _logger.Object);
     }
 
     private static NotificationPreference DefaultPreference(Guid userId) => new()
@@ -389,6 +391,110 @@ public class NotificationBusinessServiceTests
         // Author should not receive a notification
         _notificationRepo.Verify(r => r.AddAsync(It.Is<Notification>(n =>
             n.RecipientUserId == authorId)), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessTicketEventAsync_ReplyEvent_NotifiesParentAuthorWithReplyType()
+    {
+        var replyAuthorId = Guid.NewGuid();
+        var parentAuthorId = Guid.NewGuid();
+        var ticketId = Guid.NewGuid();
+        var commentId = Guid.NewGuid();
+        var parentCommentId = Guid.NewGuid();
+
+        _preferenceRepo.Setup(r => r.GetOrCreateByUserIdAsync(parentAuthorId)).ReturnsAsync(DefaultPreference(parentAuthorId));
+        _notificationRepo.Setup(r => r.AddAsync(It.IsAny<Notification>())).Returns(Task.CompletedTask);
+        _unitOfWork.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
+
+        var evt = new TicketCommentedEvent(
+            ticketId,
+            "TKT-0009",
+            replyAuthorId,
+            "Jane Doe",
+            "Thanks, will try that",
+            false,
+            commentId,
+            parentCommentId,
+            new List<Guid> { parentAuthorId, replyAuthorId },
+            DateTime.UtcNow);
+
+        var sut = CreateSut();
+        await sut.ProcessTicketEventAsync("ticket.commented", JsonSerializer.Serialize(evt));
+
+        _notificationRepo.Verify(r => r.AddAsync(It.Is<Notification>(n =>
+            n.RecipientUserId == parentAuthorId && n.Type == "reply" &&
+            n.Title.Contains("replied on") &&
+            n.Message.Contains("Thanks, will try that") &&
+            n.CommentId == commentId)), Times.Once);
+        // The reply author should not receive their own notification
+        _notificationRepo.Verify(r => r.AddAsync(It.Is<Notification>(n =>
+            n.RecipientUserId == replyAuthorId)), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessTicketEventAsync_CommentedEvent_SendsEmailToResolvedAddress()
+    {
+        var authorId = Guid.NewGuid();
+        var recipientId = Guid.NewGuid();
+        _preferenceRepo.Setup(r => r.GetOrCreateByUserIdAsync(recipientId)).ReturnsAsync(DefaultPreference(recipientId));
+        _notificationRepo.Setup(r => r.AddAsync(It.IsAny<Notification>())).Returns(Task.CompletedTask);
+        _unitOfWork.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
+        _userEmailResolver.Setup(r => r.GetEmailAsync(recipientId)).ReturnsAsync("real.user@example.com");
+        _emailSender.Setup(e => e.SendAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .Returns(Task.CompletedTask);
+
+        var evt = new TicketCommentedEvent(
+            Guid.NewGuid(),
+            "TKT-0010",
+            authorId,
+            "Jane Doe",
+            "Please look into this",
+            false,
+            Guid.NewGuid(),
+            null,
+            new List<Guid> { recipientId },
+            DateTime.UtcNow);
+
+        var sut = CreateSut();
+        await sut.ProcessTicketEventAsync("ticket.commented", JsonSerializer.Serialize(evt));
+
+        _emailSender.Verify(e => e.SendAsync(
+            "real.user@example.com",
+            It.IsAny<string>(),
+            It.IsAny<string>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessTicketEventAsync_CommentedEvent_EmailFallsBackToDevAddressWhenResolutionFails()
+    {
+        var authorId = Guid.NewGuid();
+        var recipientId = Guid.NewGuid();
+        _preferenceRepo.Setup(r => r.GetOrCreateByUserIdAsync(recipientId)).ReturnsAsync(DefaultPreference(recipientId));
+        _notificationRepo.Setup(r => r.AddAsync(It.IsAny<Notification>())).Returns(Task.CompletedTask);
+        _unitOfWork.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
+        _userEmailResolver.Setup(r => r.GetEmailAsync(recipientId)).ReturnsAsync((string?)null);
+        _emailSender.Setup(e => e.SendAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .Returns(Task.CompletedTask);
+
+        var evt = new TicketCommentedEvent(
+            Guid.NewGuid(),
+            "TKT-0011",
+            authorId,
+            "Jane Doe",
+            "Please look into this",
+            false,
+            Guid.NewGuid(),
+            null,
+            new List<Guid> { recipientId },
+            DateTime.UtcNow);
+
+        var sut = CreateSut();
+        await sut.ProcessTicketEventAsync("ticket.commented", JsonSerializer.Serialize(evt));
+
+        _emailSender.Verify(e => e.SendAsync(
+            $"{recipientId}@helpdesk.local",
+            It.IsAny<string>(),
+            It.IsAny<string>()), Times.Once);
     }
 
     [Fact]

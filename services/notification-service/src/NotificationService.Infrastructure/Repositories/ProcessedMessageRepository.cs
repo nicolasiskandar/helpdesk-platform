@@ -27,6 +27,22 @@ public class ProcessedMessageRepository : IProcessedMessageRepository
             MessageId = messageId,
             ProcessedAt = DateTime.UtcNow
         });
-        await _context.SaveChangesAsync();
+
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            // Unique constraint on MessageId: a concurrent redelivery inserted
+            // the row first. Treat as already-processed (idempotent).
+        }
+    }
+
+    public async Task<int> DeleteOlderThanAsync(DateTime cutoff)
+    {
+        return await _context.ProcessedMessages
+            .Where(m => m.ProcessedAt < cutoff)
+            .ExecuteDeleteAsync();
     }
 }

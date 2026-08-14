@@ -12,6 +12,15 @@ def pick(obj: dict, camel: str, pascal: str, default: str = "") -> str:
     return obj.get(camel) or obj.get(pascal) or default
 
 
+MAX_COMMENTS = 30
+MAX_CONTENT_CHARS = 2000
+
+
+def _truncate(text: str, limit: int = MAX_CONTENT_CHARS) -> str:
+    text = (text or "").strip()
+    return text if len(text) <= limit else f"{text[:limit]}\n[... truncated]"
+
+
 def render_ticket_thread(ticket: dict, comments: list[dict]) -> str:
     """Renders the ticket description + comments into a text block for LLM prompts."""
     ref = pick(ticket, "referenceNumber", "ReferenceNumber", "?")
@@ -26,13 +35,19 @@ def render_ticket_thread(ticket: dict, comments: list[dict]) -> str:
         f"Category: {category} · Priority: {priority} · Status: {status}",
         "",
         "Description:",
-        description,
+        _truncate(description),
     ]
-    if comments:
+    # Cap comments to the most recent ones so a huge thread can't balloon the
+    # prompt past the model's context window.
+    recent = comments[-MAX_COMMENTS:] if comments else []
+    if comments and len(comments) > MAX_COMMENTS:
+        lines.append("")
+        lines.append(f"(showing the last {MAX_COMMENTS} of {len(comments)} comments)")
+    if recent:
         lines.append("")
         lines.append("Comments:")
-        for i, comment in enumerate(comments, 1):
-            content = pick(comment, "content", "Content", "")
+        for i, comment in enumerate(recent, 1):
+            content = _truncate(pick(comment, "content", "Content", ""))
             if content:
                 lines.append(f"{i}. {content}")
     return "\n".join(lines)

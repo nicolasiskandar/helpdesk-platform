@@ -41,6 +41,16 @@ public class RefreshTokenRepository : IRefreshTokenRepository
         return Task.CompletedTask;
     }
 
+    public async Task<bool> RevokeIfActiveAsync(string hashedToken)
+    {
+        // Atomic conditional revoke: returns false when the token is already
+        // revoked, so concurrent refresh calls can't both win the race.
+        var rows = await _context.RefreshTokens
+            .Where(rt => rt.Token == hashedToken && rt.RevokedAt == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(rt => rt.RevokedAt, DateTime.UtcNow));
+        return rows > 0;
+    }
+
     public async Task RevokeAllUserTokensAsync(Guid userId)
     {
         var activeTokens = await _context.RefreshTokens

@@ -24,7 +24,6 @@ import {
   apiMarkNotificationRead as apiMarkNotifRead,
   apiMarkAllNotificationsRead as apiMarkAllNotifsRead,
   type TicketResponse,
-  type CommentResponse,
   type AuditLogEntryResponse,
   type AttachmentResponse,
   type NotificationResponse,
@@ -39,7 +38,6 @@ import type {
   TicketCategory,
   Comment,
   ActivityEntry,
-  Attachment,
 } from "./types"
 import { formatFileSize } from "./analytics"
 
@@ -97,9 +95,9 @@ const PRIORITY_MAP: Record<string, TicketPriority> = {
 const STATUS_MAP: Record<string, TicketStatus> = {
   Open: "Open",
   "In Progress": "In Progress",
-  "Resolved - Pending Confirmation": "Pending Resolution",
+  "Resolved - Pending Confirmation": "Resolved - Pending Confirmation",
   Closed: "Closed",
-  "Resolved by AI": "Resolved",
+  "Resolved by AI": "Resolved by AI",
 }
 
 const SLA_HOURS: Record<TicketPriority, number> = {
@@ -141,6 +139,7 @@ const NOTIF_TYPE_MAP: Record<string, NotificationItem["type"]> = {
   status_changed: "status",
   closed: "status",
   comment: "comment",
+  reply: "comment",
 }
 
 function mapNotification(res: NotificationResponse): NotificationItem {
@@ -259,7 +258,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     async (id: string, patch: Partial<Ticket>) => {
       if (patch.status) {
         const STATUS_IDS: Record<TicketStatus, number> = {
-          Open: 1, "In Progress": 2, "Pending Resolution": 3, Resolved: 5, Closed: 4,
+          Open: 1, "In Progress": 2, "Resolved - Pending Confirmation": 3, Closed: 4, "Resolved by AI": 5,
         }
         const updated = await apiChangeStatus(id, STATUS_IDS[patch.status])
         setTickets((prev) =>
@@ -346,7 +345,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [tickets, role, userMap]
+    [tickets, userMap]
   )
 
   const deleteTicket = React.useCallback(
@@ -570,9 +569,9 @@ export function statusBadgeClass(status: TicketStatus): string {
       return "bg-info/10 text-info border-info/25"
     case "In Progress":
       return "bg-primary/10 text-primary border-primary/25"
-    case "Pending Resolution":
+    case "Resolved - Pending Confirmation":
       return "bg-warning/15 text-warning-foreground border-warning/30"
-    case "Resolved":
+    case "Resolved by AI":
       return "bg-success/10 text-success border-success/25"
     case "Closed":
       return "bg-muted text-muted-foreground border-border"

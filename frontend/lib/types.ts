@@ -12,9 +12,15 @@ export type TicketPriority = "Low" | "Medium" | "High" | "Critical"
 export type TicketStatus =
   | "Open"
   | "In Progress"
-  | "Pending Resolution"
-  | "Resolved"
+  | "Resolved - Pending Confirmation"
   | "Closed"
+  | "Resolved by AI"
+
+export const RESOLVED_STATUSES: TicketStatus[] = [
+  "Resolved - Pending Confirmation",
+  "Closed",
+  "Resolved by AI",
+]
 
 export interface User {
   id: string

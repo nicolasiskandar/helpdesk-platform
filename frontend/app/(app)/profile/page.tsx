@@ -3,8 +3,6 @@
 import * as React from "react"
 import { toast } from "sonner"
 import {
-  User as UserIcon,
-  Mail,
   Shield,
   Calendar,
   LogOut,
@@ -23,10 +21,15 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Separator } from "@/components/ui/separator"
 import { useAuth } from "@/lib/auth"
-import { ROLE_LABELS } from "@/lib/data"
 import { apiUpdateProfile, apiChangePassword } from "@/lib/api"
+
+const ROLE_LABELS: Record<string, string> = {
+  Admin: "Administrator",
+  "IT Support Agent": "IT Support Agent",
+  Employee: "Employee",
+  Manager: "Manager",
+}
 
 function initials(name: string) {
   return name

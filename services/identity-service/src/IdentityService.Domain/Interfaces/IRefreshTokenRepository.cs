@@ -8,5 +8,6 @@ public interface IRefreshTokenRepository
     Task<IReadOnlyList<RefreshToken>> GetActiveTokensByUserIdAsync(Guid userId);
     Task AddAsync(RefreshToken refreshToken);
     Task RevokeAsync(RefreshToken refreshToken);
+    Task<bool> RevokeIfActiveAsync(string hashedToken);
     Task RevokeAllUserTokensAsync(Guid userId);
 }

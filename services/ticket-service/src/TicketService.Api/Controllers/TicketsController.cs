@@ -164,7 +164,13 @@ public class TicketsController : ControllerBase
     /// <summary>
     /// Changes the status of a ticket.
     /// </summary>
+    /// <remarks>
+    /// Anonymous by design: the AI service calls this with only the shared
+    /// X-AI-Service-Key header and no bearer token (scoped write, design rule #3).
+    /// Authenticated users fall through to the normal claim-based flow.
+    /// </remarks>
     [HttpPatch("{id:guid}/status")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(TicketResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
@@ -187,10 +193,15 @@ public class TicketsController : ControllerBase
             return Ok(ticket);
         }
 
+        if (User.Identity?.IsAuthenticated != true)
+        {
+            return Unauthorized();
+        }
+
         var userId = GetUserIdFromClaims();
         var role = GetUserRoleFromClaims();
         await EnsureTicketAccessAsync(id, userId, role);
-        var userTicket = await _ticketService.ChangeStatusAsync(id, request, userId);
+        var userTicket = await _ticketService.ChangeStatusAsync(id, request, userId, "User", role);
         return Ok(userTicket);
     }
 
@@ -258,7 +269,6 @@ public class TicketsController : ControllerBase
     /// Claims an open ticket (self-assign and set status to In Progress).
     /// </summary>
     [HttpPost("{ticketId:guid}/claim")]
-    [Authorize(Roles = "IT Support Agent")]
     [ProducesResponseType(typeof(AssignmentResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]

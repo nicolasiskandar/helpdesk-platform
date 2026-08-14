@@ -18,6 +18,7 @@ public class RabbitMQConsumer : BackgroundService
     private readonly string _hostName;
     private readonly int _port;
     private readonly string _exchangeName;
+    private readonly int _maxRedeliveries;
     private IConnection? _connection;
     private IModel? _channel;
 
@@ -28,6 +29,7 @@ public class RabbitMQConsumer : BackgroundService
         _hostName = configuration["RabbitMQ:HostName"] ?? "rabbitmq";
         _port = int.Parse(configuration["RabbitMQ:Port"] ?? "5672");
         _exchangeName = configuration["RabbitMQ:ExchangeName"] ?? "ticket.events";
+        _maxRedeliveries = int.TryParse(configuration["RabbitMQ:MaxRedeliveries"], out var max) ? max : 5;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -76,14 +78,73 @@ public class RabbitMQConsumer : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing message {MessageId}", messageId);
-                _channel.BasicNack(ea.DeliveryTag, multiple: false, requeue: true);
+                var redeliveries = GetRedeliveryCount(ea);
+                _logger.LogError(ex, "Error processing message {MessageId} (redelivery {Redeliveries}/{MaxRedeliveries})",
+                    messageId, redeliveries + 1, _maxRedeliveries);
+
+                if (redeliveries >= _maxRedeliveries)
+                {
+                    // Poison message: stop requeueing so it can't hot-loop the
+                    // queue forever. Ack-with-drop (no DLQ binding here); the
+                    // ticket service already DLQs its own outbox failures.
+                    _logger.LogWarning("Poison message {MessageId} dropped after {Redeliveries} redeliveries",
+                        messageId, redeliveries);
+                    _channel.BasicNack(ea.DeliveryTag, multiple: false, requeue: false);
+                }
+                else
+                {
+                    _channel.BasicNack(ea.DeliveryTag, multiple: false, requeue: true);
+                }
             }
         };
 
         _channel.BasicConsume(queue: queueName, autoAck: false, consumer: consumer);
 
-        await Task.Delay(Timeout.Infinite, stoppingToken);
+        // TTL sweep: prune processed-message dedup rows so the table doesn't
+        // grow unbounded (AGENTS.md documents the dedup table "with TTL").
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                using var sweepScope = _serviceProvider.CreateScope();
+                var processedRepo = sweepScope.ServiceProvider.GetRequiredService<IProcessedMessageRepository>();
+                var cutoff = DateTime.UtcNow.AddDays(-7);
+                var deleted = await processedRepo.DeleteOlderThanAsync(cutoff);
+                if (deleted > 0)
+                {
+                    _logger.LogInformation("Pruned {Count} processed-message dedup rows older than {Cutoff}", deleted, cutoff);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Processed-message TTL sweep failed");
+            }
+
+            await Task.Delay(TimeSpan.FromHours(1), stoppingToken);
+        }
+    }
+
+    private static int GetRedeliveryCount(BasicDeliverEventArgs eventArgs)
+    {
+        if (!eventArgs.Redelivered || eventArgs.BasicProperties.Headers == null
+            || !eventArgs.BasicProperties.Headers.TryGetValue("x-death", out var xDeath)
+            || xDeath is not List<object> entries)
+        {
+            return 0;
+        }
+
+        var total = 0L;
+        foreach (var entry in entries)
+        {
+            if (entry is Dictionary<string, object> table
+                && table.TryGetValue("count", out var count)
+                && count is long c)
+            {
+                total += c;
+            }
+        }
+
+        return (int)total;
     }
 
     private async Task ConnectWithRetryAsync(CancellationToken stoppingToken)
