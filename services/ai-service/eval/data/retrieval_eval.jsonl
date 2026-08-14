@@ -1,0 +1,25 @@
+{"id": "q01", "query": "how do i reset my windows login password", "expected_doc_ids": ["kb-001"]}
+{"id": "q02", "query": "forgot my corporate email password", "expected_doc_ids": ["kb-002", "kb-038"]}
+{"id": "q03", "query": "how to set up the vpn when working from home", "expected_doc_ids": ["kb-003", "kb-022"]}
+{"id": "q04", "query": "wifi keeps dropping every few minutes", "expected_doc_ids": ["kb-004"]}
+{"id": "q05", "query": "printer shows offline on floor 3", "expected_doc_ids": ["kb-007"]}
+{"id": "q06", "query": "outlook says operation failed when sending", "expected_doc_ids": ["kb-008", "kb-029"]}
+{"id": "q07", "query": "how to report a phishing email", "expected_doc_ids": ["kb-009", "kb-037"]}
+{"id": "q08", "query": "can i recover files i deleted from the shared drive", "expected_doc_ids": ["kb-010", "kb-021"]}
+{"id": "q09", "query": "how do i set up multi factor authentication on my phone", "expected_doc_ids": ["kb-011", "kb-039"]}
+{"id": "q10", "query": "request a replacement laptop because mine is broken", "expected_doc_ids": ["kb-012"]}
+{"id": "q11", "query": "laptop battery drains very fast", "expected_doc_ids": ["kb-013"]}
+{"id": "q12", "query": "docking station stopped charging my laptop", "expected_doc_ids": ["kb-014"]}
+{"id": "q13", "query": "external monitor flickers constantly", "expected_doc_ids": ["kb-015"]}
+{"id": "q14", "query": "access denied when opening the shared network drive", "expected_doc_ids": ["kb-016", "kb-032"]}
+{"id": "q15", "query": "give my assistant access to my mailbox", "expected_doc_ids": ["kb-017"]}
+{"id": "q16", "query": "how to book a meeting room", "expected_doc_ids": ["kb-018"]}
+{"id": "q17", "query": "request a license for the design tool", "expected_doc_ids": ["kb-019"]}
+{"id": "q18", "query": "antivirus keeps quarantining an internal tool", "expected_doc_ids": ["kb-020"]}
+{"id": "q19", "query": "vpn error 721 cannot connect", "expected_doc_ids": ["kb-022", "kb-003"]}
+{"id": "q20", "query": "web app shows blank page, clear cache", "expected_doc_ids": ["kb-023"]}
+{"id": "q21", "query": "set up corporate email on my new phone", "expected_doc_ids": ["kb-024"]}
+{"id": "q22", "query": "connect to my work computer from home remotely", "expected_doc_ids": ["kb-025"]}
+{"id": "q23", "query": "what happens when an employee leaves the company", "expected_doc_ids": ["kb-027"]}
+{"id": "q24", "query": "excel is very slow with large workbooks", "expected_doc_ids": ["kb-030"]}
+{"id": "q25", "query": "camera not detected in teams", "expected_doc_ids": ["kb-031", "kb-034"]}
