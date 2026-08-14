@@ -568,12 +568,12 @@ The first `./scripts.sh test` (or `test-ai`) run creates a Python virtualenv at
 
 | Project | Tests | What's tested |
 |---------|-------|---------------|
-| `IdentityService.Tests` | 144 | Auth (register, login, refresh, logout, profile), user CRUD + single-admin constraint, password hashing, JWT (RS256, claims, Name claim), validators |
+| `IdentityService.Tests` | 152 | Auth (register, login, refresh, logout, profile), user CRUD + single-admin constraint, password hashing, JWT (RS256, claims, Name claim), validators, user email lookup |
 | `TicketService.Tests` | 194 | Ticket CRUD, assignment/workflow, self-assignment, open-unassigned, pending-ticket access restriction, private comments + reply-recipient subsets, unassign outbox, KB articles, validators |
-| `NotificationService.Tests` | 20 | Event processing, preferences, notifications CRUD, SignalR, email delivery (not part of `./scripts.sh test` — run manually with `dotnet test tests/NotificationService.Tests/`) |
+| `NotificationService.Tests` | 23 | Event processing, preferences, notifications CRUD, SignalR, email delivery + real-address resolution (not part of `./scripts.sh test` — run manually with `dotnet test tests/NotificationService.Tests/`) |
 | `SearchService.Tests` | 1 | Meilisearch request filtering and search-result mapping |
-| `ai-service` (pytest) | 91 | Chat, analyze/classifier, summarize, troubleshooting, similar-tickets, reindex, follow-up close, consumer/indexer dedup, vector store, JWT, model readiness |
-| **Total** | **450** | |
+| `ai-service` (pytest) | 105 | Chat, analyze/classifier, summarize, troubleshooting, similar-tickets, reindex, reindex-tickets, follow-up close, consumer/indexer dedup, vector store, JWT, model readiness |
+| **Total** | **475** | |
 
 ## Tech Stack
 

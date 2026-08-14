@@ -149,6 +149,10 @@ class Indexer:
         await self._store.set_payload({"doc_type": "ticket", "doc_id": ticket_id}, {"status": status})
         logger.info("Set status=%s for ticket %s", status, ticket_id)
 
+    async def wipe_tickets(self) -> None:
+        await self._store.delete_by_filter({"doc_type": "ticket"})
+        logger.info("Wiped ticket vectors")
+
     async def wipe_kb(self) -> None:
         await self._store.delete_by_filter({"doc_type": "kb"})
         logger.info("Wiped KB vectors")
