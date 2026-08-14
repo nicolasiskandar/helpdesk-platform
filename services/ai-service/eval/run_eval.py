@@ -235,12 +235,15 @@ async def run_latency(settings: Settings, repeat: int) -> dict:
     total = sorted(total_ms)
     p50_ttft = statistics.median(ttft)
     p50_total = statistics.median(total)
+    mean_ttft = sum(ttft) / len(ttft)
+    mean_total = sum(total) / len(total)
     logger.info(
-        "latency over %d requests: p50 ttft=%.0fms total=%.0fms, mean ttft=%.0fms",
+        "latency over %d requests: mean ttft=%.0fms (p50 %.0fms), mean total=%.0fms (p50 %.0fms)",
         repeat,
+        mean_ttft,
         p50_ttft,
+        mean_total,
         p50_total,
-        sum(ttft) / len(ttft),
     )
     def percentile(sorted_ms: list[float], p: float) -> float:
         if not sorted_ms:
@@ -249,6 +252,8 @@ async def run_latency(settings: Settings, repeat: int) -> dict:
         return sorted_ms[index]
 
     return {
+        "mean_ttft_ms": round(mean_ttft),
+        "mean_total_ms": round(mean_total),
         "p50_ttft_ms": round(p50_ttft),
         "p50_total_ms": round(p50_total),
         "p95_ttft_ms": round(percentile(ttft, 95.0)),
@@ -278,10 +283,10 @@ async def main() -> None:
 
     x = retrieve["recall_pct"] if retrieve else float("nan")
     y = classify["accuracy_pct"] if classify else float("nan")
-    z = latency["p50_ttft_ms"] if latency else float("nan")
+    z = latency["mean_ttft_ms"] if latency else float("nan")
     print(
-        f"\nRetrieval accuracy: {x:.0f}% · Classification accuracy: {y:.0f}% "
-        f"· Latency: <{z:.0f} ms (p50 TTFT)"
+        f"\nRetrieval accuracy: {x:.0f}% · Ticket classification accuracy: {y:.0f}% "
+        f"· Average response latency: <{z:.0f} ms (mean TTFT)"
     )
 
 

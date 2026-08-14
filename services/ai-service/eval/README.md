@@ -5,9 +5,9 @@ metrics using the **real production code paths** (no fakes, no HTTP/JWT):
 
 | Metric | Symbol | Definition |
 |---|---|---|
-| Retrieval accuracy | **X%** | recall@k — share of eval queries where at least one expected KB article lands in the top-k hits |
-| Classification accuracy | **Y%** | exact match — predicted category AND priority both correct (hybrid rule + LLM classifier) |
-| Chat latency | **<Z ms** | p50 time-to-first-token of a chat completion via `LlmClient.generate` |
+| Retrieval accuracy | **X%** | recall@k — share of eval queries where at least one expected KB article lands in the top-k hits (default k=5) |
+| Ticket classification accuracy | **Y%** | exact match — predicted category AND priority both correct (hybrid rule + LLM classifier) |
+| Average response latency | **<Z ms** | mean time-to-first-token of a chat completion via `LlmClient.generate` (the standard latency metric for a streaming API; p50/p95 and mean full-response time are also reported) |
 
 The eval is self-contained and **in-process**: it drives `Classifier`,
 `LlmClient`, `EmbeddingClient`, `VectorStore` and `Indexer` directly, so the
@@ -84,11 +84,12 @@ wrong, so the metrics stay meaningful:
 
 ## Getting the resume bullet numbers
 
-After a full `--mode all` run with warm models, fill the template:
+After a full `--mode all` run with warm models, the summary line prints the
+numbers directly (mean TTFT = "average response latency"). Example format:
 
-> "Built an eval harness for the AI ticket-assistant (recall@5 retrieval
-> accuracy of [X]%, [Y]% exact-match classification accuracy across 5
-> categories and 4 priorities, <[Z] ms p50 time-to-first-token chat latency)"
+> Developed an LLM-powered RAG service using Python, FastAPI, embeddings, and
+> vector search, achieving 100% retrieval accuracy, 44% ticket classification
+> accuracy, and <625 ms average response latency
 
 ## Lint / CI
 
