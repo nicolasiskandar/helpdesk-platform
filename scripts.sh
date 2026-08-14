@@ -12,7 +12,7 @@ Commands:
   logs                   Tail logs from all services
   frontend-dev           Run frontend in dev mode (local, no Docker)
   frontend-build         Build frontend for production
-  test                   Run all unit tests (Identity, Ticket, AI)
+  test                   Run all unit tests (Identity, Ticket, Search, AI)
   test-identity          Run Identity Service tests only
   test-ticket            Run Ticket Service tests only
   test-search            Run Search Service tests
@@ -132,6 +132,7 @@ cmd_frontend_build() {
 cmd_test() {
   dotnet test tests/IdentityService.Tests/
   dotnet test tests/TicketService.Tests/
+  cmd_test_search
   cmd_test_ai
 }
 
