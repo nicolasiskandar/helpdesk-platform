@@ -193,7 +193,26 @@ async def run_retrieve(settings: Settings, top_k: int, cleanup: bool) -> dict:
     correct = sum(1 for hit in hits if hit["found"])
     total = len(hits)
     recall = correct / total * 100.0
-    logger.info("retrieval: %d/%d queries with a relevant doc in top-%d (%.1f%%)", correct, total, top_k, recall)
+
+    precision_at_k = [
+        len(hit["found"]) / len(hit["top_k"]) if hit["top_k"] else 0.0 for hit in hits
+    ]
+    reciprocal_ranks = []
+    for hit in hits:
+        for rank, doc_id in enumerate(hit["top_k"], start=1):
+            if doc_id in hit["expected"]:
+                reciprocal_ranks.append(1.0 / rank)
+                break
+        else:
+            reciprocal_ranks.append(0.0)
+    mean_precision = sum(precision_at_k) / total * 100.0
+    mrr = sum(reciprocal_ranks) / total
+
+    logger.info(
+        "retrieval: %d/%d queries with a relevant doc in top-%d (recall %.1f%%, "
+        "precision@%d %.1f%%, MRR %.3f)",
+        correct, total, top_k, recall, top_k, mean_precision, mrr,
+    )
     for hit in hits:
         if not hit["found"]:
             logger.warning(
@@ -208,7 +227,13 @@ async def run_retrieve(settings: Settings, top_k: int, cleanup: bool) -> dict:
     else:
         await store.delete_by_filter({"doc_type": "kb"})
 
-    return {"recall_pct": round(recall, 2), "correct": correct, "total": total}
+    return {
+        "recall_pct": round(recall, 2),
+        "precision_pct": round(mean_precision, 2),
+        "mrr": round(mrr, 3),
+        "correct": correct,
+        "total": total,
+    }
 
 
 async def run_latency(settings: Settings, repeat: int) -> dict:

@@ -23,3 +23,91 @@
 {"id": "q23", "query": "what happens when an employee leaves the company", "expected_doc_ids": ["kb-027"]}
 {"id": "q24", "query": "excel is very slow with large workbooks", "expected_doc_ids": ["kb-030"]}
 {"id": "q25", "query": "camera not detected in teams", "expected_doc_ids": ["kb-031", "kb-034"]}
+{"id": "q26", "query": "printer is offline how do i restart the print spooler", "expected_doc_ids": ["kb-007"]}
+{"id": "q27", "query": "how do i add a network printer to my laptop manually", "expected_doc_ids": ["kb-041"]}
+{"id": "q28", "query": "paper is stuck inside the printer and it keeps jamming", "expected_doc_ids": ["kb-042"]}
+{"id": "q29", "query": "can i print in color somewhere in the office", "expected_doc_ids": ["kb-043"]}
+{"id": "q30", "query": "the printer says toner is low, who refills it", "expected_doc_ids": ["kb-044", "kb-113"]}
+{"id": "q31", "query": "how do i scan a document and email it to myself from the printer", "expected_doc_ids": ["kb-045"]}
+{"id": "q32", "query": "my print job is stuck in the queue and nothing prints", "expected_doc_ids": ["kb-096"]}
+{"id": "q33", "query": "when does the printer room get new paper", "expected_doc_ids": ["kb-113"]}
+{"id": "q34", "query": "what does vpn error 721 mean", "expected_doc_ids": ["kb-022"]}
+{"id": "q35", "query": "my vpn is really slow from home how do i fix it", "expected_doc_ids": ["kb-046"]}
+{"id": "q36", "query": "vpn client loops at certificate not valid", "expected_doc_ids": ["kb-047"]}
+{"id": "q37", "query": "am i allowed to install the vpn on my personal computer", "expected_doc_ids": ["kb-048"]}
+{"id": "q38", "query": "how do i check if my vpn connection is leaking my home ip", "expected_doc_ids": ["kb-049"]}
+{"id": "q39", "query": "what is split tunneling and is it enabled", "expected_doc_ids": ["kb-097"]}
+{"id": "q40", "query": "do contractors get vpn access", "expected_doc_ids": ["kb-111"]}
+{"id": "q41", "query": "my windows account is locked after wrong attempts", "expected_doc_ids": ["kb-050"]}
+{"id": "q42", "query": "how do i change my password on a domain computer", "expected_doc_ids": ["kb-051"]}
+{"id": "q43", "query": "how do i start using the company password manager", "expected_doc_ids": ["kb-052"]}
+{"id": "q44", "query": "why cant i reuse an old password", "expected_doc_ids": ["kb-102"]}
+{"id": "q45", "query": "i forgot my password and my phone is not registered for reset", "expected_doc_ids": ["kb-149"]}
+{"id": "q46", "query": "is there a kiosk in the lobby where i can reset my password", "expected_doc_ids": ["kb-149"]}
+{"id": "q47", "query": "where do i get backup codes for two step verification", "expected_doc_ids": ["kb-089"]}
+{"id": "q48", "query": "why do finance apps ask for an extra login step", "expected_doc_ids": ["kb-101"]}
+{"id": "q49", "query": "how often do passwords expire", "expected_doc_ids": ["kb-038"]}
+{"id": "q50", "query": "how do i archive old emails to free up mailbox space", "expected_doc_ids": ["kb-054"]}
+{"id": "q51", "query": "set an automatic out of office reply in outlook", "expected_doc_ids": ["kb-055"]}
+{"id": "q52", "query": "can i forward my work email to a personal address", "expected_doc_ids": ["kb-057"]}
+{"id": "q53", "query": "my mailbox is full, what is the size limit", "expected_doc_ids": ["kb-058"]}
+{"id": "q54", "query": "how long are work emails kept before deletion", "expected_doc_ids": ["kb-106"]}
+{"id": "q55", "query": "outlook will not send any emails today", "expected_doc_ids": ["kb-029", "kb-008"]}
+{"id": "q56", "query": "wifi signal is weak at my desk, can you check the access points", "expected_doc_ids": ["kb-004", "kb-059"]}
+{"id": "q57", "query": "what is the guest wifi code for our visitors", "expected_doc_ids": ["kb-060", "kb-134"]}
+{"id": "q58", "query": "my ethernet link shows 100 mbps instead of 1 gbps", "expected_doc_ids": ["kb-061"]}
+{"id": "q59", "query": "a website resolves to the wrong page on my machine", "expected_doc_ids": ["kb-063"]}
+{"id": "q60", "query": "the internet is down, where are the announcements", "expected_doc_ids": ["kb-064", "kb-040"]}
+{"id": "q61", "query": "why do i see two wifi networks with the same name", "expected_doc_ids": ["kb-098"]}
+{"id": "q62", "query": "how often does the office wifi password change", "expected_doc_ids": ["kb-112"]}
+{"id": "q63", "query": "the wall network socket at my desk has no connection", "expected_doc_ids": ["kb-120", "kb-033"]}
+{"id": "q64", "query": "should i use wired or wireless with my docking station", "expected_doc_ids": ["kb-138"]}
+{"id": "q65", "query": "how do i request a second monitor for my desk", "expected_doc_ids": ["kb-065"]}
+{"id": "q66", "query": "my mouse is broken, is it still under warranty", "expected_doc_ids": ["kb-066"]}
+{"id": "q67", "query": "what is the safe way to clean my laptop screen", "expected_doc_ids": ["kb-067"]}
+{"id": "q68", "query": "i am traveling abroad, can i get a different laptop", "expected_doc_ids": ["kb-069"]}
+{"id": "q69", "query": "which headsets are supported for teams calls", "expected_doc_ids": ["kb-070"]}
+{"id": "q70", "query": "my phone charging port is loose and it does not charge", "expected_doc_ids": ["kb-071"]}
+{"id": "q71", "query": "when am i eligible for a laptop replacement", "expected_doc_ids": ["kb-099", "kb-012"]}
+{"id": "q72", "query": "can i connect two monitors through one port", "expected_doc_ids": ["kb-100"]}
+{"id": "q73", "query": "my laptop power adapter is broken, can i get a new one", "expected_doc_ids": ["kb-126"]}
+{"id": "q74", "query": "the battery percentage on my laptop jumps around", "expected_doc_ids": ["kb-127"]}
+{"id": "q75", "query": "my disk is full, how do i free up space", "expected_doc_ids": ["kb-129"]}
+{"id": "q76", "query": "my thunderbolt dock keeps disconnecting", "expected_doc_ids": ["kb-130"]}
+{"id": "q77", "query": "does my laptop have a camera shutter", "expected_doc_ids": ["kb-123"]}
+{"id": "q78", "query": "how do i use an external webcam", "expected_doc_ids": ["kb-124"]}
+{"id": "q79", "query": "there is an echo on my headset during calls", "expected_doc_ids": ["kb-125"]}
+{"id": "q80", "query": "request a license for the accounting application", "expected_doc_ids": ["kb-006", "kb-019"]}
+{"id": "q81", "query": "the antivirus blocked a tool i need, what do i do", "expected_doc_ids": ["kb-020"]}
+{"id": "q82", "query": "the web application shows a blank page after login", "expected_doc_ids": ["kb-023"]}
+{"id": "q83", "query": "excel is slow when i work with big data files", "expected_doc_ids": ["kb-030"]}
+{"id": "q84", "query": "teams does not pick up my camera anymore", "expected_doc_ids": ["kb-031"]}
+{"id": "q85", "query": "when do i have to install windows updates", "expected_doc_ids": ["kb-072"]}
+{"id": "q86", "query": "how do i uninstall a program from my company laptop", "expected_doc_ids": ["kb-073"]}
+{"id": "q87", "query": "which browsers are officially supported", "expected_doc_ids": ["kb-074"]}
+{"id": "q88", "query": "how do i record a teams meeting", "expected_doc_ids": ["kb-075"]}
+{"id": "q89", "query": "my excel macro is blocked from running", "expected_doc_ids": ["kb-076"]}
+{"id": "q90", "query": "how do i sign a pdf digitally", "expected_doc_ids": ["kb-077"]}
+{"id": "q91", "query": "setting up python for development work", "expected_doc_ids": ["kb-078"]}
+{"id": "q92", "query": "docker desktop is not working when i am on the vpn", "expected_doc_ids": ["kb-079"]}
+{"id": "q93", "query": "git clone is asking for credentials every time", "expected_doc_ids": ["kb-080"]}
+{"id": "q94", "query": "activate my ide license with the company account", "expected_doc_ids": ["kb-081"]}
+{"id": "q95", "query": "office applications are broken after the latest update", "expected_doc_ids": ["kb-116"]}
+{"id": "q96", "query": "when do antivirus scans run on my machine", "expected_doc_ids": ["kb-117"]}
+{"id": "q97", "query": "are the files on my desktop backed up", "expected_doc_ids": ["kb-118"]}
+{"id": "q98", "query": "the program i need is not on the whitelist", "expected_doc_ids": ["kb-141"]}
+{"id": "q99", "query": "why is my machine not getting the operating system upgrade", "expected_doc_ids": ["kb-143"]}
+{"id": "q100", "query": "how do i request access to the crm system", "expected_doc_ids": ["kb-082"]}
+{"id": "q101", "query": "set up temporary access for a contractor joining the project", "expected_doc_ids": ["kb-083"]}
+{"id": "q102", "query": "share my mailbox with my assistant", "expected_doc_ids": ["kb-084", "kb-017"]}
+{"id": "q103", "query": "my badge will not open the server room door", "expected_doc_ids": ["kb-085", "kb-114"]}
+{"id": "q104", "query": "what are the data classification levels in the company", "expected_doc_ids": ["kb-086"]}
+{"id": "q105", "query": "i think i found a security issue, who do i tell", "expected_doc_ids": ["kb-087"]}
+{"id": "q106", "query": "how do i generate an api key for my script", "expected_doc_ids": ["kb-088"]}
+{"id": "q107", "query": "share my calendar with my whole team", "expected_doc_ids": ["kb-056"]}
+{"id": "q108", "query": "single sign on keeps failing for one application", "expected_doc_ids": ["kb-115"]}
+{"id": "q109", "query": "the badge reader beeps red when i tap", "expected_doc_ids": ["kb-119"]}
+{"id": "q110", "query": "using a smart card reader to sign in to my machine", "expected_doc_ids": ["kb-131"]}
+{"id": "q111", "query": "why do i need approval to get admin rights", "expected_doc_ids": ["kb-132"]}
+{"id": "q112", "query": "can i export the client list to my personal drive", "expected_doc_ids": ["kb-133"]}
+{"id": "q113", "query": "how do i get access to the staging test environment", "expected_doc_ids": ["kb-144"]}

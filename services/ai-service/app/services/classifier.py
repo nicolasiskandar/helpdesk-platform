@@ -90,7 +90,11 @@ class Classifier:
 
         if priority is None or category is None:
             llm_result = None
-            if llm is not None:
+            # Guard: only trust the LLM when the rules could not determine the
+            # category. Rule-categorized tickets keep their rule/default priority
+            # (rules stay authoritative per design rule #4; the LLM proved less
+            # reliable at priorities than the rule/default baseline).
+            if llm is not None and category is None:
                 try:
                     llm_result = await self._llm_classify(llm, text)
                 except Exception:  # noqa: BLE001
@@ -115,6 +119,13 @@ class Classifier:
     async def _llm_classify(llm: LlmClient, text: str) -> dict | None:
         prompt = (
             "Classify the following IT helpdesk issue into exactly one category and priority.\n"
+            "Priority guidance:\n"
+            "- High/Critical: core services, servers, network, or email are down or degraded for "
+            "MANY users, or a security breach / data loss is suspected.\n"
+            "- Low/Medium: a single user's device, account, or application issue that only affects "
+            "that one person (broken laptop, password reset, slow WiFi, one app misbehaving).\n"
+            "- A single broken device or account problem is never Critical.\n"
+            "- When unsure, prefer Medium over High or Critical.\n"
             f"Ticket: {text[:2000]}\n\n"
             'Reply with only a JSON object, e.g. '
             '{"category": "Hardware|Software|Network|Access|Other", '

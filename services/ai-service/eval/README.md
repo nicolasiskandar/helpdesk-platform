@@ -5,13 +5,27 @@ metrics using the **real production code paths** (no fakes, no HTTP/JWT):
 
 | Metric | Symbol | Definition |
 |---|---|---|
-| Retrieval accuracy | **X%** | recall@k — share of eval queries where at least one expected KB article lands in the top-k hits (default k=5) |
+| Retrieval accuracy | **X%** | recall@k — share of eval queries where at least one expected KB article lands in the top-k hits (default k=5). Precision@5 and MRR are also reported |
 | Ticket classification accuracy | **Y%** | exact match — predicted category AND priority both correct (hybrid rule + LLM classifier) |
 | Average response latency | **<Z ms** | mean time-to-first-token of a chat completion via `LlmClient.generate` (the standard latency metric for a streaming API; p50/p95 and mean full-response time are also reported) |
 
 The eval is self-contained and **in-process**: it drives `Classifier`,
 `LlmClient`, `EmbeddingClient`, `VectorStore` and `Indexer` directly, so the
 numbers reflect exactly what the running service would do.
+
+## Latest measured results (August 2026, warm models)
+
+```
+Retrieval accuracy: 99% (112/113 queries recall@5 · precision@5 22.8% · MRR 0.957)
+Ticket classification accuracy: 56% (57/102 exact match · stable across 3 runs)
+Average response latency: <497 ms mean TTFT (p50 455 ms; mean full response 6.6 s)
+```
+
+These numbers were produced after two service changes measured by this harness:
+a priority rubric in the LLM classification prompt **and** a guard so the LLM
+only fills priority when the rules could not determine the category (rules stay
+authoritative per design rule #4). Together they moved exact-match
+classification from 42-44% to 56% on the original+expanded data.
 
 ## Layout
 
@@ -21,9 +35,9 @@ eval/
   run_eval.py                 # CLI runner (argparse)
   README.md
   data/
-    classification_eval.jsonl # 64 labeled tickets (id, title, description, category, priority, note)
-    corpus.jsonl              # 40 KB articles (id, title, body, category)
-    retrieval_eval.jsonl      # 25 queries (id, query, expected_doc_ids)
+    classification_eval.jsonl # 102 labeled tickets (id, title, description, category, priority, note)
+    corpus.jsonl              # 150 KB articles (id, title, body, category)
+    retrieval_eval.jsonl      # 113 queries (id, query, expected_doc_ids)
 ```
 
 ## Prerequisites
@@ -33,7 +47,7 @@ eval/
   (embeddings + chat) and Qdrant are reachable. The runner defaults to
   `http://localhost:11434` / `http://localhost:6333` because docker service
   names don't resolve from the host; override with `OLLAMA_URL` / `QDRANT_URL`.
-- The first full run indexes 40 articles into the **dedicated `helpdesk_eval`
+- The first full run indexes 150 articles into the **dedicated `helpdesk_eval`
   collection** — the production `helpdesk_index` collection is never touched.
   Warm-up takes a while on first use (models load into memory).
 
@@ -63,7 +77,7 @@ Per-eval logs show per-case misses (id, expected vs predicted, method) so
 failures are actionable, then a one-line summary:
 
 ```
-Retrieval accuracy: X% · Classification accuracy: Y% · Latency: <Z ms (p50 TTFT)
+Retrieval accuracy: X% · Ticket classification accuracy: Y% · Average response latency: <Z ms (mean TTFT)
 ```
 
 ## Data notes
@@ -81,6 +95,9 @@ wrong, so the metrics stay meaningful:
 - **Known rule misfires**: `c45` ("installer" → Software rule, human label
   Access) and `c48`/`c52` ("network"/"printer" keyword trap) — these will score
   as misses and are a deliberate honesty signal, not a bug.
+- **Retrieval miss**: `q111` ("admin rights") matches no article because the
+  corpus lacks an article using the word "admin" — a real retrieval gap, not a
+  data bug.
 
 ## Getting the resume bullet numbers
 
@@ -88,8 +105,8 @@ After a full `--mode all` run with warm models, the summary line prints the
 numbers directly (mean TTFT = "average response latency"). Example format:
 
 > Developed an LLM-powered RAG service using Python, FastAPI, embeddings, and
-> vector search, achieving 100% retrieval accuracy, 44% ticket classification
-> accuracy, and <625 ms average response latency
+> vector search, achieving 99% retrieval accuracy, 56% ticket classification
+> accuracy, and <497 ms average response latency
 
 ## Lint / CI
 
