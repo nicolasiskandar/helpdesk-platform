@@ -2104,7 +2104,7 @@ public class TicketBusinessServiceTests
         _auditLogRepoMock.Setup(r => r.GetResolutionTransitionsAsync(from, It.IsAny<DateTime>())).ReturnsAsync(transitions);
 
         // Act
-        var result = await _sut.GetStatisticsAsync();
+        var result = await _sut.GetStatisticsAsync(6);
 
         // Assert
         result.Overview.Total.Should().Be(2);
@@ -2133,7 +2133,7 @@ public class TicketBusinessServiceTests
         _auditLogRepoMock.Setup(r => r.GetResolutionTransitionsAsync(from, It.IsAny<DateTime>())).ReturnsAsync(new List<TicketAuditLogEntry>());
 
         // Act
-        var result = await _sut.GetStatisticsAsync();
+        var result = await _sut.GetStatisticsAsync(6);
 
         // Assert
         result.Overview.Total.Should().Be(0);
@@ -3902,7 +3902,7 @@ public class TicketBusinessServiceTests
         _auditLogRepoMock.Setup(r => r.GetResolutionTransitionsAsync(from, It.IsAny<DateTime>())).ReturnsAsync(transitions);
 
         // Act
-        var result = await _sut.GetStatisticsAsync();
+        var result = await _sut.GetStatisticsAsync(6);
 
         // Assert
         result.Overview.SlaCompliance.Should().Be(0.0);
@@ -3933,12 +3933,108 @@ public class TicketBusinessServiceTests
         _auditLogRepoMock.Setup(r => r.GetResolutionTransitionsAsync(from, It.IsAny<DateTime>())).ReturnsAsync(transitions);
 
         // Act
-        var result = await _sut.GetStatisticsAsync();
+        var result = await _sut.GetStatisticsAsync(6);
 
         // Assert
         result.Overview.AverageResolutionHours.Should().BeApproximately(12.0, 0.1);
         result.Overview.SlaCompliance.Should().Be(100.0);
         result.Overview.ResolutionRate.Should().Be(50.0);
+    }
+
+    [Fact]
+    public async Task GetStatisticsAsync_OneMonth_UsesDailyBuckets()
+    {
+        // Arrange
+        var now = DateTime.UtcNow;
+        var firstOfMonth = new DateTime(now.Year, now.Month, 1);
+        var ticket1 = new Ticket { Id = Guid.NewGuid(), CreatedAt = firstOfMonth.AddDays(0), StatusId = 1, PriorityId = 1 };
+        var ticket2 = new Ticket { Id = Guid.NewGuid(), CreatedAt = firstOfMonth.AddDays(4), StatusId = 4, PriorityId = 1 };
+        var transitions = new List<TicketAuditLogEntry>
+        {
+            new() { Id = Guid.NewGuid(), TicketId = ticket2.Id, NewValue = "Closed", ChangedAt = firstOfMonth.AddDays(6) }
+        };
+        _ticketRepoMock.Setup(r => r.GetForAnalyticsAsync(firstOfMonth, It.IsAny<DateTime>())).ReturnsAsync(new List<Ticket> { ticket1, ticket2 });
+        _ticketRepoMock.Setup(r => r.GetUnassignedCountAsync(firstOfMonth, It.IsAny<DateTime>())).ReturnsAsync(0);
+        _auditLogRepoMock.Setup(r => r.GetResolutionTransitionsAsync(firstOfMonth, It.IsAny<DateTime>())).ReturnsAsync(transitions);
+
+        // Act
+        var result = await _sut.GetStatisticsAsync(1);
+
+        // Assert — one bucket per elapsed day of the current month
+        result.VolumeTrend.Should().HaveCount(now.Day);
+        result.VolumeTrend[0].Created.Should().Be(1);
+        result.VolumeTrend[4].Created.Should().Be(1);
+        result.VolumeTrend[6].Resolved.Should().Be(1);
+        result.ResolutionTrend[6].AverageHours.Should().BeApproximately(48.0, 0.1);
+        result.Overview.Total.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task GetStatisticsAsync_TwelveMonths_ReturnsTwelveMonthlyBuckets()
+    {
+        // Arrange
+        var now = DateTime.UtcNow;
+        var firstOfMonth = new DateTime(now.Year, now.Month, 1);
+        var from = firstOfMonth.AddMonths(-11);
+        var tickets = new List<Ticket>
+        {
+            new() { Id = Guid.NewGuid(), CreatedAt = firstOfMonth.AddDays(1), StatusId = 1, PriorityId = 1 }
+        };
+        _ticketRepoMock.Setup(r => r.GetForAnalyticsAsync(from, It.IsAny<DateTime>())).ReturnsAsync(tickets);
+        _ticketRepoMock.Setup(r => r.GetUnassignedCountAsync(from, It.IsAny<DateTime>())).ReturnsAsync(0);
+        _auditLogRepoMock.Setup(r => r.GetResolutionTransitionsAsync(from, It.IsAny<DateTime>())).ReturnsAsync(new List<TicketAuditLogEntry>());
+
+        // Act
+        var result = await _sut.GetStatisticsAsync(12);
+
+        // Assert
+        result.VolumeTrend.Should().HaveCount(12);
+        result.VolumeTrend[0].Month.Should().Be(from.ToString("MMM yy"));
+        result.VolumeTrend[^1].Month.Should().Be(firstOfMonth.ToString("MMM yy"));
+        result.VolumeTrend[^1].Created.Should().Be(1);
+        result.ResolutionTrend.Should().HaveCount(12);
+    }
+
+    [Fact]
+    public async Task GetStatisticsAsync_AllTime_SpansEarliestTicketMonthToNow()
+    {
+        // Arrange
+        var now = DateTime.UtcNow;
+        var firstOfMonth = new DateTime(now.Year, now.Month, 1);
+        var tickets = new List<Ticket>
+        {
+            new() { Id = Guid.NewGuid(), CreatedAt = firstOfMonth.AddMonths(-2).AddDays(1), StatusId = 1, PriorityId = 1 },
+            new() { Id = Guid.NewGuid(), CreatedAt = firstOfMonth.AddDays(1), StatusId = 1, PriorityId = 1 }
+        };
+        _ticketRepoMock.Setup(r => r.GetForAnalyticsAsync(DateTime.MinValue, It.IsAny<DateTime>())).ReturnsAsync(tickets);
+        _ticketRepoMock.Setup(r => r.GetUnassignedCountAsync(DateTime.MinValue, It.IsAny<DateTime>())).ReturnsAsync(0);
+        _auditLogRepoMock.Setup(r => r.GetResolutionTransitionsAsync(DateTime.MinValue, It.IsAny<DateTime>())).ReturnsAsync(new List<TicketAuditLogEntry>());
+
+        // Act
+        var result = await _sut.GetStatisticsAsync(0);
+
+        // Assert — one monthly bucket for each month with data (2 ago, 1 ago, current)
+        result.VolumeTrend.Should().HaveCount(3);
+        result.VolumeTrend[0].Created.Should().Be(1);
+        result.VolumeTrend[^1].Created.Should().Be(1);
+        result.Overview.Total.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task GetStatisticsAsync_AllTime_NoTickets_ReturnsEmptyTrend()
+    {
+        // Arrange
+        _ticketRepoMock.Setup(r => r.GetForAnalyticsAsync(DateTime.MinValue, It.IsAny<DateTime>())).ReturnsAsync(new List<Ticket>());
+        _ticketRepoMock.Setup(r => r.GetUnassignedCountAsync(DateTime.MinValue, It.IsAny<DateTime>())).ReturnsAsync(0);
+        _auditLogRepoMock.Setup(r => r.GetResolutionTransitionsAsync(DateTime.MinValue, It.IsAny<DateTime>())).ReturnsAsync(new List<TicketAuditLogEntry>());
+
+        // Act
+        var result = await _sut.GetStatisticsAsync(0);
+
+        // Assert
+        result.Overview.Total.Should().Be(0);
+        result.VolumeTrend.Should().HaveCount(1);
+        result.VolumeTrend[0].Created.Should().Be(0);
     }
 
     // ---------- AddCommentAsync (file attachments) ----------

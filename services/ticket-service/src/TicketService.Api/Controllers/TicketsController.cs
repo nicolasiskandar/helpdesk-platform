@@ -537,14 +537,17 @@ public class TicketsController : ControllerBase
     }
 
     /// <summary>
-    /// Gets statistics for the last 6 months (volume trend, resolution time, SLA compliance).
+    /// Gets statistics (volume trend, resolution time, SLA compliance) over a window.
+    /// `months` is the number of calendar months back from the current month
+    /// (1 = current month bucketed daily, 6/12 = that many monthly buckets,
+    /// 0 = all time). Defaults to 6 months.
     /// </summary>
     [HttpGet("statistics")]
     [Authorize(Roles = "Admin,Manager")]
     [ProducesResponseType(typeof(AnalyticsResponse), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetStatistics()
+    public async Task<IActionResult> GetStatistics([FromQuery] int months = 6)
     {
-        var statistics = await _ticketService.GetStatisticsAsync();
+        var statistics = await _ticketService.GetStatisticsAsync(Math.Max(0, months));
         return Ok(statistics);
     }
 

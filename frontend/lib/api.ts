@@ -715,9 +715,9 @@ export interface AnalyticsResponse {
   resolutionTrend: MonthlyResolutionResponse[]
 }
 
-export async function apiGetStatistics(): Promise<AnalyticsResponse> {
+export async function apiGetStatistics(months = 6): Promise<AnalyticsResponse> {
   const token = getAccessToken()
-  const res = await fetch(`${API_BASE}/api/tickets/statistics`, {
+  const res = await fetch(`${API_BASE}/api/tickets/statistics?months=${months}`, {
     headers: authHeaders(token),
   })
   return handleResponse<AnalyticsResponse>(res)

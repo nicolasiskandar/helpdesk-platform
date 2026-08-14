@@ -791,11 +791,16 @@ public class TicketBusinessService : ITicketService
             .ToList();
     }
 
-    public async Task<AnalyticsResponse> GetStatisticsAsync()
+    public async Task<AnalyticsResponse> GetStatisticsAsync(int months)
     {
         var now = DateTime.UtcNow;
         var firstOfCurrentMonth = new DateTime(now.Year, now.Month, 1);
-        var from = firstOfCurrentMonth.AddMonths(-5);
+
+        // months <= 0 means all time; otherwise a calendar window ending at the
+        // current month (months == 1 → current month, months == 6 → last 6 months).
+        var from = months > 0
+            ? firstOfCurrentMonth.AddMonths(-(months - 1))
+            : DateTime.MinValue;
 
         var tickets = await _unitOfWork.Tickets.GetForAnalyticsAsync(from, now);
         var transitions = await _unitOfWork.TicketAuditLogs.GetResolutionTransitionsAsync(from, now);
@@ -807,22 +812,23 @@ public class TicketBusinessService : ITicketService
             .GroupBy(a => a.TicketId)
             .ToDictionary(g => g.Key, g => g.Min(a => a.ChangedAt));
 
+        var buckets = BuildTrendBuckets(months, now, firstOfCurrentMonth, tickets);
+
         var volumeTrend = new List<MonthlyVolumeEntry>();
         var resolutionTrend = new List<MonthlyResolutionEntry>();
 
-        for (var i = 5; i >= 0; i--)
+        foreach (var (start, end, label) in buckets)
         {
-            var monthStart = firstOfCurrentMonth.AddMonths(-i);
-            var created = tickets.Count(t => t.CreatedAt.Year == monthStart.Year && t.CreatedAt.Month == monthStart.Month);
+            var created = tickets.Count(t => t.CreatedAt >= start && t.CreatedAt < end);
 
-            var resolvedThisMonth = transitions
-                .Where(a => a.ChangedAt.Year == monthStart.Year && a.ChangedAt.Month == monthStart.Month)
+            var resolvedThisBucket = transitions
+                .Where(a => a.ChangedAt >= start && a.ChangedAt < end)
                 .ToList();
 
             double? avgHours = null;
-            if (resolvedThisMonth.Count > 0)
+            if (resolvedThisBucket.Count > 0)
             {
-                var hours = resolvedThisMonth
+                var hours = resolvedThisBucket
                     .Where(a => ticketsById.ContainsKey(a.TicketId))
                     .Select(a => (a.ChangedAt - ticketsById[a.TicketId].CreatedAt).TotalHours)
                     .ToList();
@@ -830,8 +836,8 @@ public class TicketBusinessService : ITicketService
                     avgHours = Math.Round(hours.Average(), 1);
             }
 
-            volumeTrend.Add(new MonthlyVolumeEntry(monthStart.ToString("MMM yy"), created, resolvedThisMonth.Count));
-            resolutionTrend.Add(new MonthlyResolutionEntry(monthStart.ToString("MMM yy"), avgHours));
+            volumeTrend.Add(new MonthlyVolumeEntry(label, created, resolvedThisBucket.Count));
+            resolutionTrend.Add(new MonthlyResolutionEntry(label, avgHours));
         }
 
         var open = tickets.Count(t => t.StatusId == 1);
@@ -884,6 +890,38 @@ public class TicketBusinessService : ITicketService
             slaCompliance);
 
         return new AnalyticsResponse(overview, volumeTrend, resolutionTrend);
+    }
+
+    private static List<(DateTime Start, DateTime End, string Label)> BuildTrendBuckets(
+        int months, DateTime now, DateTime firstOfCurrentMonth, IReadOnlyList<Ticket> tickets)
+    {
+        if (months == 1)
+        {
+            // Current calendar month, bucketed per day (e.g. "Aug 14").
+            var buckets = new List<(DateTime, DateTime, string)>();
+            for (var day = firstOfCurrentMonth; day < now; day = day.AddDays(1))
+                buckets.Add((day, day.AddDays(1), day.ToString("MMM d")));
+            return buckets;
+        }
+
+        DateTime firstBucket;
+        if (months > 1)
+        {
+            firstBucket = firstOfCurrentMonth.AddMonths(-(months - 1));
+        }
+        else
+        {
+            // All time: start bucketing at the earliest ticket's month so the
+            // trend only spans months that actually contain data.
+            firstBucket = tickets.Count > 0
+                ? new DateTime(tickets.Min(t => t.CreatedAt).Year, tickets.Min(t => t.CreatedAt).Month, 1)
+                : firstOfCurrentMonth;
+        }
+
+        var monthly = new List<(DateTime, DateTime, string)>();
+        for (var start = firstBucket; start <= firstOfCurrentMonth; start = start.AddMonths(1))
+            monthly.Add((start, start.AddMonths(1), start.ToString("MMM yy")));
+        return monthly;
     }
 
     public async Task<IReadOnlyList<CommentResponse>> GetCommentsAsync(Guid ticketId, Guid viewerUserId, string viewerRole)

@@ -13,6 +13,13 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
   Table,
   TableBody,
   TableCell,
@@ -41,9 +48,21 @@ function formatHours(hours: number | null | undefined): string {
   return `${hours}h`
 }
 
+const RANGE_OPTIONS = [
+  { value: 1, label: "1M", text: "last month" },
+  { value: 6, label: "6M", text: "last 6 months" },
+  { value: 12, label: "1Y", text: "last 12 months" },
+  { value: 0, label: "All", text: "all time" },
+] as const
+
+function rangeText(months: number): string {
+  return RANGE_OPTIONS.find((r) => r.value === months)?.text ?? "this period"
+}
+
 export default function ReportsPage() {
   const { tickets, userMap } = useStore()
   const [stats, setStats] = React.useState<AnalyticsResponse | null>(null)
+  const [months, setMonths] = React.useState<number>(6)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
 
@@ -53,7 +72,7 @@ export default function ReportsPage() {
       setLoading(true)
       setError(null)
       try {
-        const data = await apiGetStatistics()
+        const data = await apiGetStatistics(months)
         if (!cancelled) setStats(data)
       } catch (err: any) {
         if (!cancelled) setError(err?.message || "Failed to load analytics.")
@@ -65,7 +84,7 @@ export default function ReportsPage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [months])
 
   const performance = [...agentPerformance(tickets, userMap)].sort(
     (a, b) => b.resolved - a.resolved
@@ -97,10 +116,27 @@ export default function ReportsPage() {
             Reports & Analytics
           </h2>
           <p className="text-sm text-muted-foreground">
-            Performance metrics for the last 6 months
+            Performance metrics for {rangeText(months)}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Select
+            value={String(months)}
+            onValueChange={(v) => {
+              if (v != null) setMonths(Number(v))
+            }}
+          >
+            <SelectTrigger size="sm" className="min-w-28">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {RANGE_OPTIONS.map((r) => (
+                <SelectItem key={r.value} value={String(r.value)}>
+                  {r.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button
             variant="outline"
             size="sm"
@@ -132,7 +168,7 @@ export default function ReportsPage() {
               onClick={() => {
                 setStats(null)
                 setLoading(true)
-                apiGetStatistics()
+                apiGetStatistics(months)
                   .then((data) => setStats(data))
                   .catch((err: any) => setError(err?.message || "Failed to load analytics."))
                   .finally(() => setLoading(false))
@@ -185,7 +221,7 @@ export default function ReportsPage() {
           value={overview?.total ?? "—"}
           icon={Ticket}
           accent="warning"
-          hint="Last 6 months"
+          hint={`In ${rangeText(months)}`}
         />
       </div>
 
@@ -214,7 +250,8 @@ export default function ReportsPage() {
         <CardHeader>
           <CardTitle>Agent Performance Report</CardTitle>
           <CardDescription>
-            Resolution metrics per support agent this period
+            Resolution metrics per support agent — based on the loaded ticket
+            list, not the selected range
           </CardDescription>
         </CardHeader>
         <CardContent className="px-0">

@@ -21,7 +21,7 @@ public interface ITicketService
     Task<AssignmentResponse> ClaimTicketAsync(Guid ticketId, Guid userId, string userName);
     Task<TicketListResponse> GetOpenUnassignedTicketsAsync(int page, int pageSize);
     Task<IReadOnlyList<AgentWorkloadResponse>> GetAgentWorkloadAsync();
-    Task<AnalyticsResponse> GetStatisticsAsync();
+    Task<AnalyticsResponse> GetStatisticsAsync(int months);
 
     Task<IReadOnlyList<CommentResponse>> GetCommentsAsync(Guid ticketId, Guid viewerUserId, string viewerRole);
     Task<CommentResponse> AddCommentAsync(Guid ticketId, AddCommentRequest request, Guid authorUserId, string authorRole, string authorName, IReadOnlyList<CommentFileUpload>? files = null);
